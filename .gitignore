@@ -1,0 +1,3 @@
+*.so
+*.rlib
+rustful-test
