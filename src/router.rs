@@ -1,16 +1,17 @@
 //!`Router` takes care of routing incoming requests to handlers.
 //!
 //!```rust
-//!use rustful::router::Router;
+//!# use rustful::router::Router;
 //!# use std::hashmap::HashMap;
-//!
 //!# fn about_us(_: ~HashMap<~str, &str>) -> ~str {~""}
 //!# fn show_user(_: ~HashMap<~str, &str>) -> ~str {~""}
 //!# fn show_product(_: ~HashMap<~str, &str>) -> ~str {~""}
+//!# fn show_welcome(_: ~HashMap<~str, &str>) -> ~str {~""}
 //!let routes = [
 //!	("about", about_us),
 //!	("user/:user", show_user),
-//!	("product/:name", show_product)
+//!	("product/:name", show_product),
+//!	("*", show_welcome)
 //!];
 //!
 //!let router = Router::from_vec(routes);
@@ -24,9 +25,29 @@ pub type HandlerFn = fn(~HashMap<~str, &str>) -> ~str;
 
 ///Takes care of routing requests to handlers.
 ///
-///Paths can be static (`"path/to/handler"`) or variable (`"users/:group/:user"`).
-///Variables (starting with `:`) will match whatever word the path contains at
+///Paths can be static (`"path/to/handler"`) or variable (`"users/:group/:user"`)
+///and contain wildcards (`"path/*/handler/*"`).
+///
+///Variables (starting with `:`) will match whatever word the request path contains at
 ///that point and it will be sent as a value to the handler function.
+///
+///Wildcards (a single `*`) will consume the segments until the rest of the
+///path gives a match.
+///
+///```
+///pattern = "a/*/b"
+///"a/c/b" -> match
+///"a/c/d/b" -> match
+///"a/b" -> no match
+///"a/c/b/d" -> no match
+///```
+///
+///```
+///pattern = "a/b/*"
+///"a/b/c" -> match
+///"a/b/c/d" -> match
+///"a/b" -> no match
+///```
 pub struct Router {
 	priv handler: Option<HandlerFn>,
 	priv static_routes: HashMap<~str, ~Router>,
@@ -92,7 +113,12 @@ impl Router {
 
 	//Tries to find a router matching the key or inserts a new one if none exists
 	fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut ~Router {
-		if key.len() > 0 && key.char_at(0) == ':' {
+		if key == "*" {
+			if self.wildcard_route.is_none() {
+				self.wildcard_route = Some(~Router::new());
+			}
+			self.wildcard_route.as_mut::<'a>().unwrap()
+		} else if key.len() > 0 && key.char_at(0) == ':' {
 			if self.variable_route.is_none() {
 				self.variable_route = Some(~Router::new());
 			}
@@ -113,10 +139,10 @@ impl Router {
 	fn find(&self, path: &[&str], variables: &[&str]) -> Option<~str> {
 		match path {
 			[piece] => {
-				self.match_static(piece, variables, |next, vars| { next.exec(vars) })
+				self.match_static(piece, &[], variables, |next, _, vars| { next.exec(vars) })
 			},
 			[piece, ..rest] => {
-				self.match_static(piece, variables, |next, vars| { next.find(rest, vars) })
+				self.match_static(piece, rest, variables, |next, path, vars| { next.find(path, vars) })
 			},
 			[] => {
 				self.exec(variables)
@@ -139,29 +165,49 @@ impl Router {
 	}
 
 	//Checks for a static route. Runs `action` if found, runs `match_variable` otherwhise
-	fn match_static(&self, key: &str, variables: &[&str], action: |&~Router, &[&str]| -> Option<~str>) -> Option<~str> {
+	fn match_static(&self, key: &str, rest: &[&str], variables: &[&str], action: |&~Router, &[&str], &[&str]| -> Option<~str>) -> Option<~str> {
 		match self.static_routes.find(&key.to_owned()) {
 			Some(next) => {
-				match action(next, variables) {
-					None => self.match_variable(key, variables, action),
+				match action(next, rest, variables) {
+					None => self.match_variable(key, rest, variables, action),
 					result => result
 				}
 			},
-			None => {
-				self.match_variable(key, variables, action)
-			}
+			None => self.match_variable(key, rest, variables, action)
 		}
 	}
 
 	//Checks for a variable route. Runs `action` if found, runs `match_wildcard` otherwhise
-	fn match_variable(&self, key: &str, variables: &[&str], action: |&~Router, &[&str]| -> Option<~str>) -> Option<~str> {
+	fn match_variable(&self, key: &str, rest: &[&str], variables: &[&str], action: |&~Router, &[&str], &[&str]| -> Option<~str>) -> Option<~str> {
 		match self.variable_route {
 			Some(ref next) => {
 				let mut new_variables = variables.to_owned();
 				new_variables.push(key.clone());
-				action(next, new_variables)
+
+				match action(next, rest, new_variables) {
+					None => self.match_wildcard(rest, variables, action),
+					result => result
+				}
 			},
-			None => None //TODO: Wildcard
+			None => self.match_wildcard(rest, variables, action)
+		}
+	}
+
+	//Checks for a wildcard route. Runs `action` if found, returns `None` otherwhise
+	fn match_wildcard(&self, rest: &[&str], variables: &[&str], action: |&~Router, &[&str], &[&str]| -> Option<~str>) -> Option<~str> {
+		match self.wildcard_route {
+			Some(ref next) => {
+				let mut path = rest;
+				while path.len() > 0 {
+					match action(next, path, variables) {
+						None => path = path.slice(1, path.len()),
+						result => return result
+					}
+				}
+
+				action(next, path, variables)
+			},
+			None => None
 		}
 	}
 }
@@ -250,6 +296,64 @@ mod test {
 		assert_eq!(router.route("path/to/test1/no"), None);
 	}
 
+	#[test]
+	fn one_wildcard_end_route() {
+		let routes = [("path/to/*", test_1)];
+
+		let router = Router::from_vec(routes);
+
+		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/to/same/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/to/the/same/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/to"), None);
+		assert_eq!(router.route("path"), None);
+	}
+
+
+	#[test]
+	fn one_wildcard_middle_route() {
+		let routes = [("path/*/test1", test_1)];
+
+		let router = Router::from_vec(routes);
+
+		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/to/same/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/to/the/same/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/to"), None);
+		assert_eq!(router.route("path"), None);
+	}
+
+	#[test]
+	fn one_universal_wildcard_route() {
+		let routes = [("*", test_1)];
+
+		let router = Router::from_vec(routes);
+
+		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/to/same/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/to/the/same/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/to"), Some(~"test 1"));
+		assert_eq!(router.route("path"), Some(~"test 1"));
+		assert_eq!(router.route(""), Some(~"test 1"));
+	}
+
+	#[test]
+	fn several_wildcards_routes() {
+		let routes = [
+			("path/to/*", test_1),
+			("path/*/test/no2", test_2),
+			("path/to/*/*/*", test_3)
+		];
+
+		let router = Router::from_vec(routes);
+
+		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
+		assert_eq!(router.route("path/for/test/no2"), Some(~"test 2"));
+		assert_eq!(router.route("path/to/test1/no/test3"), Some(~"test 3"));
+		assert_eq!(router.route("path/to/test1/no/test3/again"), Some(~"test 3"));
+		assert_eq!(router.route("path/to"), None);
+	}
+
 	
 	#[bench]
 	fn search_speed(b: &mut BenchHarness) {
@@ -262,7 +366,9 @@ mod test {
 			("other/path/to/test1/no/test3", test_1),
 			("path/to/test1", test_1),
 			("path/:a/test/no2", test_1),
-			("path/to/:b/:c/:a", test_1)
+			("path/to/:b/:c/:a", test_1),
+			("path/to/*", test_1),
+			("path/to/*/other", test_1)
 		];
 
 		let paths = [
@@ -278,6 +384,37 @@ mod test {
 			"path/to/test1/no",
 			"path/to",
 			"path/to/test1/nothing/at/all"
+		];
+
+		let router = Router::from_vec(routes);
+		let mut counter = 0;
+
+		b.iter(|| {
+			router.route(paths[counter]);
+			counter = (counter + 1) % paths.len()
+		});
+	}
+
+	
+	#[bench]
+	fn wildcard_speed(b: &mut BenchHarness) {
+		let routes = [
+			("*/to/*/*/a", test_1)
+		];
+
+		let paths = [
+			"path/to/a",
+			"path/to/test/a",
+			"path/to/test1/no/a",
+			"path/to/other/a",
+			"path/to/test/no2/a",
+			"other/path/to/test1/no/a",
+			"path/a/a",
+			"path/a/test/a",
+			"path/to/b/c/a",
+			"path/to/test1/a",
+			"path/a",
+			"path/to/test1/nothing/at/all/and/all/and/all/and/a"
 		];
 
 		let router = Router::from_vec(routes);
