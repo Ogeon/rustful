@@ -5,4 +5,4 @@ rustful
 
 A RESTful web framework for Rust.
 
-[Documentation can be foun here.](http://www.rust-ci.org/Ogeon/rustful/doc/rustful/)
+[Documentation can be found here.](http://www.rust-ci.org/Ogeon/rustful/doc/rustful/)
