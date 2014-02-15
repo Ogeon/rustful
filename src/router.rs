@@ -6,12 +6,14 @@
 //!# fn about_us(_: ~HashMap<~str, &str>) -> ~str {~""}
 //!# fn show_user(_: ~HashMap<~str, &str>) -> ~str {~""}
 //!# fn show_product(_: ~HashMap<~str, &str>) -> ~str {~""}
+//!# fn show_error(_: ~HashMap<~str, &str>) -> ~str {~""}
 //!# fn show_welcome(_: ~HashMap<~str, &str>) -> ~str {~""}
 //!let routes = [
-//!	("about", about_us),
-//!	("user/:user", show_user),
-//!	("product/:name", show_product),
-//!	("*", show_welcome)
+//!	("/about", about_us),
+//!	("/user/:user", show_user),
+//!	("/product/:name", show_product),
+//!	("/*", show_error),
+//!	("/", show_welcome)
 //!];
 //!
 //!let router = Router::from_vec(routes);
@@ -81,7 +83,7 @@ impl Router {
 
 	///Inserts a handler into the `Router` at a given path.
 	pub fn insert_handler(&mut self, path: &str, handler: HandlerFn) {
-		self.insert_handler_vec(path.split('/').collect::<~[&str]>(), ~[], handler);
+		self.insert_handler_vec(Router::path_to_vec(path.trim()), ~[], handler);
 	}
 
 	//Same as `insert_handler`, but internal
@@ -132,7 +134,7 @@ impl Router {
 
 	///Executes a matching handler function and returns the result.
 	pub fn route(&self, path: &str) -> Option<~str> {
-		self.find(path.split('/').collect::<~[&str]>(), &[])
+		self.find(Router::path_to_vec(path.trim()), &[])
 	}
 
 	//Tries to find a matching handler and run it
@@ -210,6 +212,23 @@ impl Router {
 			None => None
 		}
 	}
+
+	//Converts a path to a suitable array of path segments
+	fn path_to_vec<'a>(path: &'a str) -> ~[&'a str] {
+		if path.len() == 0 {
+			~[]
+		} else if path.len() == 1 {
+			if path == "/" {
+				~[]
+			} else {
+				~[path]
+			}
+		} else {
+			let start = if path.char_at(0) == '/' { 1 } else { 0 };
+			let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
+			path.slice(start, path.len() - end).split('/').collect::<~[&str]>()
+		}
+	}
 }
 
 
@@ -256,14 +275,14 @@ mod test {
 	#[test]
 	fn several_static_routes() {
 		let routes = [
-			("path/to/test1", test_1),
+			("", test_1),
 			("path/to/test/no2", test_2),
 			("path/to/test1/no/test3", test_3)
 		];
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
+		assert_eq!(router.route(""), Some(~"test 1"));
 		assert_eq!(router.route("path/to/test/no2"), Some(~"test 2"));
 		assert_eq!(router.route("path/to/test1/no/test3"), Some(~"test 3"));
 		assert_eq!(router.route("path/to/test1/no"), None);
@@ -334,7 +353,7 @@ mod test {
 		assert_eq!(router.route("path/to/the/same/test1"), Some(~"test 1"));
 		assert_eq!(router.route("path/to"), Some(~"test 1"));
 		assert_eq!(router.route("path"), Some(~"test 1"));
-		assert_eq!(router.route(""), Some(~"test 1"));
+		assert_eq!(router.route(""), None);
 	}
 
 	#[test]
@@ -352,6 +371,24 @@ mod test {
 		assert_eq!(router.route("path/to/test1/no/test3"), Some(~"test 3"));
 		assert_eq!(router.route("path/to/test1/no/test3/again"), Some(~"test 3"));
 		assert_eq!(router.route("path/to"), None);
+	}
+
+	#[test]
+	fn route_formats() {
+		let routes = [
+			("/", test_1),
+			("/path/to/test/no2", test_2),
+			("path/to/test3/", test_3),
+			("/path/to/test3/again/", test_3)
+		];
+
+		let router = Router::from_vec(routes);
+
+		assert_eq!(router.route(""), Some(~"test 1"));
+		assert_eq!(router.route("path/to/test/no2/"), Some(~"test 2"));
+		assert_eq!(router.route("path/to/test3"), Some(~"test 3"));
+		assert_eq!(router.route("/path/to/test3/again"), Some(~"test 3"));
+		assert_eq!(router.route("//path/to/test3"), None);
 	}
 
 	
