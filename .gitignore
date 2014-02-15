@@ -1,4 +1,5 @@
 *.so
 *.rlib
 doc
+examples/*/main
 rustful-test
