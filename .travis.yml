@@ -1,0 +1,11 @@
+before_install:
+  - yes | sudo add-apt-repository ppa:hansjorg/rust
+  - sudo apt-get update
+install:
+  - sudo apt-get install rust-nightly
+  - git clone --recursive https://github.com/Ogeon/rustful.git
+  - cd rustful
+script:
+  - make
+  - make test
+  - make doc
