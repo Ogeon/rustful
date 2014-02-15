@@ -6,8 +6,6 @@ before_install:
   - sudo apt-get update
 install:
   - sudo apt-get install rust-nightly
-  - git clone --recursive https://github.com/Ogeon/rustful.git
-  - cd rustful
   - make deps
 script:
   - make
