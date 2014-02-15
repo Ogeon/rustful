@@ -50,6 +50,7 @@ pub type HandlerFn = fn(~HashMap<~str, &str>) -> ~str;
 ///"a/b/c/d" -> match
 ///"a/b" -> no match
 ///```
+#[deriving(Clone)]
 pub struct Router {
 	priv handler: Option<HandlerFn>,
 	priv static_routes: HashMap<~str, ~Router>,

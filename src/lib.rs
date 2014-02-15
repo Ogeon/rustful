@@ -2,10 +2,14 @@
 
 #[comment = "RESTful web framework"];
 #[license = "MIT"];
-#[crate_type = "dylib"];
 #[crate_type = "rlib"];
 
-#[cfg(test)]
 extern mod extra;
 
+extern mod http;
+
+pub use router::Router;
+pub use server::Server;
+
 pub mod router;
+pub mod server;

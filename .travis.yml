@@ -8,9 +8,11 @@ install:
   - sudo apt-get install rust-nightly
   - git clone --recursive https://github.com/Ogeon/rustful.git
   - cd rustful
+  - make deps
 script:
   - make
   - make test
   - make docs
+  - make examples
 after_script:
   - curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
