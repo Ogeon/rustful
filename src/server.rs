@@ -39,7 +39,7 @@ impl HTTP for Server {
 	fn get_config(&self) -> Config {
 		Config {
 			bind_address: SocketAddr {
-				ip: Ipv4Addr(127, 0, 0, 1),
+				ip: Ipv4Addr(0, 0, 0, 0),
 				port: self.port
 			}
 		}
