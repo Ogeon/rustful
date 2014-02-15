@@ -6,3 +6,6 @@ all:
 test:
 	rustc --opt-level=3 --test src/lib.rs -o rustful-test
 	./rustful-test --test --bench
+
+docs:
+	rustdoc src/lib.rs

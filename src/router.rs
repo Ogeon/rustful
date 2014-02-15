@@ -1,16 +1,42 @@
+//!`Router` takes care of routing incoming requests to handlers.
+//!
+//!```rust
+//!use rustful::router::Router;
+//!# use std::hashmap::HashMap;
+//!
+//!# fn about_us(_: ~HashMap<~str, &str>) -> ~str {~""}
+//!# fn show_user(_: ~HashMap<~str, &str>) -> ~str {~""}
+//!# fn show_product(_: ~HashMap<~str, &str>) -> ~str {~""}
+//!let routes = [
+//!	("about", about_us),
+//!	("user/:user", show_user),
+//!	("product/:name", show_product)
+//!];
+//!
+//!let router = Router::from_vec(routes);
+//!```
 use std::hashmap::HashMap;
 
-type HandlerFn = fn(~HashMap<~str, &str>) -> ~str;
 
+///A handler function for routing.
+pub type HandlerFn = fn(~HashMap<~str, &str>) -> ~str;
+
+
+///Takes care of routing requests to handlers.
+///
+///Paths can be static (`"path/to/handler"`) or variable (`"users/:group/:user"`).
+///Variables (starting with `:`) will match whatever word the path contains at
+///that point and it will be sent as a value to the handler function.
 pub struct Router {
-	handler: Option<HandlerFn>,
-	static_routes: HashMap<~str, ~Router>,
-	variable_route: Option<~Router>,
-	variable_names: ~[~str],
-	wildcard_route: Option<~Router>
+	priv handler: Option<HandlerFn>,
+	priv static_routes: HashMap<~str, ~Router>,
+	priv variable_route: Option<~Router>,
+	priv variable_names: ~[~str],
+	priv wildcard_route: Option<~Router>
 }
 
 impl Router {
+	///Creates an empty `Router`.
 	pub fn new() -> Router {
 		Router {
 			handler: None,
@@ -20,6 +46,8 @@ impl Router {
 			wildcard_route: None
 		}
 	}
+
+	///Generates a `Router` tree from a set of handlers and paths.
 	pub fn from_vec(routes: &[(&str, HandlerFn)]) -> Router {
 		let mut root = Router::new();
 
@@ -30,20 +58,12 @@ impl Router {
 		root
 	}
 
-	pub fn handler(handler: HandlerFn) -> Router {
-		Router {
-			handler: Some(handler),
-			static_routes: HashMap::new(),
-			variable_route: None,
-			variable_names: ~[],
-			wildcard_route: None
-		}
-	}
-
+	///Inserts a handler into the `Router` at a given path.
 	pub fn insert_handler(&mut self, path: &str, handler: HandlerFn) {
 		self.insert_handler_vec(path.split('/').collect::<~[&str]>(), ~[], handler);
 	}
 
+	//Same as `insert_handler`, but internal
 	fn insert_handler_vec(&mut self, path: &[&str], variable_names: ~[~str], handler: HandlerFn) {
 		let mut var_names = variable_names;
 
@@ -70,6 +90,7 @@ impl Router {
 		}
 	}
 
+	//Tries to find a router matching the key or inserts a new one if none exists
 	fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut ~Router {
 		if key.len() > 0 && key.char_at(0) == ':' {
 			if self.variable_route.is_none() {
@@ -83,11 +104,13 @@ impl Router {
 		}
 	}
 
+	///Executes a matching handler function and returns the result.
 	pub fn route(&self, path: &str) -> Option<~str> {
 		self.find(path.split('/').collect::<~[&str]>(), &[])
 	}
 
-	pub fn find(&self, path: &[&str], variables: &[&str]) -> Option<~str> {
+	//Tries to find a matching handler and run it
+	fn find(&self, path: &[&str], variables: &[&str]) -> Option<~str> {
 		match path {
 			[piece] => {
 				self.match_static(piece, variables, |next, vars| { next.exec(vars) })
@@ -101,7 +124,8 @@ impl Router {
 		}
 	}
 
-	pub fn exec(&self, variables: &[&str]) -> Option<~str> {
+	//Tries to run a handler with a given set of variable values
+	fn exec(&self, variables: &[&str]) -> Option<~str> {
 		match self.handler {
 			Some(handler) => {
 				let mut variable_map = ~HashMap::new();
@@ -114,6 +138,7 @@ impl Router {
 		}
 	}
 
+	//Checks for a static route. Runs `action` if found, runs `match_variable` otherwhise
 	fn match_static(&self, key: &str, variables: &[&str], action: |&~Router, &[&str]| -> Option<~str>) -> Option<~str> {
 		match self.static_routes.find(&key.to_owned()) {
 			Some(next) => {
@@ -128,6 +153,7 @@ impl Router {
 		}
 	}
 
+	//Checks for a variable route. Runs `action` if found, runs `match_wildcard` otherwhise
 	fn match_variable(&self, key: &str, variables: &[&str], action: |&~Router, &[&str]| -> Option<~str>) -> Option<~str> {
 		match self.variable_route {
 			Some(ref next) => {
