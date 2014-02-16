@@ -6,7 +6,7 @@ fn say_hello(request: &Request) -> ~str {
 		Some(name) => name.to_str(),
 		None => ~"stranger"
 	};
-	format!("Hello, {}!", person.to_str())
+	format!("Hello, {}!", person)
 }
 
 fn main() {
