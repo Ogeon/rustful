@@ -1,9 +1,8 @@
-extern mod rustful;
-use rustful::{Server, Router};
-use std::hashmap::HashMap;
+extern crate rustful;
+use rustful::{Server, Router, Request};
 
-fn say_hello(variables: ~HashMap<~str, &str>) -> ~str {
-	let person = match variables.find(&~"person") {
+fn say_hello(request: &Request) -> ~str {
+	let person = match request.variables.find(&~"person") {
 		Some(name) => name.to_str(),
 		None => ~"stranger"
 	};

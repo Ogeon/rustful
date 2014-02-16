@@ -9,6 +9,8 @@ extern crate http;
 
 pub use router::Router;
 pub use server::Server;
+pub use request::Request;
 
 pub mod router;
 pub mod server;
+pub mod request;

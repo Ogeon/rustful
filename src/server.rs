@@ -10,10 +10,13 @@
 //!```
 
 use router::Router;
-use http::server::{Request, ResponseWriter, Config};
-use http::server::request::{AbsoluteUri, AbsolutePath, Star};
+use request::Request;
+use http;
+use http::server::{ResponseWriter, Config};
+use http::server::request::{AbsoluteUri, AbsolutePath};
 use http::headers::content_type::MediaType;
 use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
+use std::hashmap::HashMap;
 use extra::time;
 
 use HTTP = http::server::Server;
@@ -45,12 +48,10 @@ impl HTTP for Server {
 		}
 	}
 
-	fn handle_request(&self, request: &Request, writer: &mut ResponseWriter) {
-		let response = match request.request_uri {
-			Star => self.router.route(&"*"),
-			AbsoluteUri(ref url) => self.router.route(url.path),
-			AbsolutePath(ref path) => self.router.route(path.to_owned()),
-			_ => None
+	fn handle_request(&self, request: &http::server::request::Request, writer: &mut ResponseWriter) {
+		let response = match build_request(request) {
+			Some(request) => self.router.route(~request),
+			None => None
 		};
 
 		let content = match response {
@@ -70,5 +71,24 @@ impl HTTP for Server {
 			Err(e) => println!("error when writing response: {}", e),
 			_ => {}
 		}
+	}
+}
+
+fn build_request(request: &http::server::request::Request) -> Option<Request> {
+	let path = match request.request_uri {
+		AbsoluteUri(ref url) => Some(&url.path),
+		AbsolutePath(ref path) => Some(path),
+		_ => None
+	};
+
+	match path {
+		Some(path) => {
+			Some(Request {
+				headers: request.headers.clone(),
+				path: path.to_owned(),
+				variables: HashMap::new()
+			})
+		}
+		None => None
 	}
 }

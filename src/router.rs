@@ -19,10 +19,11 @@
 //!let router = Router::from_vec(routes);
 //!```
 use std::hashmap::HashMap;
+use request::Request;
 
 
 ///A handler function for routing.
-pub type HandlerFn = fn(~HashMap<~str, &str>) -> ~str;
+pub type HandlerFn = fn(&Request) -> ~str;
 
 
 ///Takes care of routing requests to handlers.
@@ -134,34 +135,34 @@ impl Router {
 	}
 
 	///Executes a matching handler function and returns the result.
-	pub fn route(&self, path: &str) -> Option<~str> {
-		self.find(Router::path_to_vec(path.trim()), &[])
+	pub fn route(&self, request: ~Request) -> Option<~str> {
+		let mut request = request;
+		self.find(Router::path_to_vec(request.path.to_owned()), &[], request)
 	}
 
 	//Tries to find a matching handler and run it
-	fn find(&self, path: &[&str], variables: &[&str]) -> Option<~str> {
+	fn find(&self, path: &[&str], variables: &[&str], request: &mut Request) -> Option<~str> {
 		match path {
 			[piece] => {
-				self.match_static(piece, &[], variables, |next, _, vars| { next.exec(vars) })
+				self.match_static(piece, &[], variables, |next, _, vars| { next.exec(vars, request) })
 			},
 			[piece, ..rest] => {
-				self.match_static(piece, rest, variables, |next, path, vars| { next.find(path, vars) })
+				self.match_static(piece, rest, variables, |next, path, vars| { next.find(path, vars, request) })
 			},
 			[] => {
-				self.exec(variables)
+				self.exec(variables, request)
 			}
 		}
 	}
 
 	//Tries to run a handler with a given set of variable values
-	fn exec(&self, variables: &[&str]) -> Option<~str> {
+	fn exec(&self, variables: &[&str], request: &mut Request) -> Option<~str> {
 		match self.handler {
 			Some(handler) => {
-				let mut variable_map = ~HashMap::new();
 				for (key, &value) in self.variable_names.iter().zip(variables.iter()) {
-					variable_map.insert(key.to_owned(), value);
+					request.variables.insert(key.to_owned(), value.to_owned());
 				}
-				Some(handler(variable_map))
+				Some(handler(request))
 			},
 			None => None
 		}
@@ -239,23 +240,33 @@ mod test {
 	use extra::test::BenchHarness;
 	use std::hashmap::HashMap;
 	use super::Router;
+	use http::headers::request::HeaderCollection;
+	use request::Request;
 
-	fn test_1(_: ~HashMap<~str, &str>) -> ~str {
+	fn request(path: ~str) -> ~Request {
+		~Request {
+			headers: ~HeaderCollection::new(),
+			path: path,
+			variables: HashMap::new()
+		}
+	}
+
+	fn test_1(_: &Request) -> ~str {
 		~"test 1"
 	}
 
-	fn test_2(_: ~HashMap<~str, &str>) -> ~str {
+	fn test_2(_: &Request) -> ~str {
 		~"test 2"
 	}
 
-	fn test_3(_: ~HashMap<~str, &str>) -> ~str {
+	fn test_3(_: &Request) -> ~str {
 		~"test 3"
 	}
 
-	fn test_var(variables: ~HashMap<~str, &str>) -> ~str {
+	fn test_var(request: &Request) -> ~str {
 		let keys = ~[~"a", ~"b", ~"c"];
 		keys.iter().filter_map(|key| {
-			match variables.find(key) {
+			match request.variables.find(key) {
 				Some(value) => Some(value.to_owned()),
 				None => None
 			}
@@ -268,9 +279,9 @@ mod test {
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to"), None);
-		assert_eq!(router.route("path/to/test1/nothing"), None);
+		assert_eq!(router.route(request(~"path/to/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to")), None);
+		assert_eq!(router.route(request(~"path/to/test1/nothing")), None);
 	}
 
 	#[test]
@@ -283,10 +294,10 @@ mod test {
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route(""), Some(~"test 1"));
-		assert_eq!(router.route("path/to/test/no2"), Some(~"test 2"));
-		assert_eq!(router.route("path/to/test1/no/test3"), Some(~"test 3"));
-		assert_eq!(router.route("path/to/test1/no"), None);
+		assert_eq!(router.route(request(~"")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to/test/no2")), Some(~"test 2"));
+		assert_eq!(router.route(request(~"path/to/test1/no/test3")), Some(~"test 3"));
+		assert_eq!(router.route(request(~"path/to/test1/no")), None);
 	}
 
 	#[test]
@@ -295,9 +306,9 @@ mod test {
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route("path/to/test1"), Some(~"to"));
-		assert_eq!(router.route("path/to"), None);
-		assert_eq!(router.route("path/to/test1/nothing"), None);
+		assert_eq!(router.route(request(~"path/to/test1")), Some(~"to"));
+		assert_eq!(router.route(request(~"path/to")), None);
+		assert_eq!(router.route(request(~"path/to/test1/nothing")), None);
 	}
 
 	#[test]
@@ -310,10 +321,10 @@ mod test {
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route("path/to/test1"), Some(~""));
-		assert_eq!(router.route("path/to/test/no2"), Some(~"to"));
-		assert_eq!(router.route("path/to/test1/no/test3"), Some(~"test3, test1, no"));
-		assert_eq!(router.route("path/to/test1/no"), None);
+		assert_eq!(router.route(request(~"path/to/test1")), Some(~""));
+		assert_eq!(router.route(request(~"path/to/test/no2")), Some(~"to"));
+		assert_eq!(router.route(request(~"path/to/test1/no/test3")), Some(~"test3, test1, no"));
+		assert_eq!(router.route(request(~"path/to/test1/no")), None);
 	}
 
 	#[test]
@@ -322,11 +333,11 @@ mod test {
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to/same/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to/the/same/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to"), None);
-		assert_eq!(router.route("path"), None);
+		assert_eq!(router.route(request(~"path/to/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to/same/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to/the/same/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to")), None);
+		assert_eq!(router.route(request(~"path")), None);
 	}
 
 
@@ -336,11 +347,11 @@ mod test {
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to/same/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to/the/same/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to"), None);
-		assert_eq!(router.route("path"), None);
+		assert_eq!(router.route(request(~"path/to/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to/same/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to/the/same/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to")), None);
+		assert_eq!(router.route(request(~"path")), None);
 	}
 
 	#[test]
@@ -349,12 +360,12 @@ mod test {
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to/same/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to/the/same/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/to"), Some(~"test 1"));
-		assert_eq!(router.route("path"), Some(~"test 1"));
-		assert_eq!(router.route(""), None);
+		assert_eq!(router.route(request(~"path/to/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to/same/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to/the/same/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"")), None);
 	}
 
 	#[test]
@@ -367,11 +378,11 @@ mod test {
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route("path/to/test1"), Some(~"test 1"));
-		assert_eq!(router.route("path/for/test/no2"), Some(~"test 2"));
-		assert_eq!(router.route("path/to/test1/no/test3"), Some(~"test 3"));
-		assert_eq!(router.route("path/to/test1/no/test3/again"), Some(~"test 3"));
-		assert_eq!(router.route("path/to"), None);
+		assert_eq!(router.route(request(~"path/to/test1")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/for/test/no2")), Some(~"test 2"));
+		assert_eq!(router.route(request(~"path/to/test1/no/test3")), Some(~"test 3"));
+		assert_eq!(router.route(request(~"path/to/test1/no/test3/again")), Some(~"test 3"));
+		assert_eq!(router.route(request(~"path/to")), None);
 	}
 
 	#[test]
@@ -385,11 +396,11 @@ mod test {
 
 		let router = Router::from_vec(routes);
 
-		assert_eq!(router.route(""), Some(~"test 1"));
-		assert_eq!(router.route("path/to/test/no2/"), Some(~"test 2"));
-		assert_eq!(router.route("path/to/test3"), Some(~"test 3"));
-		assert_eq!(router.route("/path/to/test3/again"), Some(~"test 3"));
-		assert_eq!(router.route("//path/to/test3"), None);
+		assert_eq!(router.route(request(~"")), Some(~"test 1"));
+		assert_eq!(router.route(request(~"path/to/test/no2/")), Some(~"test 2"));
+		assert_eq!(router.route(request(~"path/to/test3")), Some(~"test 3"));
+		assert_eq!(router.route(request(~"/path/to/test3/again")), Some(~"test 3"));
+		assert_eq!(router.route(request(~"//path/to/test3")), None);
 	}
 
 	
@@ -428,7 +439,7 @@ mod test {
 		let mut counter = 0;
 
 		b.iter(|| {
-			router.route(paths[counter]);
+			router.route(request(paths[counter].to_owned()));
 			counter = (counter + 1) % paths.len()
 		});
 	}
@@ -459,7 +470,7 @@ mod test {
 		let mut counter = 0;
 
 		b.iter(|| {
-			router.route(paths[counter]);
+			router.route(request(paths[counter].to_owned()));
 			counter = (counter + 1) % paths.len()
 		});
 	}
