@@ -4,9 +4,8 @@
 #[license = "MIT"];
 #[crate_type = "rlib"];
 
-extern mod extra;
-
-extern mod http;
+extern crate extra;
+extern crate http;
 
 pub use router::Router;
 pub use server::Server;
