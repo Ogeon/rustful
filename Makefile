@@ -7,6 +7,7 @@ rustful:
 	rustc $(LIBS) --opt-level=3 src/lib.rs
 
 deps:
+	make -C lib/rust-http clean
 	make -C lib/rust-http http
 
 test:
