@@ -11,20 +11,29 @@
 
 use router::Router;
 use request::Request;
+use response::Response;
+use response::status::NotFound;
+
 use http;
 use http::server::{ResponseWriter, Config};
 use http::server::request::{AbsoluteUri, AbsolutePath};
 use http::headers::content_type::MediaType;
+
 use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
 use std::hashmap::HashMap;
+
 use extra::time;
 
 use HTTP = http::server::Server;
 
+
+///A handler function for routing.
+pub type HandlerFn = fn(&Request, &mut Response);
+
 #[deriving(Clone)]
 pub struct Server {
 	///A routing tree with response handlers
-	router: ~Router,
+	router: ~Router<HandlerFn>,
 
 	///The port where the server will listen for requests
 	port: Port
@@ -49,27 +58,35 @@ impl HTTP for Server {
 	}
 
 	fn handle_request(&self, request: &http::server::request::Request, writer: &mut ResponseWriter) {
-		let response = match build_request(request) {
-			Some(request) => self.router.route(~request),
-			None => None
-		};
-
-		let content = match response {
-			Some(text) => text,
-			None => ~"Error"
-		}.as_bytes().to_owned();
-
-		writer.headers.date = Some(time::now_utc());
-		writer.headers.content_length = Some(content.len());
-		writer.headers.content_type = Some(MediaType {
+		let mut response = Response::new(writer);
+		response.headers.date = Some(time::now_utc());
+		response.headers.content_type = Some(MediaType {
 			type_: ~"text",
 			subtype: ~"plain",
 			parameters: ~[(~"charset", ~"UTF-8")]
 		});
-		writer.headers.server = Some(~"rustful");
-		match writer.write(content) {
-			Err(e) => println!("error when writing response: {}", e),
-			_ => {}
+		response.headers.server = Some(~"rustful");
+
+		let found = match build_request(request) {
+			Some(mut request) => match self.router.find(request.path) {
+				Some((&handler, variables)) => {
+					request.variables = variables;
+					handler(&request, response);
+					true
+				},
+				None => false
+			},
+			None => false
+		};
+		
+		if !found {
+			let content = bytes!("File not found");
+			response.headers.content_length = Some(content.len());
+			response.status = NotFound;
+			match response.write(content.to_owned()) {
+				Err(e) => println!("error while writing 404: {}", e),
+				_ => {}
+			}
 		}
 	}
 }
@@ -86,7 +103,7 @@ fn build_request(request: &http::server::request::Request) -> Option<Request> {
 			Some(Request {
 				headers: request.headers.clone(),
 				path: path.to_owned(),
-				variables: HashMap::new()
+				variables: ~HashMap::new()
 			})
 		}
 		None => None

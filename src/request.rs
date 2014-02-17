@@ -12,5 +12,5 @@ pub struct Request {
 	path: ~str,
 
 	///Route variables
-	variables: HashMap<~str, ~str>
+	variables: ~HashMap<~str, ~str>
 }

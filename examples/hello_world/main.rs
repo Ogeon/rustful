@@ -1,12 +1,16 @@
 extern crate rustful;
-use rustful::{Server, Router, Request};
+use rustful::{Server, Router, Request, Response};
 
-fn say_hello(request: &Request) -> ~str {
+fn say_hello(request: &Request, response: &mut Response) {
 	let person = match request.variables.find(&~"person") {
 		Some(name) => name.to_str(),
 		None => ~"stranger"
 	};
-	format!("Hello, {}!", person)
+
+	match response.write(format!("Hello, {}!", person).as_bytes()) {
+		Err(e) => println!("error while writing hello: {}", e),
+		_ => {}
+	}
 }
 
 fn main() {
