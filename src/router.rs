@@ -3,11 +3,11 @@
 //!```rust
 //!# use rustful::router::Router;
 //!# use http::method::Get;
-//!# fn about_us() -> {}
-//!# fn show_user() -> {}
-//!# fn show_product() -> {}
-//!# fn show_error() -> {}
-//!# fn show_welcome() -> {}
+//!# fn about_us() {}
+//!# fn show_user() {}
+//!# fn show_product() {}
+//!# fn show_error() {}
+//!# fn show_welcome() {}
 //!let routes = [
 //!	(Get, "/about", about_us),
 //!	(Get, "/user/:user", show_user),
@@ -35,7 +35,7 @@ pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 ///Wildcards (a single `*`) will consume the segments until the rest of the
 ///path gives a match.
 ///
-///```
+///```ignore
 ///pattern = "a/*/b"
 ///"a/c/b" -> match
 ///"a/c/d/b" -> match
@@ -43,7 +43,7 @@ pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 ///"a/c/b/d" -> no match
 ///```
 ///
-///```
+///```ignore
 ///pattern = "a/b/*"
 ///"a/b/c" -> match
 ///"a/b/c/d" -> match

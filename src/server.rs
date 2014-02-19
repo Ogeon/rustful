@@ -1,8 +1,11 @@
 //! `Server` listens for HTTP requests.
 //!
 //!```rust
+//!# use rustful::server::Server;
+//!# use rustful::router::Router;
+//!# let routes = [];
 //!let server = Server {
-//!	router: ~Router::from_vec(routes),
+//!	router: ~Router::from_routes(routes),
 //!	port: 8080
 //!};
 //!
