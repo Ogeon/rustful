@@ -1,35 +1,36 @@
-//!`Router` takes care of routing incoming requests to handlers.
+//!`Router` stores items, such as request handlers, using an HTTP method and a path as keys.
 //!
 //!```rust
 //!# use rustful::router::Router;
-//!# use std::hashmap::HashMap;
-//!# fn about_us(_: ~HashMap<~str, &str>) -> ~str {~""}
-//!# fn show_user(_: ~HashMap<~str, &str>) -> ~str {~""}
-//!# fn show_product(_: ~HashMap<~str, &str>) -> ~str {~""}
-//!# fn show_error(_: ~HashMap<~str, &str>) -> ~str {~""}
-//!# fn show_welcome(_: ~HashMap<~str, &str>) -> ~str {~""}
+//!# use http::method::Get;
+//!# fn about_us() -> {}
+//!# fn show_user() -> {}
+//!# fn show_product() -> {}
+//!# fn show_error() -> {}
+//!# fn show_welcome() -> {}
 //!let routes = [
-//!	("/about", about_us),
-//!	("/user/:user", show_user),
-//!	("/product/:name", show_product),
-//!	("/*", show_error),
-//!	("/", show_welcome)
+//!	(Get, "/about", about_us),
+//!	(Get, "/user/:user", show_user),
+//!	(Get, "/product/:name", show_product),
+//!	(Get, "/*", show_error),
+//!	(Get, "/", show_welcome)
 //!];
 //!
 //!let router = Router::from_vec(routes);
 //!```
 use std::hashmap::HashMap;
+use http::method::Method;
 
 pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 
 
-///Takes care of routing requests to handlers.
+///Stores items, such as request handlers, using an HTTP method and a path as keys.
 ///
-///Paths can be static (`"path/to/handler"`) or variable (`"users/:group/:user"`)
-///and contain wildcards (`"path/*/handler/*"`).
+///Paths can be static (`"path/to/item"`) or variable (`"users/:group/:user"`)
+///and contain wildcards (`"path/*/item/*"`).
 ///
 ///Variables (starting with `:`) will match whatever word the request path contains at
-///that point and it will be sent as a value to the handler function.
+///that point and it will be sent as a value to the item.
 ///
 ///Wildcards (a single `*`) will consume the segments until the rest of the
 ///path gives a match.
@@ -50,7 +51,7 @@ pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 ///```
 #[deriving(Clone)]
 pub struct Router<T> {
-	priv handler: Option<T>,
+	priv items: HashMap<~str, T>,
 	priv static_routes: HashMap<~str, ~Router<T>>,
 	priv variable_route: Option<~Router<T>>,
 	priv variable_names: ~[~str],
@@ -61,7 +62,7 @@ impl<T: Clone> Router<T> {
 	///Creates an empty `Router`.
 	pub fn new() -> Router<T> {
 		Router {
-			handler: None,
+			items: HashMap::new(),
 			static_routes: HashMap::new(),
 			variable_route: None,
 			variable_names: ~[],
@@ -69,24 +70,24 @@ impl<T: Clone> Router<T> {
 		}
 	}
 
-	///Generates a `Router` tree from a set of handlers and paths.
-	pub fn from_vec(routes: &[(&str, T)]) -> Router<T> {
+	///Generates a `Router` tree from a set of items and paths.
+	pub fn from_vec(routes: &[(Method, &str, T)]) -> Router<T> {
 		let mut root = Router::new();
 
-		for &(path, ref handler) in routes.iter() {
-			root.insert_handler(path, handler.clone());
+		for &(ref method, path, ref item) in routes.iter() {
+			root.insert_item(method.clone(), path, item.clone());
 		}
 
 		root
 	}
 
-	///Inserts a handler into the `Router` at a given path.
-	pub fn insert_handler(&mut self, path: &str, handler: T) {
-		self.insert_handler_vec(Router::<T>::path_to_vec(path.trim()), ~[], handler);
+	///Inserts an item into the `Router` at a given path.
+	pub fn insert_item(&mut self, method: Method, path: &str, item: T) {
+		self.insert_item_vec(method, Router::<T>::path_to_vec(path.trim()), ~[], item);
 	}
 
-	//Same as `insert_handler`, but internal
-	fn insert_handler_vec(&mut self, path: &[&str], variable_names: ~[~str], handler: T) {
+	//Same as `insert_item`, but internal
+	fn insert_item_vec(&mut self, method: Method, path: &[&str], variable_names: ~[~str], item: T) {
 		let mut var_names = variable_names;
 
 		match path {
@@ -96,18 +97,18 @@ impl<T: Clone> Router<T> {
 					var_names.push(piece.slice(1, piece.len()).to_owned());
 				}
 				next.variable_names = var_names;
-				next.handler = Some(handler);
+				next.items.insert(method.to_str(), item);
 			},
 			[piece, ..rest] => {
 				let next = self.find_or_insert_router(piece);
 				if piece.len() > 0 && piece.char_at(0) == ':' {
 					var_names.push(piece.slice(1, piece.len()).to_owned());
 				}
-				next.insert_handler_vec(rest, var_names, handler);
+				next.insert_item_vec(method, rest, var_names, item);
 			},
 			[] => {
 				self.variable_names = var_names;
-				self.handler = Some(handler);
+				self.items.insert(method.to_str(), item);
 			}
 		}
 	}
@@ -132,34 +133,34 @@ impl<T: Clone> Router<T> {
 	}
 
 	///Finds and returns the matching item and variables
-	pub fn find<'a>(&'a self, path: &str) -> RouterResult<'a, T> {
-		self.search::<'a>(Router::<T>::path_to_vec(path.to_owned()), &[])
+	pub fn find<'a>(&'a self, method: Method, path: &str) -> RouterResult<'a, T> {
+		self.search::<'a>(method, Router::<T>::path_to_vec(path.to_owned()), &[])
 	}
 
-	//Tries to find a matching handler and run it
-	fn search<'a>(&'a self, path: &[&str], variables: &[&str]) -> RouterResult<'a, T> {
+	//Tries to find a matching item and run it
+	fn search<'a>(&'a self, method: Method, path: &[&str], variables: &[&str]) -> RouterResult<'a, T> {
 		match path {
 			[piece] => {
-				self.match_static(piece, &[], variables, |next, _, vars| { next.exec::<'a>(vars) })
+				self.match_static(piece, &[], variables, |next, _, vars| { next.get::<'a>(method.clone(), vars) })
 			},
 			[piece, ..rest] => {
-				self.match_static(piece, rest, variables, |next, path, vars| { next.search::<'a>(path, vars) })
+				self.match_static(piece, rest, variables, |next, path, vars| { next.search::<'a>(method.clone(), path, vars) })
 			},
 			[] => {
-				self.exec::<'a>(variables)
+				self.get::<'a>(method, variables)
 			}
 		}
 	}
 
-	//Tries to run a handler with a given set of variable values
-	fn exec<'a>(&'a self, variables: &[&str]) -> RouterResult<'a, T> {
-		match self.handler {
-			Some(ref handler) => {
+	//Returns an item and a hashmap of variable values
+	fn get<'a>(&'a self, method: Method, variables: &[&str]) -> RouterResult<'a, T> {
+		match self.items.find(&method.to_str()) {
+			Some(item) => {
 				let mut var_map = ~HashMap::new();
 				for (key, &value) in self.variable_names.iter().zip(variables.iter()) {
 					var_map.insert(key.to_owned(), value.to_owned());
 				}
-				Some((handler, var_map))
+				Some((item, var_map))
 			},
 			None => None
 		}
@@ -237,6 +238,7 @@ mod test {
 	use extra::test::BenchHarness;
 	use std::hashmap::HashMap;
 	use super::Router;
+	use http::method::{Get, Post, Delete, Put, Head};
 
 	fn check_variable(result: Option<(& &'static str, ~HashMap<~str, ~str>)>, expected: Option<&str>) {
 		assert!(match result {
@@ -270,149 +272,168 @@ mod test {
 
 	#[test]
 	fn one_static_route() {
-		let routes = [("path/to/test1", "test 1")];
+		let routes = [(Get, "path/to/test1", "test 1")];
 
 		let router = Router::from_vec(routes);
 
-		check(router.find("path/to/test1"), Some("test 1"));
-		check(router.find("path/to"), None);
-		check(router.find("path/to/test1/nothing"), None);
+		check(router.find(Get, "path/to/test1"), Some("test 1"));
+		check(router.find(Get, "path/to"), None);
+		check(router.find(Get, "path/to/test1/nothing"), None);
 	}
 
 	#[test]
 	fn several_static_routes() {
 		let routes = [
-			("", "test 1"),
-			("path/to/test/no2", "test 2"),
-			("path/to/test1/no/test3", "test 3")
+			(Get, "", "test 1"),
+			(Get, "path/to/test/no2", "test 2"),
+			(Get, "path/to/test1/no/test3", "test 3")
 		];
 
 		let router = Router::from_vec(routes);
 
-		check(router.find(""), Some("test 1"));
-		check(router.find("path/to/test/no2"), Some("test 2"));
-		check(router.find("path/to/test1/no/test3"), Some("test 3"));
-		check(router.find("path/to/test1/no"), None);
+		check(router.find(Get, ""), Some("test 1"));
+		check(router.find(Get, "path/to/test/no2"), Some("test 2"));
+		check(router.find(Get, "path/to/test1/no/test3"), Some("test 3"));
+		check(router.find(Get, "path/to/test1/no"), None);
 	}
 
 	#[test]
 	fn one_variable_route() {
-		let routes = [("path/:a/test1", "test_var")];
+		let routes = [(Get, "path/:a/test1", "test_var")];
 
 		let router = Router::from_vec(routes);
 
-		check_variable(router.find("path/to/test1"), Some("to"));
-		check_variable(router.find("path/to"), None);
-		check_variable(router.find("path/to/test1/nothing"), None);
+		check_variable(router.find(Get, "path/to/test1"), Some("to"));
+		check_variable(router.find(Get, "path/to"), None);
+		check_variable(router.find(Get, "path/to/test1/nothing"), None);
 	}
 
 	#[test]
 	fn several_variable_routes() {
 		let routes = [
-			("path/to/test1", "test_var"),
-			("path/:a/test/no2", "test_var"),
-			("path/to/:b/:c/:a", "test_var")
+			(Get, "path/to/test1", "test_var"),
+			(Get, "path/:a/test/no2", "test_var"),
+			(Get, "path/to/:b/:c/:a", "test_var")
 		];
 
 		let router = Router::from_vec(routes);
 
-		check_variable(router.find("path/to/test1"), Some(""));
-		check_variable(router.find("path/to/test/no2"), Some("to"));
-		check_variable(router.find("path/to/test1/no/test3"), Some("test3, test1, no"));
-		check_variable(router.find("path/to/test1/no"), None);
+		check_variable(router.find(Get, "path/to/test1"), Some(""));
+		check_variable(router.find(Get, "path/to/test/no2"), Some("to"));
+		check_variable(router.find(Get, "path/to/test1/no/test3"), Some("test3, test1, no"));
+		check_variable(router.find(Get, "path/to/test1/no"), None);
 	}
 
 	#[test]
 	fn one_wildcard_end_route() {
-		let routes = [("path/to/*", "test 1")];
+		let routes = [(Get, "path/to/*", "test 1")];
 
 		let router = Router::from_vec(routes);
 
-		check(router.find("path/to/test1"), Some("test 1"));
-		check(router.find("path/to/same/test1"), Some("test 1"));
-		check(router.find("path/to/the/same/test1"), Some("test 1"));
-		check(router.find("path/to"), None);
-		check(router.find("path"), None);
+		check(router.find(Get, "path/to/test1"), Some("test 1"));
+		check(router.find(Get, "path/to/same/test1"), Some("test 1"));
+		check(router.find(Get, "path/to/the/same/test1"), Some("test 1"));
+		check(router.find(Get, "path/to"), None);
+		check(router.find(Get, "path"), None);
 	}
 
 
 	#[test]
 	fn one_wildcard_middle_route() {
-		let routes = [("path/*/test1", "test 1")];
+		let routes = [(Get, "path/*/test1", "test 1")];
 
 		let router = Router::from_vec(routes);
 
-		check(router.find("path/to/test1"), Some("test 1"));
-		check(router.find("path/to/same/test1"), Some("test 1"));
-		check(router.find("path/to/the/same/test1"), Some("test 1"));
-		check(router.find("path/to"), None);
-		check(router.find("path"), None);
+		check(router.find(Get, "path/to/test1"), Some("test 1"));
+		check(router.find(Get, "path/to/same/test1"), Some("test 1"));
+		check(router.find(Get, "path/to/the/same/test1"), Some("test 1"));
+		check(router.find(Get, "path/to"), None);
+		check(router.find(Get, "path"), None);
 	}
 
 	#[test]
 	fn one_universal_wildcard_route() {
-		let routes = [("*", "test 1")];
+		let routes = [(Get, "*", "test 1")];
 
 		let router = Router::from_vec(routes);
 
-		check(router.find("path/to/test1"), Some("test 1"));
-		check(router.find("path/to/same/test1"), Some("test 1"));
-		check(router.find("path/to/the/same/test1"), Some("test 1"));
-		check(router.find("path/to"), Some("test 1"));
-		check(router.find("path"), Some("test 1"));
-		check(router.find(""), None);
+		check(router.find(Get, "path/to/test1"), Some("test 1"));
+		check(router.find(Get, "path/to/same/test1"), Some("test 1"));
+		check(router.find(Get, "path/to/the/same/test1"), Some("test 1"));
+		check(router.find(Get, "path/to"), Some("test 1"));
+		check(router.find(Get, "path"), Some("test 1"));
+		check(router.find(Get, ""), None);
 	}
 
 	#[test]
 	fn several_wildcards_routes() {
 		let routes = [
-			("path/to/*", "test 1"),
-			("path/*/test/no2", "test 2"),
-			("path/to/*/*/*", "test 3")
+			(Get, "path/to/*", "test 1"),
+			(Get, "path/*/test/no2", "test 2"),
+			(Get, "path/to/*/*/*", "test 3")
 		];
 
 		let router = Router::from_vec(routes);
 
-		check(router.find("path/to/test1"), Some("test 1"));
-		check(router.find("path/for/test/no2"), Some("test 2"));
-		check(router.find("path/to/test1/no/test3"), Some("test 3"));
-		check(router.find("path/to/test1/no/test3/again"), Some("test 3"));
-		check(router.find("path/to"), None);
+		check(router.find(Get, "path/to/test1"), Some("test 1"));
+		check(router.find(Get, "path/for/test/no2"), Some("test 2"));
+		check(router.find(Get, "path/to/test1/no/test3"), Some("test 3"));
+		check(router.find(Get, "path/to/test1/no/test3/again"), Some("test 3"));
+		check(router.find(Get, "path/to"), None);
 	}
 
 	#[test]
 	fn route_formats() {
 		let routes = [
-			("/", "test 1"),
-			("/path/to/test/no2", "test 2"),
-			("path/to/test3/", "test 3"),
-			("/path/to/test3/again/", "test 3")
+			(Get, "/", "test 1"),
+			(Get, "/path/to/test/no2", "test 2"),
+			(Get, "path/to/test3/", "test 3"),
+			(Get, "/path/to/test3/again/", "test 3")
 		];
 
 		let router = Router::from_vec(routes);
 
-		check(router.find(""), Some("test 1"));
-		check(router.find("path/to/test/no2/"), Some("test 2"));
-		check(router.find("path/to/test3"), Some("test 3"));
-		check(router.find("/path/to/test3/again"), Some("test 3"));
-		check(router.find("//path/to/test3"), None);
+		check(router.find(Get, ""), Some("test 1"));
+		check(router.find(Get, "path/to/test/no2/"), Some("test 2"));
+		check(router.find(Get, "path/to/test3"), Some("test 3"));
+		check(router.find(Get, "/path/to/test3/again"), Some("test 3"));
+		check(router.find(Get, "//path/to/test3"), None);
+	}
+
+	#[test]
+	fn http_methods() {
+		let routes = [
+			(Get, "/", "get"),
+			(Post, "/", "post"),
+			(Delete, "/", "delete"),
+			(Put, "/", "put")
+		];
+
+		let router = Router::from_vec(routes);
+
+
+		check(router.find(Get, "/"), Some("get"));
+		check(router.find(Post, "/"), Some("post"));
+		check(router.find(Delete, "/"), Some("delete"));
+		check(router.find(Put, "/"), Some("put"));
+		check(router.find(Head, "/"), None);
 	}
 
 	
 	#[bench]
 	fn search_speed(b: &mut BenchHarness) {
 		let routes = [
-			("path/to/test1", "test 1"),
-			("path/to/test/no2", "test 1"),
-			("path/to/test1/no/test3", "test 1"),
-			("path/to/other/test1", "test 1"),
-			("path/to/test/no2/again", "test 1"),
-			("other/path/to/test1/no/test3", "test 1"),
-			("path/to/test1", "test 1"),
-			("path/:a/test/no2", "test 1"),
-			("path/to/:b/:c/:a", "test 1"),
-			("path/to/*", "test 1"),
-			("path/to/*/other", "test 1")
+			(Get, "path/to/test1", "test 1"),
+			(Get, "path/to/test/no2", "test 1"),
+			(Get, "path/to/test1/no/test3", "test 1"),
+			(Get, "path/to/other/test1", "test 1"),
+			(Get, "path/to/test/no2/again", "test 1"),
+			(Get, "other/path/to/test1/no/test3", "test 1"),
+			(Get, "path/to/test1", "test 1"),
+			(Get, "path/:a/test/no2", "test 1"),
+			(Get, "path/to/:b/:c/:a", "test 1"),
+			(Get, "path/to/*", "test 1"),
+			(Get, "path/to/*/other", "test 1")
 		];
 
 		let paths = [
@@ -434,7 +455,7 @@ mod test {
 		let mut counter = 0;
 
 		b.iter(|| {
-			router.find(paths[counter].to_owned());
+			router.find(Get, paths[counter].to_owned());
 			counter = (counter + 1) % paths.len()
 		});
 	}
@@ -443,7 +464,7 @@ mod test {
 	#[bench]
 	fn wildcard_speed(b: &mut BenchHarness) {
 		let routes = [
-			("*/to/*/*/a", "test 1")
+			(Get, "*/to/*/*/a", "test 1")
 		];
 
 		let paths = [
@@ -465,7 +486,7 @@ mod test {
 		let mut counter = 0;
 
 		b.iter(|| {
-			router.find(paths[counter].to_owned());
+			router.find(Get, paths[counter].to_owned());
 			counter = (counter + 1) % paths.len()
 		});
 	}

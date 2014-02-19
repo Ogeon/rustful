@@ -68,7 +68,7 @@ impl HTTP for Server {
 		response.headers.server = Some(~"rustful");
 
 		let found = match build_request(request) {
-			Some(mut request) => match self.router.find(request.path) {
+			Some(mut request) => match self.router.find(request.method.clone(), request.path) {
 				Some((&handler, variables)) => {
 					request.variables = variables;
 					handler(&request, response);
@@ -102,6 +102,7 @@ fn build_request(request: &http::server::request::Request) -> Option<Request> {
 		Some(path) => {
 			Some(Request {
 				headers: request.headers.clone(),
+				method: request.method.clone(),
 				path: path.to_owned(),
 				variables: ~HashMap::new()
 			})
