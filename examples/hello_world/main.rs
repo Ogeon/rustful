@@ -22,7 +22,7 @@ fn main() {
 	];
 
 	let server = Server {
-		router: ~Router::from_vec(routes),
+		router: ~Router::from_routes(routes),
 		port: 8080
 	};
 
