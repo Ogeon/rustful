@@ -2,6 +2,7 @@
 
 #[comment = "RESTful web framework"];
 #[license = "MIT"];
+#[crate_type = "lib"];
 #[crate_type = "rlib"];
 
 extern crate extra;
