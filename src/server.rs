@@ -21,6 +21,7 @@ use http;
 use http::server::{ResponseWriter, Config};
 use http::server::request::{AbsoluteUri, AbsolutePath};
 use http::headers::content_type::MediaType;
+use http::method::Post;
 
 use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
 use std::hashmap::HashMap;
@@ -96,20 +97,129 @@ impl HTTP for Server {
 
 fn build_request(request: &http::server::request::Request) -> Option<Request> {
 	let path = match request.request_uri {
-		AbsoluteUri(ref url) => Some(&url.path),
-		AbsolutePath(ref path) => Some(path),
+		AbsoluteUri(ref url) => Some((url.path.to_str(), ~"", url.fragment.to_str())),
+		AbsolutePath(ref path) => Some(parse_path(path.to_str())),
 		_ => None
 	};
 
 	match path {
-		Some(path) => {
+		Some((path, query, fragment)) => {
+			let post = if request.method == Post {
+				parse_parameters(request.body)
+			} else {
+				~HashMap::new()
+			};
+
 			Some(Request {
 				headers: request.headers.clone(),
 				method: request.method.clone(),
 				path: path.to_owned(),
-				variables: ~HashMap::new()
+				variables: ~HashMap::new(),
+				post: post,
+				get: parse_parameters(query),
+				fragment: fragment,
+				body: request.body.to_str()
 			})
 		}
 		None => None
 	}
+}
+
+fn parse_parameters(source: &str) -> ~HashMap<~str, ~str> {
+	let mut parameters = ~HashMap::new();
+	for parameter in source.split('&') {
+		let parts = parameter.split('=').collect::<~[&str]>();
+		match parts {
+			[name, value] => {
+				parameters.insert(name.to_owned(), value.to_owned());
+			},
+			[name] => {
+				parameters.insert(name.to_owned(), ~"");
+			},
+			[name, value, ..] => {
+				parameters.insert(name.to_owned(), value.to_owned());
+			},
+			[] => {}
+		}
+	}
+
+	parameters
+}
+
+fn parse_path(path: &str) -> (~str, ~str, ~str) {
+	match path.find('?') {
+		Some(index) => {
+			let (query, fragment) = parse_fragment(path.slice(index+1, path.len()));
+			(path.slice(0, index).to_str(), query, fragment)
+		},
+		None => {
+			let (path, fragment) = parse_fragment(path);
+			(path, ~"", fragment)
+		}
+	}
+}
+
+fn parse_fragment(path: &str) -> (~str, ~str) {
+	match path.find('#') {
+		Some(index) => (path.slice(0, index).to_str(), path.slice(index+1, path.len()).to_str()),
+		None => (path.to_str(), ~"")
+	}
+}
+
+#[test]
+fn parsing_parameters() {
+	let parameters = parse_parameters("a=1&aa=2&ab=202");
+	let a = ~"1";
+	let aa = ~"2";
+	let ab = ~"202";
+	assert_eq!(parameters.find(&~"a"), Some(&a));
+	assert_eq!(parameters.find(&~"aa"), Some(&aa));
+	assert_eq!(parameters.find(&~"ab"), Some(&ab));
+}
+
+#[test]
+fn parsing_strange_parameters() {
+	let parameters = parse_parameters("a=1=2&=2&ab=");
+	let a = ~"1";
+	let aa = ~"2";
+	let ab = ~"";
+	assert_eq!(parameters.find(&~"a"), Some(&a));
+	assert_eq!(parameters.find(&~""), Some(&aa));
+	assert_eq!(parameters.find(&~"ab"), Some(&ab));
+}
+
+#[test]
+fn parse_path_parts() {
+	let (path, query, fragment) = parse_path("/path/to/something?whith=this&and=that#lol");
+	assert_eq!(path, ~"/path/to/something");
+	assert_eq!(query, ~"whith=this&and=that");
+	assert_eq!(fragment, ~"lol");
+}
+
+#[test]
+fn parse_strange_path() {
+	let (path, query, fragment) = parse_path("/path/to/something?whith=this&and=what?#");
+	assert_eq!(path, ~"/path/to/something");
+	assert_eq!(query, ~"whith=this&and=what?");
+	assert_eq!(fragment, ~"");
+}
+
+#[test]
+fn parse_missing_path_parts() {
+	let (path, query, fragment) = parse_path("/path/to/something?whith=this&and=that");
+	assert_eq!(path, ~"/path/to/something");
+	assert_eq!(query, ~"whith=this&and=that");
+	assert_eq!(fragment, ~"");
+
+
+	let (path, query, fragment) = parse_path("/path/to/something#lol");
+	assert_eq!(path, ~"/path/to/something");
+	assert_eq!(query, ~"");
+	assert_eq!(fragment, ~"lol");
+
+
+	let (path, query, fragment) = parse_path("?whith=this&and=that#lol");
+	assert_eq!(path, ~"");
+	assert_eq!(query, ~"whith=this&and=that");
+	assert_eq!(fragment, ~"lol");
 }

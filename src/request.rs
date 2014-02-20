@@ -16,5 +16,17 @@ pub struct Request {
 	path: ~str,
 
 	///Route variables
-	variables: ~HashMap<~str, ~str>
+	variables: ~HashMap<~str, ~str>,
+
+	///POST variables
+	post: ~HashMap<~str, ~str>,
+
+	///GET variables
+	get: ~HashMap<~str, ~str>,
+
+	///The fragment part of the URL (after #)
+	fragment: ~str,
+
+	///The raw body part of the request
+	body: ~str
 }
