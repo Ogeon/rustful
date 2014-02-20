@@ -20,3 +20,4 @@ docs:
 
 examples:
 	rustc $(LIBS) examples/hello_world/main.rs -o examples/hello_world/main
+	rustc $(LIBS) examples/post/main.rs -o examples/post/main
