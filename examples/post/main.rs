@@ -20,7 +20,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 		}
 	};
 
-	match response.write(format!("<!DOCTYPE html><html><head><title>Hello</title></head><body>{}</body></html>", content).as_bytes()) {
+	match response.write(format!("<!DOCTYPE html><html charset=\"UTF-8\"><head><title>Hello</title></head><body>{}</body></html>", content).as_bytes()) {
 		Err(e) => println!("error while writing hello: {}", e),
 		_ => {}
 	}

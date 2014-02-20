@@ -25,6 +25,9 @@ use http::method::Post;
 
 use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
 use std::hashmap::HashMap;
+use std::str::from_utf8;
+use std::uint;
+use std::io::BufReader;
 
 use extra::time;
 
@@ -131,13 +134,13 @@ fn parse_parameters(source: &str) -> ~HashMap<~str, ~str> {
 		let parts = parameter.split('=').collect::<~[&str]>();
 		match parts {
 			[name, value] => {
-				parameters.insert(name.to_owned(), value.to_owned());
+				parameters.insert(url_decode(name), url_decode(value));
 			},
 			[name] => {
-				parameters.insert(name.to_owned(), ~"");
+				parameters.insert(url_decode(name), ~"");
 			},
 			[name, value, ..] => {
-				parameters.insert(name.to_owned(), value.to_owned());
+				parameters.insert(url_decode(name), url_decode(value));
 			},
 			[] => {}
 		}
@@ -163,6 +166,36 @@ fn parse_fragment(path: &str) -> (~str, ~str) {
 	match path.find('#') {
 		Some(index) => (path.slice(0, index).to_str(), path.slice(index+1, path.len()).to_str()),
 		None => (path.to_str(), ~"")
+	}
+}
+
+fn url_decode(string: &str) -> ~str {
+	let mut rdr = BufReader::new(string.as_bytes());
+	let mut out = ~[];
+
+	loop {
+		let mut buf = [0];
+		let ch = match rdr.read(buf) {
+			Err(..) => break,
+			Ok(..) => buf[0] as char
+		};
+		match ch {
+			'%' => {
+				let mut bytes = [0, 0];
+				match rdr.read(bytes) {
+					Ok(2) => {}
+					_ => fail!()
+				}
+				let ch = uint::parse_bytes(bytes, 16u).unwrap() as u8;
+				out.push(ch);
+			}
+			ch => out.push(ch as u8)
+		}
+	}
+
+	match from_utf8(out) {
+		Some(result) => result.to_str(),
+		None => string.to_str()
 	}
 }
 
