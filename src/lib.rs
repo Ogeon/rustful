@@ -5,6 +5,9 @@
 #[crate_type = "lib"];
 #[crate_type = "rlib"];
 
+#[cfg(test)]
+extern crate test;
+
 extern crate extra;
 extern crate http;
 

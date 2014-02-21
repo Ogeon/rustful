@@ -235,7 +235,7 @@ impl<T: Clone> Router<T> {
 
 #[cfg(test)]
 mod test {
-	use extra::test::BenchHarness;
+	use test::BenchHarness;
 	use std::hashmap::HashMap;
 	use super::Router;
 	use http::method::{Get, Post, Delete, Put, Head};
