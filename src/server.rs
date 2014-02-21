@@ -100,7 +100,12 @@ impl HTTP for Server {
 
 fn build_request(request: &http::server::request::Request) -> Option<Request> {
 	let path = match request.request_uri {
-		AbsoluteUri(ref url) => Some((url.path.to_str(), ~"", url.fragment.to_str())),
+		AbsoluteUri(ref url) => {
+			let query = ~url.query.iter().map(|&(ref a, ref b)| {
+				(a.to_str(), b.to_str())
+			}).collect();
+			Some((url.path.to_str(), query, url.fragment.to_str()))
+		},
 		AbsolutePath(ref path) => Some(parse_path(path.to_str())),
 		_ => None
 	};
@@ -119,7 +124,7 @@ fn build_request(request: &http::server::request::Request) -> Option<Request> {
 				path: path.to_owned(),
 				variables: ~HashMap::new(),
 				post: post,
-				get: parse_parameters(query),
+				query: query,
 				fragment: fragment,
 				body: request.body.to_str()
 			})
@@ -149,15 +154,15 @@ fn parse_parameters(source: &str) -> ~HashMap<~str, ~str> {
 	parameters
 }
 
-fn parse_path(path: &str) -> (~str, ~str, ~str) {
+fn parse_path(path: &str) -> (~str, ~HashMap<~str, ~str>, ~str) {
 	match path.find('?') {
 		Some(index) => {
 			let (query, fragment) = parse_fragment(path.slice(index+1, path.len()));
-			(path.slice(0, index).to_str(), query, fragment)
+			(path.slice(0, index).to_str(), parse_parameters(query), fragment)
 		},
 		None => {
 			let (path, fragment) = parse_fragment(path);
-			(path, ~"", fragment)
+			(path, ~HashMap::new(), fragment)
 		}
 	}
 }

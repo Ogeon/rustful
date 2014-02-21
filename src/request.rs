@@ -21,8 +21,8 @@ pub struct Request {
 	///POST variables
 	post: ~HashMap<~str, ~str>,
 
-	///GET variables
-	get: ~HashMap<~str, ~str>,
+	///Query variables from the path
+	query: ~HashMap<~str, ~str>,
 
 	///The fragment part of the URL (after #)
 	fragment: ~str,
