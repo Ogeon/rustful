@@ -228,36 +228,46 @@ fn parsing_strange_parameters() {
 
 #[test]
 fn parse_path_parts() {
-	let (path, query, fragment) = parse_path("/path/to/something?whith=this&and=that#lol");
+	let with = ~"this";
+	let and = ~"that";
+	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that#lol");
 	assert_eq!(path, ~"/path/to/something");
-	assert_eq!(query, ~"whith=this&and=that");
+	assert_eq!(query.find(&~"with"), Some(&with));
+	assert_eq!(query.find(&~"and"), Some(&and));
 	assert_eq!(fragment, ~"lol");
 }
 
 #[test]
 fn parse_strange_path() {
-	let (path, query, fragment) = parse_path("/path/to/something?whith=this&and=what?#");
+	let with = ~"this";
+	let and = ~"what?";
+	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=what?#");
 	assert_eq!(path, ~"/path/to/something");
-	assert_eq!(query, ~"whith=this&and=what?");
+	assert_eq!(query.find(&~"with"), Some(&with));
+	assert_eq!(query.find(&~"and"), Some(&and));
 	assert_eq!(fragment, ~"");
 }
 
 #[test]
 fn parse_missing_path_parts() {
-	let (path, query, fragment) = parse_path("/path/to/something?whith=this&and=that");
+	let with = ~"this";
+	let and = ~"that";
+	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that");
 	assert_eq!(path, ~"/path/to/something");
-	assert_eq!(query, ~"whith=this&and=that");
+	assert_eq!(query.find(&~"with"), Some(&with));
+	assert_eq!(query.find(&~"and"), Some(&and));
 	assert_eq!(fragment, ~"");
 
 
 	let (path, query, fragment) = parse_path("/path/to/something#lol");
 	assert_eq!(path, ~"/path/to/something");
-	assert_eq!(query, ~"");
+	assert_eq!(query.len(), 0);
 	assert_eq!(fragment, ~"lol");
 
 
-	let (path, query, fragment) = parse_path("?whith=this&and=that#lol");
+	let (path, query, fragment) = parse_path("?with=this&and=that#lol");
 	assert_eq!(path, ~"");
-	assert_eq!(query, ~"whith=this&and=that");
+	assert_eq!(query.find(&~"with"), Some(&with));
+	assert_eq!(query.find(&~"and"), Some(&and));
 	assert_eq!(fragment, ~"lol");
 }
