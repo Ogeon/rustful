@@ -137,7 +137,7 @@ fn parse_parameters(source: &str) -> ~HashMap<~str, ~str> {
 	let mut parameters = ~HashMap::new();
 	for parameter in source.split('&') {
 		let parts = parameter.split('=').collect::<~[&str]>();
-		match parts {
+		match parts.as_slice() {
 			[name, value] => {
 				parameters.insert(url_decode(name), url_decode(value));
 			},
