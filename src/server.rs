@@ -29,7 +29,7 @@ use std::str::from_utf8;
 use std::uint;
 use std::io::BufReader;
 
-use extra::time;
+use time;
 
 use HTTP = http::server::Server;
 

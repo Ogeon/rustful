@@ -9,6 +9,7 @@
 extern crate test;
 
 extern crate extra;
+extern crate time;
 extern crate http;
 
 pub use router::Router;
