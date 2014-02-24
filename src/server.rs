@@ -24,10 +24,11 @@ use http::headers::content_type::MediaType;
 use http::method::Post;
 
 use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
-use std::hashmap::HashMap;
 use std::str::from_utf8;
 use std::uint;
 use std::io::BufReader;
+
+use collections::hashmap::HashMap;
 
 use time;
 

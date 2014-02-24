@@ -18,7 +18,7 @@
 //!
 //!let router = Router::from_routes(routes);
 //!```
-use std::hashmap::HashMap;
+use collections::hashmap::HashMap;
 use http::method::Method;
 
 pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
@@ -236,7 +236,7 @@ impl<T: Clone> Router<T> {
 #[cfg(test)]
 mod test {
 	use test::BenchHarness;
-	use std::hashmap::HashMap;
+	use collections::hashmap::HashMap;
 	use super::Router;
 	use http::method::{Get, Post, Delete, Put, Head};
 

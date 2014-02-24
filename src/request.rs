@@ -2,7 +2,7 @@
 
 use http::headers::request::HeaderCollection;
 use http::method::Method;
-use std::hashmap::HashMap;
+use collections::hashmap::HashMap;
 
 
 pub struct Request {
