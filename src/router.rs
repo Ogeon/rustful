@@ -110,6 +110,71 @@ impl<T: Clone> Router<T> {
 		}
 	}
 
+	///Insert an other Router at a path. The content of the other Router will be copied and merged with this one.
+	pub fn insert_router(&mut self, path: &str, router: &~Router<T>) {
+		self.insert_router_vec(Router::<T>::path_to_vec(path.trim()), ~[], router);
+	}
+
+	//Same as `insert_router`, but internal
+	fn insert_router_vec(&mut self, path: &[&str], variable_names: ~[~str], router: &~Router<T>) {
+		let mut var_names = variable_names;
+
+		match path {
+			[piece] => {
+				let next = self.find_or_insert_router(piece);
+				if piece.len() > 0 && piece.char_at(0) == ':' {
+					var_names.push(piece.slice(1, piece.len()).to_owned());
+				}
+				next.merge_router(var_names, router);
+			},
+			[piece, ..rest] => {
+				let next = self.find_or_insert_router(piece);
+				if piece.len() > 0 && piece.char_at(0) == ':' {
+					var_names.push(piece.slice(1, piece.len()).to_owned());
+				}
+				next.insert_router_vec(rest, var_names, router);
+			},
+			[] => {
+				self.merge_router(var_names, router);
+			}
+		}
+	}
+
+	//Mergers this Router with an other Router.
+	fn merge_router(&mut self, variable_names: &[~str], router: &~Router<T>) {
+		for (key, &(ref item, ref var_names)) in router.items.iter() {
+			self.items.insert(key.clone(), (item.clone(), variable_names + var_names.clone()));
+		}
+
+		for (key, router) in router.static_routes.iter() {
+			let next = self.static_routes.find_or_insert(key.clone(), ~Router::new());
+			next.merge_router(variable_names, router);
+		}
+
+		if router.variable_route.is_some() {
+			if self.variable_route.is_none() {
+				self.variable_route = Some(~Router::new());
+			}
+
+			self.variable_route.as_mut().mutate(|next| {
+				next.merge_router(variable_names, router.variable_route.as_ref().unwrap());
+				next
+			});
+			
+		}
+
+		if router.wildcard_route.is_some() {
+			if self.wildcard_route.is_none() {
+				self.wildcard_route = Some(~Router::new());
+			}
+
+			self.wildcard_route.as_mut().mutate(|next| {
+				next.merge_router(variable_names, router.wildcard_route.as_ref().unwrap());
+				next
+			});
+		}
+	}
+
 	//Tries to find a router matching the key or inserts a new one if none exists
 	fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut ~Router<T> {
 		if key == "*" {
@@ -416,6 +481,66 @@ mod test {
 		check(router.find(Delete, "/"), Some("delete"));
 		check(router.find(Put, "/"), Some("put"));
 		check(router.find(Head, "/"), None);
+	}
+
+	#[test]
+	fn merge_routers() {
+		let routes1 = [
+			(Get, "", "test 1"),
+			(Get, "path/to/test/no2", "test 2"),
+			(Get, "path/to/test1/no/test3", "test 3")
+		];
+
+		let routes2 = [
+			(Get, "", "test 1"),
+			(Get, "test/no5", "test 5"),
+			(Post, "test1/no/test3", "test 3 post")
+		];
+
+		let mut router1 = Router::from_routes(routes1);
+		let router2 = ~Router::from_routes(routes2);
+
+		router1.insert_router("path/to", &router2);
+
+		check(router1.find(Get, ""), Some("test 1"));
+		check(router1.find(Get, "path/to/test/no2"), Some("test 2"));
+		check(router1.find(Get, "path/to/test1/no/test3"), Some("test 3"));
+		check(router1.find(Post, "path/to/test1/no/test3"), Some("test 3 post"));
+		check(router1.find(Get, "path/to/test/no5"), Some("test 5"));
+		check(router1.find(Get, "path/to"), Some("test 1"));
+	}
+
+
+	#[test]
+	fn merge_routers_variables() {
+		let routes1 = [(Get, ":a/:b/:c", "test 2")];
+		let routes2 = [(Get, ":b/:c/test", "test 1")];
+
+		let mut router1 = Router::from_routes(routes1);
+		let router2 = ~Router::from_routes(routes2);
+
+		router1.insert_router(":a", &router2);
+		
+		check_variable(router1.find(Get, "path/to/test1"), Some("path, to, test1"));
+		check_variable(router1.find(Get, "path/to/test1/test"), Some("path, to, test1"));
+	}
+
+
+	#[test]
+	fn merge_routers_wildcard() {
+		let routes1 = [(Get, "path/to", "test 2")];
+		let routes2 = [(Get, "*/test1", "test 1")];
+
+		let mut router1 = Router::from_routes(routes1);
+		let router2 = ~Router::from_routes(routes2);
+
+		router1.insert_router("path", &router2);
+
+		check(router1.find(Get, "path/to/test1"), Some("test 1"));
+		check(router1.find(Get, "path/to/same/test1"), Some("test 1"));
+		check(router1.find(Get, "path/to/the/same/test1"), Some("test 1"));
+		check(router1.find(Get, "path/to"), Some("test 2"));
+		check(router1.find(Get, "path"), None);
 	}
 
 	
