@@ -51,10 +51,9 @@ pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 ///```
 #[deriving(Clone)]
 pub struct Router<T> {
-	priv items: HashMap<~str, T>,
+	priv items: HashMap<~str, (T, ~[~str])>,
 	priv static_routes: HashMap<~str, ~Router<T>>,
 	priv variable_route: Option<~Router<T>>,
-	priv variable_names: ~[~str],
 	priv wildcard_route: Option<~Router<T>>
 }
 
@@ -65,7 +64,6 @@ impl<T: Clone> Router<T> {
 			items: HashMap::new(),
 			static_routes: HashMap::new(),
 			variable_route: None,
-			variable_names: ~[],
 			wildcard_route: None
 		}
 	}
@@ -96,8 +94,8 @@ impl<T: Clone> Router<T> {
 				if piece.len() > 0 && piece.char_at(0) == ':' {
 					var_names.push(piece.slice(1, piece.len()).to_owned());
 				}
-				next.variable_names = var_names;
-				next.items.insert(method.to_str(), item);
+
+				next.items.insert(method.to_str(), (item, var_names));
 			},
 			[piece, ..rest] => {
 				let next = self.find_or_insert_router(piece);
@@ -107,8 +105,7 @@ impl<T: Clone> Router<T> {
 				next.insert_item_vec(method, rest, var_names, item);
 			},
 			[] => {
-				self.variable_names = var_names;
-				self.items.insert(method.to_str(), item);
+				self.items.insert(method.to_str(), (item, var_names));
 			}
 		}
 	}
@@ -155,9 +152,9 @@ impl<T: Clone> Router<T> {
 	//Returns an item and a hashmap of variable values
 	fn get<'a>(&'a self, method: Method, variables: &[&str]) -> RouterResult<'a, T> {
 		match self.items.find(&method.to_str()) {
-			Some(item) => {
+			Some(&(ref item, ref variable_names)) => {
 				let mut var_map = ~HashMap::new();
-				for (key, &value) in self.variable_names.iter().zip(variables.iter()) {
+				for (key, &value) in variable_names.iter().zip(variables.iter()) {
 					var_map.insert(key.to_owned(), value.to_owned());
 				}
 				Some((item, var_map))
@@ -313,7 +310,8 @@ mod test {
 		let routes = [
 			(Get, "path/to/test1", "test_var"),
 			(Get, "path/:a/test/no2", "test_var"),
-			(Get, "path/to/:b/:c/:a", "test_var")
+			(Get, "path/to/:b/:c/:a", "test_var"),
+			(Post, "path/to/:c/:a/:b", "test_var")
 		];
 
 		let router = Router::from_routes(routes);
@@ -321,6 +319,7 @@ mod test {
 		check_variable(router.find(Get, "path/to/test1"), Some(""));
 		check_variable(router.find(Get, "path/to/test/no2"), Some("to"));
 		check_variable(router.find(Get, "path/to/test1/no/test3"), Some("test3, test1, no"));
+		check_variable(router.find(Post, "path/to/test1/no/test3"), Some("no, test3, test1"));
 		check_variable(router.find(Get, "path/to/test1/no"), None);
 	}
 
