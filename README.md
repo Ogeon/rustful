@@ -71,8 +71,8 @@ fn main() {
 	];
 
 	let server = Server {
-		//Build a router tree with the routes and give it to the server
-		router: ~Router::from_routes(routes),
+		//Build a router tree from the routes and give it to the server
+		handlers: ~Router::from_routes(routes),
 
 		//Set the listening port. Let's use 8080 this time
 		port: 8080

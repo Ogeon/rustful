@@ -33,7 +33,7 @@ fn main() {
 	];
 
 	let server = Server {
-		router: ~Router::from_routes(routes),
+		handlers: ~Router::from_routes(routes),
 		port: 8080
 	};
 

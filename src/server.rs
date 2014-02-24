@@ -5,7 +5,7 @@
 //!# use rustful::router::Router;
 //!# let routes = [];
 //!let server = Server {
-//!	router: ~Router::from_routes(routes),
+//!	handlers: ~Router::from_routes(routes),
 //!	port: 8080
 //!};
 //!
@@ -41,7 +41,7 @@ pub type HandlerFn = fn(&Request, &mut Response);
 #[deriving(Clone)]
 pub struct Server {
 	///A routing tree with response handlers
-	router: ~Router<HandlerFn>,
+	handlers: ~Router<HandlerFn>,
 
 	///The port where the server will listen for requests
 	port: Port
@@ -76,7 +76,7 @@ impl HTTP for Server {
 		response.headers.server = Some(~"rustful");
 
 		let found = match build_request(request) {
-			Some(mut request) => match self.router.find(request.method.clone(), request.path) {
+			Some(mut request) => match self.handlers.find(request.method.clone(), request.path) {
 				Some((&handler, variables)) => {
 					request.variables = variables;
 					handler(&request, response);
