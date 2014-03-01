@@ -96,6 +96,8 @@ impl HTTP for Server {
 				_ => {}
 			}
 		}
+
+		response.end();
 	}
 }
 
