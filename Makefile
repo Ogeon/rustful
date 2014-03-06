@@ -3,6 +3,7 @@ LIBS=-L lib
 .PHONY: rustful deps test docs examples
 
 rustful:
+	rm -f lib/librustful*
 	rustc $(LIBS) --opt-level=3 src/lib.rs --out-dir lib/
 
 deps:
