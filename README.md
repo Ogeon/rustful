@@ -66,7 +66,7 @@ fn handler(request: &Request, response: &mut Response) {
 
 fn main() {
 	//Set the handler to respond to GET request for /
-	let routes = ~[
+	let routes = [
 		(Get, "/", handler)
 	];
 

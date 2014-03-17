@@ -27,6 +27,7 @@ use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
 use std::str::from_utf8;
 use std::uint;
 use std::io::BufReader;
+use std::vec_ng::Vec;
 
 use collections::hashmap::HashMap;
 
@@ -71,7 +72,7 @@ impl HTTP for Server {
 		response.headers.content_type = Some(MediaType {
 			type_: ~"text",
 			subtype: ~"plain",
-			parameters: ~[(~"charset", ~"UTF-8")]
+			parameters: vec!((~"charset", ~"UTF-8"))
 		});
 		response.headers.server = Some(~"rustful");
 
@@ -91,7 +92,7 @@ impl HTTP for Server {
 			let content = bytes!("File not found");
 			response.headers.content_length = Some(content.len());
 			response.status = NotFound;
-			match response.write(content.to_owned()) {
+			match response.write(content) {
 				Err(e) => println!("error while writing 404: {}", e),
 				_ => {}
 			}
@@ -139,7 +140,7 @@ fn build_request(request: &http::server::request::Request) -> Option<Request> {
 fn parse_parameters(source: &str) -> ~HashMap<~str, ~str> {
 	let mut parameters = ~HashMap::new();
 	for parameter in source.split('&') {
-		let parts = parameter.split('=').collect::<~[&str]>();
+		let parts: Vec<&str> = parameter.split('=').collect();
 		match parts.as_slice() {
 			[name, value] => {
 				parameters.insert(url_decode(name), url_decode(value));
@@ -179,7 +180,7 @@ fn parse_fragment(path: &str) -> (~str, ~str) {
 
 fn url_decode(string: &str) -> ~str {
 	let mut rdr = BufReader::new(string.as_bytes());
-	let mut out = ~[];
+	let mut out = vec!();
 
 	loop {
 		let mut buf = [0];
@@ -201,7 +202,7 @@ fn url_decode(string: &str) -> ~str {
 		}
 	}
 
-	match from_utf8(out) {
+	match from_utf8(out.as_slice()) {
 		Some(result) => result.to_str(),
 		None => string.to_str()
 	}

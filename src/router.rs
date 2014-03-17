@@ -20,6 +20,7 @@
 //!```
 use collections::hashmap::HashMap;
 use http::method::Method;
+use std::vec_ng::Vec;
 
 pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 
@@ -51,7 +52,7 @@ pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 ///```
 #[deriving(Clone)]
 pub struct Router<T> {
-	priv items: HashMap<~str, (T, ~[~str])>,
+	priv items: HashMap<~str, (T, Vec<~str>)>,
 	priv static_routes: HashMap<~str, ~Router<T>>,
 	priv variable_route: Option<~Router<T>>,
 	priv wildcard_route: Option<~Router<T>>
@@ -81,11 +82,11 @@ impl<T: Clone> Router<T> {
 
 	///Inserts an item into the `Router` at a given path.
 	pub fn insert_item(&mut self, method: Method, path: &str, item: T) {
-		self.insert_item_vec(method, Router::<T>::path_to_vec(path.trim()), ~[], item);
+		self.insert_item_vec(method, Router::<T>::path_to_vec(path.trim()).as_slice(), vec!(), item);
 	}
 
 	//Same as `insert_item`, but internal
-	fn insert_item_vec(&mut self, method: Method, path: &[&str], variable_names: ~[~str], item: T) {
+	fn insert_item_vec(&mut self, method: Method, path: &[&str], variable_names: Vec<~str>, item: T) {
 		let mut var_names = variable_names;
 
 		match path {
@@ -112,11 +113,11 @@ impl<T: Clone> Router<T> {
 
 	///Insert an other Router at a path. The content of the other Router will be copied and merged with this one.
 	pub fn insert_router(&mut self, path: &str, router: &~Router<T>) {
-		self.insert_router_vec(Router::<T>::path_to_vec(path.trim()), ~[], router);
+		self.insert_router_vec(Router::<T>::path_to_vec(path.trim()).as_slice(), vec!(), router);
 	}
 
 	//Same as `insert_router`, but internal
-	fn insert_router_vec(&mut self, path: &[&str], variable_names: ~[~str], router: &~Router<T>) {
+	fn insert_router_vec(&mut self, path: &[&str], variable_names: Vec<~str>, router: &~Router<T>) {
 		let mut var_names = variable_names;
 
 		match path {
@@ -141,14 +142,16 @@ impl<T: Clone> Router<T> {
 	}
 
 	//Mergers this Router with an other Router.
-	fn merge_router(&mut self, variable_names: &[~str], router: &~Router<T>) {
+	fn merge_router(&mut self, variable_names: Vec<~str>, router: &~Router<T>) {
 		for (key, &(ref item, ref var_names)) in router.items.iter() {
-			self.items.insert(key.clone(), (item.clone(), variable_names + var_names.clone()));
+			let mut new_var_names = variable_names.clone();
+			new_var_names.push_all(var_names.as_slice());
+			self.items.insert(key.clone(), (item.clone(), new_var_names));
 		}
 
 		for (key, router) in router.static_routes.iter() {
 			let next = self.static_routes.find_or_insert(key.clone(), ~Router::new());
-			next.merge_router(variable_names, router);
+			next.merge_router(variable_names.clone(), router);
 		}
 
 		if router.variable_route.is_some() {
@@ -157,7 +160,7 @@ impl<T: Clone> Router<T> {
 			}
 
 			self.variable_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names, router.variable_route.as_ref().unwrap());
+				next.merge_router(variable_names.clone(), router.variable_route.as_ref().unwrap());
 				next
 			});
 			
@@ -169,7 +172,7 @@ impl<T: Clone> Router<T> {
 			}
 
 			self.wildcard_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names, router.wildcard_route.as_ref().unwrap());
+				next.merge_router(variable_names.clone(), router.wildcard_route.as_ref().unwrap());
 				next
 			});
 		}
@@ -196,7 +199,7 @@ impl<T: Clone> Router<T> {
 
 	///Finds and returns the matching item and variables
 	pub fn find<'a>(&'a self, method: Method, path: &str) -> RouterResult<'a, T> {
-		self.search::<'a>(method, Router::<T>::path_to_vec(path.to_owned()), &[])
+		self.search::<'a>(method, Router::<T>::path_to_vec(path.to_owned()).as_slice(), &[])
 	}
 
 	//Tries to find a matching item and run it
@@ -245,10 +248,8 @@ impl<T: Clone> Router<T> {
 	fn match_variable<'a>(&'a self, key: &str, rest: &[&str], variables: &[&str], action: |&'a ~Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
 		match self.variable_route {
 			Some(ref next) => {
-				let mut new_variables = variables.to_owned();
-				new_variables.push(key.clone());
 
-				match action(next, rest, new_variables) {
+				match action(next, rest, variables + &[key]) {
 					None => self.match_wildcard(rest, variables, action),
 					result => result
 				}
@@ -276,19 +277,19 @@ impl<T: Clone> Router<T> {
 	}
 
 	//Converts a path to a suitable array of path segments
-	fn path_to_vec<'a>(path: &'a str) -> ~[&'a str] {
+	fn path_to_vec<'a>(path: &'a str) -> Vec<&'a str> {
 		if path.len() == 0 {
-			~[]
+			vec!()
 		} else if path.len() == 1 {
 			if path == "/" {
-				~[]
+				vec!()
 			} else {
-				~[path]
+				vec!(path)
 			}
 		} else {
 			let start = if path.char_at(0) == '/' { 1 } else { 0 };
 			let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
-			path.slice(start, path.len() - end).split('/').collect::<~[&str]>()
+			path.slice(start, path.len() - end).split('/').collect::<Vec<&str>>()
 		}
 	}
 }
@@ -301,18 +302,19 @@ mod test {
 	use collections::hashmap::HashMap;
 	use super::Router;
 	use http::method::{Get, Post, Delete, Put, Head};
+	use std::vec_ng::Vec;
 
 	fn check_variable(result: Option<(& &'static str, ~HashMap<~str, ~str>)>, expected: Option<&str>) {
 		assert!(match result {
 			Some((_, ref variables)) => match expected {
 				Some(expected) => {
-					let keys = ~[~"a", ~"b", ~"c"];
+					let keys = vec!(~"a", ~"b", ~"c");
 					let result = keys.iter().filter_map(|key| {
 						match variables.find(key) {
 							Some(value) => Some(value.to_owned()),
 							None => None
 						}
-					}).collect::<~[~str]>().connect(", ");
+					}).collect::<Vec<~str>>().connect(", ");
 
 					expected.to_str() == result
 				},

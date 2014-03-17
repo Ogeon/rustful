@@ -16,7 +16,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 }
 
 fn main() {
-	let routes = ~[
+	let routes = [
 		(Get, "/", say_hello),
 		(Get, "/:person", say_hello)
 	];

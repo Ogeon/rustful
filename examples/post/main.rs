@@ -8,7 +8,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 	response.headers.content_type = Some(MediaType {
 		type_: ~"text",
 		subtype: ~"html",
-		parameters: ~[(~"charset", ~"UTF-8")]
+		parameters: vec!((~"charset", ~"UTF-8"))
 	});
 
 	let content = match request.post.find(&~"name") {
@@ -27,7 +27,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 }
 
 fn main() {
-	let routes = ~[
+	let routes = [
 		(Get, "/", say_hello),
 		(Post, "/", say_hello)
 	];
