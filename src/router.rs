@@ -20,7 +20,7 @@
 //!```
 use collections::hashmap::HashMap;
 use http::method::Method;
-use std::vec_ng::Vec;
+use std::vec::Vec;
 
 pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 
@@ -302,7 +302,7 @@ mod test {
 	use collections::hashmap::HashMap;
 	use super::Router;
 	use http::method::{Get, Post, Delete, Put, Head};
-	use std::vec_ng::Vec;
+	use std::vec::Vec;
 
 	fn check_variable(result: Option<(& &'static str, ~HashMap<~str, ~str>)>, expected: Option<&str>) {
 		assert!(match result {

@@ -27,7 +27,7 @@ use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
 use std::str::from_utf8;
 use std::uint;
 use std::io::BufReader;
-use std::vec_ng::Vec;
+use std::vec::Vec;
 
 use collections::hashmap::HashMap;
 
