@@ -1,11 +1,11 @@
-#[crate_id = "rustful#0.1-pre"];
+#![crate_id = "rustful#0.1-pre"]
 
-#[comment = "RESTful web framework"];
-#[license = "MIT"];
-#[crate_type = "lib"];
-#[crate_type = "rlib"];
+#![comment = "RESTful web framework"]
+#![license = "MIT"]
+#![crate_type = "lib"]
+#![crate_type = "rlib"]
 
-#[doc(html_root_url = "http://www.rust-ci.org/Ogeon/rustful/doc/")];
+#![doc(html_root_url = "http://www.rust-ci.org/Ogeon/rustful/doc/")]
 
 #[cfg(test)]
 extern crate test;
