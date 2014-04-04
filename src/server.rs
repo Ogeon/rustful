@@ -42,10 +42,10 @@ pub type HandlerFn = fn(&Request, &mut Response);
 #[deriving(Clone)]
 pub struct Server {
 	///A routing tree with response handlers
-	handlers: ~Router<HandlerFn>,
+	pub handlers: ~Router<HandlerFn>,
 
 	///The port where the server will listen for requests
-	port: Port
+	pub port: Port
 }
 
 impl Server {

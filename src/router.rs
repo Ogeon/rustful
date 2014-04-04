@@ -52,10 +52,10 @@ pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 ///```
 #[deriving(Clone)]
 pub struct Router<T> {
-	priv items: HashMap<~str, (T, Vec<~str>)>,
-	priv static_routes: HashMap<~str, ~Router<T>>,
-	priv variable_route: Option<~Router<T>>,
-	priv wildcard_route: Option<~Router<T>>
+	items: HashMap<~str, (T, Vec<~str>)>,
+	static_routes: HashMap<~str, ~Router<T>>,
+	variable_route: Option<~Router<T>>,
+	wildcard_route: Option<~Router<T>>
 }
 
 impl<T: Clone> Router<T> {

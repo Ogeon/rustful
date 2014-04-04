@@ -9,12 +9,12 @@ pub use http::status;
 
 pub struct Response<'a, 'b> {
 	///The HTTP response headers. Date, content type (text/plain) and server is automatically set.
-	headers: ~HeaderCollection,
+	pub headers: ~HeaderCollection,
 
 	///The HTTP response status. Ok (200) is default.
-	status: status::Status,
-	priv writer: &'a mut ResponseWriter<'b>,
-	priv started_writing: bool
+	pub status: status::Status,
+	writer: &'a mut ResponseWriter<'b>,
+	started_writing: bool
 }
 
 impl<'a, 'b> Response<'a, 'b> {
