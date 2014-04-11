@@ -8,6 +8,7 @@ rustful:
 
 deps:
 	rm -f lib/libhttp*
+	cd lib/rust-http; ./configure
 	make -C lib/rust-http clean
 	make -C lib/rust-http http
 	cp lib/rust-http/build/libhttp* lib/

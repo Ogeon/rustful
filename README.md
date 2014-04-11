@@ -45,6 +45,8 @@ make
 This will put `libhttp*` and `librustful*` in the `my_project/lib/rustful/lib/` directory.
 You can also run `make docs` to generate documentation and `make examples` to build the examples.
 
+See the rust-http README for information about SSL support.
+
 ##Write your server
 Here is a simple example of how `my_project.rs` could look like:
 ```rust
