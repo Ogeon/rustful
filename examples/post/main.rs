@@ -6,9 +6,9 @@ use http::method::{Get, Post};
 
 fn say_hello(request: &Request, response: &mut Response) {
 	response.headers.content_type = Some(MediaType {
-		type_: ~"text",
-		subtype: ~"html",
-		parameters: vec!((~"charset", ~"UTF-8"))
+		type_: StrBuf::from_str("text"),
+		subtype: StrBuf::from_str("html"),
+		parameters: vec!((StrBuf::from_str("charset"), StrBuf::from_str("UTF-8")))
 	});
 
 	let content = match request.post.find(&~"name") {

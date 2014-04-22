@@ -298,7 +298,7 @@ impl<T: Clone> Router<T> {
 
 #[cfg(test)]
 mod test {
-	use test::BenchHarness;
+	use test::Bencher;
 	use collections::hashmap::HashMap;
 	use super::Router;
 	use http::method::{Get, Post, Delete, Put, Head};
@@ -547,7 +547,7 @@ mod test {
 
 	
 	#[bench]
-	fn search_speed(b: &mut BenchHarness) {
+	fn search_speed(b: &mut Bencher) {
 		let routes = [
 			(Get, "path/to/test1", "test 1"),
 			(Get, "path/to/test/no2", "test 1"),
@@ -588,7 +588,7 @@ mod test {
 
 	
 	#[bench]
-	fn wildcard_speed(b: &mut BenchHarness) {
+	fn wildcard_speed(b: &mut Bencher) {
 		let routes = [
 			(Get, "*/to/*/*/a", "test 1")
 		];

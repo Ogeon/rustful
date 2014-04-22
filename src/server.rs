@@ -70,11 +70,11 @@ impl HTTP for Server {
 		let mut response = Response::new(writer);
 		response.headers.date = Some(time::now_utc());
 		response.headers.content_type = Some(MediaType {
-			type_: ~"text",
-			subtype: ~"plain",
-			parameters: vec!((~"charset", ~"UTF-8"))
+			type_: StrBuf::from_str("text"),
+			subtype: StrBuf::from_str("plain"),
+			parameters: vec!((StrBuf::from_str("charset"), StrBuf::from_str("UTF-8")))
 		});
-		response.headers.server = Some(~"rustful");
+		response.headers.server = Some(StrBuf::from_str("rustful"));
 
 		let found = match build_request(request) {
 			Some(mut request) => match self.handlers.find(request.method.clone(), request.path) {
@@ -117,7 +117,7 @@ fn build_request(request: &http::server::request::Request) -> Option<Request> {
 	match path {
 		Some((path, query, fragment)) => {
 			let post = if request.method == Post {
-				parse_parameters(request.body)
+				parse_parameters(request.body.as_slice())
 			} else {
 				~HashMap::new()
 			};
