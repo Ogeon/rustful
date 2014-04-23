@@ -89,7 +89,7 @@ fn main() {
 ```
 
 rustful comes with some handy macros to reduce some of the boilerplate code. The example above
-may be rewritten using the `routes!()` macro:
+may be rewritten using the `router!()` macro:
 
 ```rust
 //Include rustful during compile time to be able to use the macros
