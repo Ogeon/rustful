@@ -9,7 +9,7 @@ pub use http::status;
 
 pub struct Response<'a, 'b> {
 	///The HTTP response headers. Date, content type (text/plain) and server is automatically set.
-	pub headers: ~HeaderCollection,
+	pub headers: HeaderCollection,
 
 	///The HTTP response status. Ok (200) is default.
 	pub status: status::Status,
@@ -18,9 +18,9 @@ pub struct Response<'a, 'b> {
 }
 
 impl<'a, 'b> Response<'a, 'b> {
-	pub fn new<'a, 'b>(writer: &'a mut ResponseWriter<'b>) -> ~Response<'a, 'b> {
-		~Response {
-			headers: writer.headers.clone(), //Can't be borrowed, because writer must be borrowed
+	pub fn new<'a, 'b>(writer: &'a mut ResponseWriter<'b>) -> Response<'a, 'b> {
+		Response {
+			headers: *writer.headers.clone(), //Can't be borrowed, because writer must be borrowed
 			status: status::Ok,
 			writer: writer,
 			started_writing: false
@@ -37,7 +37,7 @@ impl<'a, 'b> Response<'a, 'b> {
 			//TODO: Intercept headers and status
 
 			self.writer.status = self.status.clone();
-			self.writer.headers = self.headers.clone();
+			self.writer.headers = ~self.headers.clone();
 
 			//TODO: Begin content interception
 		}

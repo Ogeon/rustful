@@ -7,7 +7,7 @@ use collections::hashmap::HashMap;
 
 pub struct Request {
 	///Headers from the HTTP request
-	pub headers: ~HeaderCollection,
+	pub headers: HeaderCollection,
 
 	///The HTTP method
 	pub method: Method,
@@ -16,13 +16,13 @@ pub struct Request {
 	pub path: ~str,
 
 	///Route variables
-	pub variables: ~HashMap<~str, ~str>,
+	pub variables: HashMap<~str, ~str>,
 
 	///POST variables
-	pub post: ~HashMap<~str, ~str>,
+	pub post: HashMap<~str, ~str>,
 
 	///Query variables from the path
-	pub query: ~HashMap<~str, ~str>,
+	pub query: HashMap<~str, ~str>,
 
 	///The fragment part of the URL (after #)
 	pub fragment: ~str,

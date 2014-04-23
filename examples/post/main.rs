@@ -26,7 +26,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 
 fn main() {
 	let server = Server {
-		handlers: ~router!("/" => Get | Post: say_hello),
+		handlers: router!("/" => Get | Post: say_hello),
 		port: 8080
 	};
 

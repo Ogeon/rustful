@@ -22,7 +22,7 @@ use collections::hashmap::HashMap;
 use http::method::Method;
 use std::vec::Vec;
 
-pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
+pub type RouterResult<'a, T> = Option<(&'a T, HashMap<~str, ~str>)>;
 
 
 ///Stores items, such as request handlers, using an HTTP method and a path as keys.
@@ -53,7 +53,7 @@ pub type RouterResult<'a, T> = Option<(&'a T, ~HashMap<~str, ~str>)>;
 #[deriving(Clone)]
 pub struct Router<T> {
 	items: HashMap<~str, (T, Vec<~str>)>,
-	static_routes: HashMap<~str, ~Router<T>>,
+	static_routes: HashMap<~str, Router<T>>,
 	variable_route: Option<~Router<T>>,
 	wildcard_route: Option<~Router<T>>
 }
@@ -101,20 +101,20 @@ impl<T> Router<T> {
 	}
 
 	//Tries to find a router matching the key or inserts a new one if none exists
-	fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut ~Router<T> {
+	fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut Router<T> {
 		if key == "*" {
 			if self.wildcard_route.is_none() {
 				self.wildcard_route = Some(~Router::new());
 			}
-			self.wildcard_route.as_mut::<'a>().unwrap()
+			&'a mut **self.wildcard_route.as_mut::<'a>().unwrap()
 		} else if key.len() > 0 && key.char_at(0) == ':' {
 			if self.variable_route.is_none() {
 				self.variable_route = Some(~Router::new());
 			}
-			self.variable_route.as_mut::<'a>().unwrap()
+			&'a mut **self.variable_route.as_mut::<'a>().unwrap()
 		} else {
 			self.static_routes.find_or_insert_with::<'a>(key.to_owned(), |_| {
-				~Router::new()
+				Router::new()
 			})
 		}
 	}
@@ -143,7 +143,7 @@ impl<T> Router<T> {
 	fn get<'a>(&'a self, method: Method, variables: &[&str]) -> RouterResult<'a, T> {
 		match self.items.find(&method.to_str()) {
 			Some(&(ref item, ref variable_names)) => {
-				let mut var_map = ~HashMap::new();
+				let mut var_map = HashMap::new();
 				for (key, &value) in variable_names.iter().zip(variables.iter()) {
 					var_map.insert(key.to_owned(), value.to_owned());
 				}
@@ -154,7 +154,7 @@ impl<T> Router<T> {
 	}
 
 	//Checks for a static route. Runs `action` if found, runs `match_variable` otherwhise
-	fn match_static<'a>(&'a self, key: &str, rest: &[&str], variables: &[&str], action: |&'a ~Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
+	fn match_static<'a>(&'a self, key: &str, rest: &[&str], variables: &[&str], action: |&'a Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
 		match self.static_routes.find(&key.to_owned()) {
 			Some(next) => {
 				match action(next, rest, variables) {
@@ -167,11 +167,11 @@ impl<T> Router<T> {
 	}
 
 	//Checks for a variable route. Runs `action` if found, runs `match_wildcard` otherwhise
-	fn match_variable<'a>(&'a self, key: &str, rest: &[&str], variables: &[&str], action: |&'a ~Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
+	fn match_variable<'a>(&'a self, key: &str, rest: &[&str], variables: &[&str], action: |&'a Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
 		match self.variable_route {
 			Some(ref next) => {
 
-				match action(next, rest, variables + &[key]) {
+				match action(*next, rest, variables + &[key]) {
 					None => self.match_wildcard(rest, variables, action),
 					result => result
 				}
@@ -181,18 +181,18 @@ impl<T> Router<T> {
 	}
 
 	//Checks for a wildcard route. Runs `action` if found, returns `None` otherwhise
-	fn match_wildcard<'a>(&'a self, rest: &[&str], variables: &[&str], action: |&'a ~Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
+	fn match_wildcard<'a>(&'a self, rest: &[&str], variables: &[&str], action: |&'a Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
 		match self.wildcard_route {
 			Some(ref next) => {
 				let mut path = rest;
 				while path.len() > 0 {
-					match action(next, path, variables) {
+					match action(*next, path, variables) {
 						None => path = path.slice(1, path.len()),
 						result => return result
 					}
 				}
 
-				action(next, path, variables)
+				action(*next, path, variables)
 			},
 			None => None
 		}
@@ -228,13 +228,14 @@ impl<T: Clone> Router<T> {
 		root
 	}
 
-	///Insert an other Router at a path. The content of the other Router will be copied and merged with this one.
-	pub fn insert_router(&mut self, path: &str, router: &~Router<T>) {
+	///Insert an other Router at a path. The content of the other Router will be merged with this one.
+	///Content with the same path and method will be overwritten.
+	pub fn insert_router(&mut self, path: &str, router: &Router<T>) {
 		self.insert_router_vec(Router::<T>::path_to_vec(path.trim()).as_slice(), vec!(), router);
 	}
 
 	//Same as `insert_router`, but internal
-	fn insert_router_vec(&mut self, path: &[&str], variable_names: Vec<~str>, router: &~Router<T>) {
+	fn insert_router_vec(&mut self, path: &[&str], variable_names: Vec<~str>, router: &Router<T>) {
 		let mut var_names = variable_names;
 
 		match path {
@@ -259,7 +260,7 @@ impl<T: Clone> Router<T> {
 	}
 
 	//Mergers this Router with an other Router.
-	fn merge_router(&mut self, variable_names: Vec<~str>, router: &~Router<T>) {
+	fn merge_router(&mut self, variable_names: Vec<~str>, router: &Router<T>) {
 		for (key, &(ref item, ref var_names)) in router.items.iter() {
 			let mut new_var_names = variable_names.clone();
 			new_var_names.push_all(var_names.as_slice());
@@ -267,7 +268,7 @@ impl<T: Clone> Router<T> {
 		}
 
 		for (key, router) in router.static_routes.iter() {
-			let next = self.static_routes.find_or_insert(key.clone(), ~Router::new());
+			let next = self.static_routes.find_or_insert(key.clone(), Router::new());
 			next.merge_router(variable_names.clone(), router);
 		}
 
@@ -277,7 +278,7 @@ impl<T: Clone> Router<T> {
 			}
 
 			self.variable_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names.clone(), router.variable_route.as_ref().unwrap());
+				next.merge_router(variable_names.clone(), *router.variable_route.as_ref().unwrap());
 				next
 			});
 			
@@ -289,7 +290,7 @@ impl<T: Clone> Router<T> {
 			}
 
 			self.wildcard_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names.clone(), router.wildcard_route.as_ref().unwrap());
+				next.merge_router(variable_names.clone(), *router.wildcard_route.as_ref().unwrap());
 				next
 			});
 		}
@@ -306,7 +307,7 @@ mod test {
 	use http::method::{Get, Post, Delete, Put, Head};
 	use std::vec::Vec;
 
-	fn check_variable(result: Option<(& &'static str, ~HashMap<~str, ~str>)>, expected: Option<&str>) {
+	fn check_variable(result: Option<(& &'static str, HashMap<~str, ~str>)>, expected: Option<&str>) {
 		assert!(match result {
 			Some((_, ref variables)) => match expected {
 				Some(expected) => {
@@ -326,7 +327,7 @@ mod test {
 		});
 	}
 
-	fn check(result: Option<(& &'static str, ~HashMap<~str, ~str>)>, expected: Option<&str>) {
+	fn check(result: Option<(& &'static str, HashMap<~str, ~str>)>, expected: Option<&str>) {
 		assert!(match result {
 			Some((result, _)) => match expected {
 				Some(expected) => result.to_str() == expected.to_str(),
@@ -502,7 +503,7 @@ mod test {
 		];
 
 		let mut router1 = Router::from_routes(routes1);
-		let router2 = ~Router::from_routes(routes2);
+		let router2 = Router::from_routes(routes2);
 
 		router1.insert_router("path/to", &router2);
 
@@ -521,7 +522,7 @@ mod test {
 		let routes2 = [(Get, ":b/:c/test", "test 1")];
 
 		let mut router1 = Router::from_routes(routes1);
-		let router2 = ~Router::from_routes(routes2);
+		let router2 = Router::from_routes(routes2);
 
 		router1.insert_router(":a", &router2);
 		
@@ -536,7 +537,7 @@ mod test {
 		let routes2 = [(Get, "*/test1", "test 1")];
 
 		let mut router1 = Router::from_routes(routes1);
-		let router2 = ~Router::from_routes(routes2);
+		let router2 = Router::from_routes(routes2);
 
 		router1.insert_router("path", &router2);
 

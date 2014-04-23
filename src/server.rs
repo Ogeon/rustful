@@ -5,7 +5,7 @@
 //!# use rustful::router::Router;
 //!# let routes = [];
 //!let server = Server {
-//!	handlers: ~Router::from_routes(routes),
+//!	handlers: Router::from_routes(routes),
 //!	port: 8080
 //!};
 //!
@@ -42,7 +42,7 @@ pub type HandlerFn = fn(&Request, &mut Response);
 #[deriving(Clone)]
 pub struct Server {
 	///A routing tree with response handlers
-	pub handlers: ~Router<HandlerFn>,
+	pub handlers: Router<HandlerFn>,
 
 	///The port where the server will listen for requests
 	pub port: Port
@@ -80,7 +80,7 @@ impl HTTP for Server {
 			Some(mut request) => match self.handlers.find(request.method.clone(), request.path) {
 				Some((&handler, variables)) => {
 					request.variables = variables;
-					handler(&request, response);
+					handler(&request, &mut response);
 					true
 				},
 				None => false
@@ -105,7 +105,7 @@ impl HTTP for Server {
 fn build_request(request: &http::server::request::Request) -> Option<Request> {
 	let path = match request.request_uri {
 		AbsoluteUri(ref url) => {
-			let query = ~url.query.iter().map(|&(ref a, ref b)| {
+			let query = url.query.iter().map(|&(ref a, ref b)| {
 				(a.to_str(), b.to_str())
 			}).collect();
 			Some((url.path.to_str(), query, url.fragment.to_str()))
@@ -119,14 +119,14 @@ fn build_request(request: &http::server::request::Request) -> Option<Request> {
 			let post = if request.method == Post {
 				parse_parameters(request.body.as_slice())
 			} else {
-				~HashMap::new()
+				HashMap::new()
 			};
 
 			Some(Request {
-				headers: request.headers.clone(),
+				headers: *request.headers.clone(),
 				method: request.method.clone(),
 				path: path.to_owned(),
-				variables: ~HashMap::new(),
+				variables: HashMap::new(),
 				post: post,
 				query: query,
 				fragment: fragment,
@@ -137,8 +137,8 @@ fn build_request(request: &http::server::request::Request) -> Option<Request> {
 	}
 }
 
-fn parse_parameters(source: &str) -> ~HashMap<~str, ~str> {
-	let mut parameters = ~HashMap::new();
+fn parse_parameters(source: &str) -> HashMap<~str, ~str> {
+	let mut parameters = HashMap::new();
 	for parameter in source.split('&') {
 		let parts: Vec<&str> = parameter.split('=').collect();
 		match parts.as_slice() {
@@ -158,7 +158,7 @@ fn parse_parameters(source: &str) -> ~HashMap<~str, ~str> {
 	parameters
 }
 
-fn parse_path(path: &str) -> (~str, ~HashMap<~str, ~str>, ~str) {
+fn parse_path(path: &str) -> (~str, HashMap<~str, ~str>, ~str) {
 	match path.find('?') {
 		Some(index) => {
 			let (query, fragment) = parse_fragment(path.slice(index+1, path.len()));
@@ -166,7 +166,7 @@ fn parse_path(path: &str) -> (~str, ~HashMap<~str, ~str>, ~str) {
 		},
 		None => {
 			let (path, fragment) = parse_fragment(path);
-			(path, ~HashMap::new(), fragment)
+			(path, HashMap::new(), fragment)
 		}
 	}
 }

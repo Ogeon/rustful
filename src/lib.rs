@@ -110,7 +110,7 @@ fn main() {
 	let routes = routes!("/" => Get: say_hello, "/:person" => Get: say_hello);
 
 	let server = Server {
-		handlers: ~Router::from_routes(routes),
+		handlers: Router::from_routes(routes),
 		port: 8080
 	};
 
