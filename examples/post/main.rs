@@ -1,15 +1,13 @@
+#![feature(phase)]
+#[phase(syntax)]
+extern crate rustful;
+
 extern crate rustful;
 extern crate http;
-use rustful::{Server, Router, Request, Response};
-use rustful::response::MediaType;
-use http::method::{Get, Post};
+use rustful::{Server, Request, Response};
 
 fn say_hello(request: &Request, response: &mut Response) {
-	response.headers.content_type = Some(MediaType {
-		type_: StrBuf::from_str("text"),
-		subtype: StrBuf::from_str("html"),
-		parameters: vec!((StrBuf::from_str("charset"), StrBuf::from_str("UTF-8")))
-	});
+	response.headers.content_type = content_type!("text", "html");
 
 	let content = match request.post.find(&~"name") {
 		Some(name) => {
@@ -27,13 +25,8 @@ fn say_hello(request: &Request, response: &mut Response) {
 }
 
 fn main() {
-	let routes = [
-		(Get, "/", say_hello),
-		(Post, "/", say_hello)
-	];
-
 	let server = Server {
-		handlers: ~Router::from_routes(routes),
+		handlers: ~router!("/" => Get | Post: say_hello),
 		port: 8080
 	};
 

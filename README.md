@@ -91,3 +91,40 @@ Just run these commands from the project root (`my_project/`):
 rustc -L lib/rustful/lib/ -o my_server src/my_server.rs
 ./my_server
 ```
+
+rustful comes with some handy macros to reduce some of the boilerplate code. The example above
+may be rewritten using the `routes!()` macro:
+
+```rust
+//Include rustful during compile time to be able to use the macros
+#![feature(phase)]
+#[phase(syntax)]
+extern crate rustful;
+
+extern crate rustful;
+extern crate http;
+use rustful::{Server, Router, Request, Response};
+
+///Our handler function
+fn handler(request: &Request, response: &mut Response) {
+
+	//Send something nice to the user
+	match response.write("Hello, user! It looks like this server works fine.".as_bytes()) {
+		Err(e) => println!("error while writing hello: {}", e),
+		_ => {}
+	}
+
+}
+
+fn main() {
+	let server = Server {
+		handlers: ~router!("/" => Get: handler),
+
+		//Set the listening port. Let's use 8080 this time
+		port: 8080
+	};
+
+	//Start the server. All code beyond this point is unreachable
+	server.run();
+}
+```
