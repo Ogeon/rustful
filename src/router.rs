@@ -58,7 +58,7 @@ pub struct Router<T> {
 	wildcard_route: Option<~Router<T>>
 }
 
-impl<T: Clone> Router<T> {
+impl<T> Router<T> {
 	///Creates an empty `Router`.
 	pub fn new() -> Router<T> {
 		Router {
@@ -67,17 +67,6 @@ impl<T: Clone> Router<T> {
 			variable_route: None,
 			wildcard_route: None
 		}
-	}
-
-	///Generates a `Router` tree from a set of items and paths.
-	pub fn from_routes(routes: &[(Method, &str, T)]) -> Router<T> {
-		let mut root = Router::new();
-
-		for &(ref method, path, ref item) in routes.iter() {
-			root.insert_item(method.clone(), path, item.clone());
-		}
-
-		root
 	}
 
 	///Inserts an item into the `Router` at a given path.
@@ -108,73 +97,6 @@ impl<T: Clone> Router<T> {
 			[] => {
 				self.items.insert(method.to_str(), (item, var_names));
 			}
-		}
-	}
-
-	///Insert an other Router at a path. The content of the other Router will be copied and merged with this one.
-	pub fn insert_router(&mut self, path: &str, router: &~Router<T>) {
-		self.insert_router_vec(Router::<T>::path_to_vec(path.trim()).as_slice(), vec!(), router);
-	}
-
-	//Same as `insert_router`, but internal
-	fn insert_router_vec(&mut self, path: &[&str], variable_names: Vec<~str>, router: &~Router<T>) {
-		let mut var_names = variable_names;
-
-		match path {
-			[piece] => {
-				let next = self.find_or_insert_router(piece);
-				if piece.len() > 0 && piece.char_at(0) == ':' {
-					var_names.push(piece.slice(1, piece.len()).to_owned());
-				}
-				next.merge_router(var_names, router);
-			},
-			[piece, ..rest] => {
-				let next = self.find_or_insert_router(piece);
-				if piece.len() > 0 && piece.char_at(0) == ':' {
-					var_names.push(piece.slice(1, piece.len()).to_owned());
-				}
-				next.insert_router_vec(rest, var_names, router);
-			},
-			[] => {
-				self.merge_router(var_names, router);
-			}
-		}
-	}
-
-	//Mergers this Router with an other Router.
-	fn merge_router(&mut self, variable_names: Vec<~str>, router: &~Router<T>) {
-		for (key, &(ref item, ref var_names)) in router.items.iter() {
-			let mut new_var_names = variable_names.clone();
-			new_var_names.push_all(var_names.as_slice());
-			self.items.insert(key.clone(), (item.clone(), new_var_names));
-		}
-
-		for (key, router) in router.static_routes.iter() {
-			let next = self.static_routes.find_or_insert(key.clone(), ~Router::new());
-			next.merge_router(variable_names.clone(), router);
-		}
-
-		if router.variable_route.is_some() {
-			if self.variable_route.is_none() {
-				self.variable_route = Some(~Router::new());
-			}
-
-			self.variable_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names.clone(), router.variable_route.as_ref().unwrap());
-				next
-			});
-			
-		}
-
-		if router.wildcard_route.is_some() {
-			if self.wildcard_route.is_none() {
-				self.wildcard_route = Some(~Router::new());
-			}
-
-			self.wildcard_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names.clone(), router.wildcard_route.as_ref().unwrap());
-				next
-			});
 		}
 	}
 
@@ -290,6 +212,86 @@ impl<T: Clone> Router<T> {
 			let start = if path.char_at(0) == '/' { 1 } else { 0 };
 			let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
 			path.slice(start, path.len() - end).split('/').collect::<Vec<&str>>()
+		}
+	}
+}
+
+impl<T: Clone> Router<T> {
+	///Generates a `Router` tree from a set of items and paths.
+	pub fn from_routes(routes: &[(Method, &str, T)]) -> Router<T> {
+		let mut root = Router::new();
+
+		for &(ref method, path, ref item) in routes.iter() {
+			root.insert_item(method.clone(), path, item.clone());
+		}
+
+		root
+	}
+
+	///Insert an other Router at a path. The content of the other Router will be copied and merged with this one.
+	pub fn insert_router(&mut self, path: &str, router: &~Router<T>) {
+		self.insert_router_vec(Router::<T>::path_to_vec(path.trim()).as_slice(), vec!(), router);
+	}
+
+	//Same as `insert_router`, but internal
+	fn insert_router_vec(&mut self, path: &[&str], variable_names: Vec<~str>, router: &~Router<T>) {
+		let mut var_names = variable_names;
+
+		match path {
+			[piece] => {
+				let next = self.find_or_insert_router(piece);
+				if piece.len() > 0 && piece.char_at(0) == ':' {
+					var_names.push(piece.slice(1, piece.len()).to_owned());
+				}
+				next.merge_router(var_names, router);
+			},
+			[piece, ..rest] => {
+				let next = self.find_or_insert_router(piece);
+				if piece.len() > 0 && piece.char_at(0) == ':' {
+					var_names.push(piece.slice(1, piece.len()).to_owned());
+				}
+				next.insert_router_vec(rest, var_names, router);
+			},
+			[] => {
+				self.merge_router(var_names, router);
+			}
+		}
+	}
+
+	//Mergers this Router with an other Router.
+	fn merge_router(&mut self, variable_names: Vec<~str>, router: &~Router<T>) {
+		for (key, &(ref item, ref var_names)) in router.items.iter() {
+			let mut new_var_names = variable_names.clone();
+			new_var_names.push_all(var_names.as_slice());
+			self.items.insert(key.clone(), (item.clone(), new_var_names));
+		}
+
+		for (key, router) in router.static_routes.iter() {
+			let next = self.static_routes.find_or_insert(key.clone(), ~Router::new());
+			next.merge_router(variable_names.clone(), router);
+		}
+
+		if router.variable_route.is_some() {
+			if self.variable_route.is_none() {
+				self.variable_route = Some(~Router::new());
+			}
+
+			self.variable_route.as_mut().mutate(|next| {
+				next.merge_router(variable_names.clone(), router.variable_route.as_ref().unwrap());
+				next
+			});
+			
+		}
+
+		if router.wildcard_route.is_some() {
+			if self.wildcard_route.is_none() {
+				self.wildcard_route = Some(~Router::new());
+			}
+
+			self.wildcard_route.as_mut().mutate(|next| {
+				next.merge_router(variable_names.clone(), router.wildcard_route.as_ref().unwrap());
+				next
+			});
 		}
 	}
 }
