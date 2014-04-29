@@ -1,13 +1,8 @@
 //!`Router` stores items, such as request handlers, using an HTTP method and a path as keys.
 //!
+//!The `Router` can be created from a vector of predefined paths, like this:
+//!
 //!```rust
-//!# use rustful::router::Router;
-//!# use http::method::Get;
-//!# fn about_us() {}
-//!# fn show_user() {}
-//!# fn show_product() {}
-//!# fn show_error() {}
-//!# fn show_welcome() {}
 //!let routes = [
 //!	(Get, "/about", about_us),
 //!	(Get, "/user/:user", show_user),
@@ -17,6 +12,72 @@
 //!];
 //!
 //!let router = Router::from_routes(routes);
+//!```
+//!
+//!Routes may also be added after the `Router` was created, like this:
+//!
+//!```rust
+//!let mut router = Router::new();
+//!
+//!router.insert_item(Get, "/about", about_us);
+//!router.insert_item(Get, "/user/:user", show_user);
+//!router.insert_item(Get, "/product/:name", show_product);
+//!router.insert_item(Get, "/*", show_error);
+//!router.insert_item(Get, "/", show_welcome);
+//!```
+//!
+//!There is also a special macro for creating routers, called `router!(...)`:
+//!
+//!```rust
+//!#![feature(phase)]
+//!#[phase(syntax)]
+//!extern crate rustful;
+//!
+//!extern crate rustful;
+//!
+//!...
+//!
+//!
+//!let router = router!(
+//!	"/about" => Get: about_us,
+//!	"/user/:user" => Get: show_user,
+//!	"/product/:name" => Get: show_product,
+//!	"/*" => Get: show_error,
+//!	"/" => Get: show_welcome
+//!);
+//!```
+//!
+//!This macro will generate the same code as the example above,
+//!but it allows more advanced structures to be defined without
+//!the need to write the same paths multiple times. This can be
+//!useful to lower the risk of typing errors, among other things.
+//!
+//!```rust
+//!#![feature(phase)]
+//!#[phase(syntax)]
+//!extern crate rustful;
+//!
+//!extern crate rustful;
+//!
+//!...
+//!
+//!
+//!let router = router!(
+//!	"/" => Get: show_home,
+//!	"home" => Get: show_home,
+//!	"user/:username" => {Get: show_user, Post: save_user},
+//!	"product" => {
+//!		Get: show_all_products,
+//!
+//!		"json" => Get: send_all_product_data
+//!		":id" => {
+//!			Get: show_product,
+//!			Post | Delete: edit_product,
+//!
+//!			"json" => Get: send_product_data
+//!		},
+//!	}
+//!);
 //!```
 use collections::hashmap::HashMap;
 use http::method::Method;

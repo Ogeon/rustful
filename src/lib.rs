@@ -2,16 +2,18 @@
 
 #![comment = "RESTful web framework"]
 #![license = "MIT"]
-#![crate_type = "lib"]
+#![crate_type = "dylib"]
 #![crate_type = "rlib"]
 
 #![doc(html_root_url = "http://www.rust-ci.org/Ogeon/rustful/doc/")]
 
-#![feature(macro_rules)]
+#![feature(macro_rules, macro_registrar, managed_boxes, quote, phase)]
 #![macro_escape]
 
 #[cfg(test)]
 extern crate test;
+
+extern crate syntax;
 
 extern crate collections;
 extern crate url;
@@ -23,84 +25,136 @@ pub use server::Server;
 pub use request::Request;
 pub use response::Response;
 
+use syntax::{ast, codemap};
+use syntax::ext::base::{
+	SyntaxExtension, ExtCtxt, MacResult, MacExpr,
+	NormalTT, BasicMacroExpander
+};
+use syntax::ext::build::AstBuilder;
+use syntax::ext::quote::rt::ExtParseUtils;
+use syntax::parse;
+use syntax::parse::token;
+use syntax::parse::parser;
+use syntax::parse::parser::Parser;
+//use syntax::print::pprust;
+
 pub mod router;
 pub mod server;
 pub mod request;
 pub mod response;
 
 
-/**
-A macro which creates a router from routes.
+#[macro_registrar]
+#[doc(hidden)]
+pub fn macro_registrar(register: |ast::Name, SyntaxExtension|) {
+	let expander = ~BasicMacroExpander{expander: expand_router, span: None};
+	register(token::intern("router"), NormalTT(expander, None));
+}
 
-It can be used to create a large number of routes without too much path duplication.
-Each path can have multiple handlers assigned to it and each handler is connected to
-one or multiple HTTP methods. A simple example may look like this:
+fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> ~MacResult {
+	let router_ident = cx.ident_of("router");
+	let insert_method = cx.ident_of("insert_item");
 
-```
-router!(
-	"/" => {Get: show_home},
-	"/home" => {Get: show_home},
-	"/user/:username" => {Get: show_user, Post: save_user},
-	"/product/:id" => {Get: show_product, Post | Delete: edit_product}
-);
-```
+	let mut calls: Vec<@ast::Stmt> = vec!(
+		cx.stmt_let(sp, true, router_ident, quote_expr!(&cx, ::rustful::Router::new()))
+	);
 
-This example will result in a router containing these routes:
+	for (path, method, handler) in parse_routes(cx, tts).move_iter() {
+		let path_expr = cx.parse_expr("\"" + path + "\"");
+		let method_expr = cx.expr_path(method);
+		let handler_expr = cx.expr_path(handler);
+		calls.push(cx.stmt_expr(
+			cx.expr_method_call(sp, cx.expr_ident(sp, router_ident), insert_method, vec!(method_expr, path_expr, handler_expr))
+		));
+	}
 
-```
-(Get, "/", show_home),
-(Get, "/home", show_home),
-(Get, "/user/:username", show_user),
-(Post, "/user/:username", save_user),
-(Get, "/product/:id", show_product),
-(Post, "/product/:id", edit_product),
-(Delete, "/product/:id", edit_product)
-```
+	let block = cx.expr_block(cx.block(sp, calls, Some(cx.expr_ident(sp, router_ident))));
+	
+	MacExpr::new(block)
+}
 
-The `{}` can be omitted, if there is only one handler for each entry:
+fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(~str, ast::Path, ast::Path)> {
 
-```
-router!(
-	"/" => Get: show_home,
-	"/home" => Get: show_home,
-	"/user/:username" => Get | Post: handle_user,
-	"/product/:id" => Get: show_product,
-	"/product/:id" => Post | Delete: edit_product
-);
-```
-**/
-#[macro_export]
-#[experimental]
-macro_rules! router(
-	($($path:expr => {$($method:ident: $handler:expr),+}),*) => ({
-		let mut router = ::rustful::router::Router::new();
+	let mut parser = parse::new_parser_from_tts(
+		cx.parse_sess(), cx.cfg(), Vec::from_slice(tts)
+	);
 
-		$(
-			$(router.insert_item(::http::method::$method, $path, $handler);)+
-		)*
+	parse_subroutes("", cx, &mut parser)
+}
 
-		router
-	});
+fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(~str, ast::Path, ast::Path)> {
+	let mut routes = Vec::new();
 
-	($($path:expr => {$($($method:ident)|+: $handler:expr),+}),*) => ({
-		router!($($path => {$($($method: $handler),+),+}),*)
-	});
+	while !parser.eat(&token::EOF) {
+		match parser.parse_optional_str() {
+			Some((ref s, _)) => {
+				if !parser.eat(&token::FAT_ARROW) {
+					parser.expect(&token::FAT_ARROW);
+					break;
+				}
 
-	($($path:expr => $method:ident: $handler:expr),*) => ({
-		let mut router = ::rustful::router::Router::new();
+				let new_base = base + s.to_str().trim_chars('/').to_owned() + "/";
 
-		$(
-			router.insert_item(::http::method::$method, $path, $handler);
-		)*
 
-		router
-	});
+				if parser.eat(&token::EOF) {
+					cx.span_err(parser.span, "unexpected end of routing tree");
+				}
 
-	($($path:expr => $($method:ident)|+: $handler:expr),*) => ({
-		router!($($path => {$($method: $handler),+}),*)
-	});
-)
+				if parser.eat(&token::LBRACE) {
+					let subroutes = parse_subroutes(new_base, cx, parser);
+					routes.push_all(subroutes.as_slice());
 
+					if parser.eat(&token::RBRACE) {
+						if !parser.eat(&token::COMMA) {
+							break;
+						}
+					} else {
+						parser.expect_one_of([token::COMMA, token::RBRACE], []);
+					}
+				} else {
+					for (method, handler) in parse_handler(parser).move_iter() {
+						routes.push((new_base.clone(), method, handler))
+					}
+
+					if !parser.eat(&token::COMMA) {
+						break;
+					}
+				}
+			},
+			None => {
+				for (method, handler) in parse_handler(parser).move_iter() {
+					routes.push((base.to_owned(), method, handler))
+				}
+
+				if !parser.eat(&token::COMMA) {
+					break;
+				}
+			}
+		}
+	}
+
+	routes
+}
+
+fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, ast::Path)> {
+	let mut methods = Vec::new();
+
+	loop {
+		methods.push(parser.parse_path(parser::NoTypesAllowed).path);
+
+		if parser.eat(&token::COLON) {
+			break;
+		}
+
+		if !parser.eat(&token::BINOP(token::OR)) {
+			parser.expect_one_of([token::COLON, token::BINOP(token::OR)], []);
+		}
+	}
+
+	let handler = parser.parse_path(parser::NoTypesAllowed).path;
+
+	methods.move_iter().map(|m| (m, handler.clone())).collect()
+}
 
 /**
 A macro which creates a vector of routes. See `router!(...)` for syntax details.

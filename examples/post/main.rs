@@ -5,6 +5,7 @@ extern crate rustful;
 extern crate rustful;
 extern crate http;
 use rustful::{Server, Request, Response};
+use http::method::{Get, Post};
 
 fn say_hello(request: &Request, response: &mut Response) {
 	response.headers.content_type = content_type!("text", "html");
