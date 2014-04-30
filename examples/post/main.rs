@@ -12,7 +12,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 
 	let content = match request.post.find(&~"name") {
 		Some(name) => {
-			format!("<p>Hello, {}!", name.to_str())
+			format!("<p>Hello, {}!</p>", name.to_str())
 		},
 		None => {
 			~"<form method=\"post\"><div><label for=\"name\">Name: </label><input id=\"name\" type=\"text\" name=\"name\" /></div><div><input type=\"submit\" value=\"Say hello\" /></div></form>"

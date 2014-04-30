@@ -100,6 +100,7 @@ extern crate rustful;
 extern crate rustful;
 extern crate http;
 use rustful::{Server, Router, Request, Response};
+use http::method::Get;
 
 ///Our handler function
 fn handler(request: &Request, response: &mut Response) {
