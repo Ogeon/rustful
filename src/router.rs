@@ -75,7 +75,7 @@
 //!			Post | Delete: edit_product,
 //!
 //!			"json" => Get: send_product_data
-//!		},
+//!		}
 //!	}
 //!};
 //!```
@@ -105,7 +105,7 @@
 //!			Post | Delete: edit_product,
 //!
 //!			"json" => Get: send_product_data
-//!		},
+//!		}
 //!	}
 //!};
 //!
