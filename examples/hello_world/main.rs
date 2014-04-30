@@ -20,7 +20,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 }
 
 fn main() {
-	let routes = routes!("/" => Get: say_hello, "/:person" => Get: say_hello);
+	let routes = routes!{"/" => Get: say_hello, "/:person" => Get: say_hello};
 
 	let server = Server {
 		handlers: Router::from_routes(routes),

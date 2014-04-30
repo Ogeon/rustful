@@ -38,13 +38,13 @@
 //!...
 //!
 //!
-//!let router = router!(
+//!let router = router!{
 //!	"/about" => Get: about_us,
 //!	"/user/:user" => Get: show_user,
 //!	"/product/:name" => Get: show_product,
 //!	"/*" => Get: show_error,
 //!	"/" => Get: show_welcome
-//!);
+//!};
 //!```
 //!
 //!This macro will generate the same code as the example above,
@@ -62,7 +62,7 @@
 //!...
 //!
 //!
-//!let router = router!(
+//!let router = router!{
 //!	"/" => Get: show_home,
 //!	"home" => Get: show_home,
 //!	"user/:username" => {Get: show_user, Post: save_user},
@@ -77,7 +77,7 @@
 //!			"json" => Get: send_product_data
 //!		},
 //!	}
-//!);
+//!};
 //!```
 //!
 //!There is also a macro for creating a route vector, like the one in the first example:
@@ -92,7 +92,7 @@
 //!...
 //!
 //!
-//!let routes = routes!(
+//!let routes = routes!{
 //!	"/" => Get: show_home,
 //!	"home" => Get: show_home,
 //!	"user/:username" => {Get: show_user, Post: save_user},
@@ -107,7 +107,7 @@
 //!			"json" => Get: send_product_data
 //!		},
 //!	}
-//!);
+//!};
 //!
 //!let router = Router::from_routes(routes);
 //!```

@@ -115,7 +115,7 @@ fn handler(request: &Request, response: &mut Response) {
 
 fn main() {
 	let server = Server {
-		handlers: router!("/" => Get: handler),
+		handlers: router!{"/" => Get: handler},
 
 		//Set the listening port. Let's use 8080 this time
 		port: 8080
