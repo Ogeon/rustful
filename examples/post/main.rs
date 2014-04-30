@@ -8,7 +8,7 @@ use rustful::{Server, Request, Response};
 use http::method::{Get, Post};
 
 fn say_hello(request: &Request, response: &mut Response) {
-	response.headers.content_type = content_type!("text", "html");
+	response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
 	let content = match request.post.find(&~"name") {
 		Some(name) => {

@@ -186,8 +186,7 @@ fn dummy_expr(sp: codemap::Span, e: ast::Expr_) -> @ast::Expr {
 /**
 A macro for assigning content types.
 
-It takes either a main type and a sub type or a main type, a sub type and a charset as parameters.
-Instead of this:
+It takes a main type, a sub type and a parameter list. Instead of this:
 
 ```
 response.headers.content_type = Some(MediaType {
@@ -200,31 +199,35 @@ response.headers.content_type = Some(MediaType {
 it can be written like this:
 
 ```
-response.headers.content_type = content_type!("text", "html");
+response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 ```
 
-or like this:
+The `"charset": "UTF-8"` part defines the parameter list for the content type.
+It may contain more than one parameter, or be omitted:
 
 ```
-response.headers.content_type = content_type!("text", "html", "UTF-8");
+response.headers.content_type = content_type!("application", "octet-stream", "type": "image/gif", "padding": "4");
+```
+
+```
+response.headers.content_type = content_type!("image", "png");
 ```
 **/
 #[macro_export]
-#[experimental]
 macro_rules! content_type(
 	($main_type:expr, $sub_type:expr) => ({
 		Some(::http::headers::content_type::MediaType {
 			type_: StrBuf::from_str($main_type),
 			subtype: StrBuf::from_str($sub_type),
-			parameters: vec!((StrBuf::from_str("charset"), StrBuf::from_str("UTF-8")))
+			parameters: Vec::new()
 		})
 	});
 
-	($main_type:expr, $sub_type:expr, $charset:expr) => ({
+	($main_type:expr, $sub_type:expr, $($param:expr: $value:expr),+) => ({
 		Some(::http::headers::content_type::MediaType {
 			type_: StrBuf::from_str($main_type),
 			subtype: StrBuf::from_str($sub_type),
-			parameters: vec!((StrBuf::from_str("charset"), StrBuf::from_str($charset)))
+			parameters: vec!( $( (StrBuf::from_str($param), StrBuf::from_str($value)) ),+ )
 		})
 	});
 )
