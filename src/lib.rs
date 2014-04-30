@@ -49,6 +49,9 @@ pub mod response;
 pub fn macro_registrar(register: |ast::Name, SyntaxExtension|) {
 	let expander = ~BasicMacroExpander{expander: expand_router, span: None};
 	register(token::intern("router"), NormalTT(expander, None));
+
+	let expander = ~BasicMacroExpander{expander: expand_routes, span: None};
+	register(token::intern("routes"), NormalTT(expander, None));
 }
 
 fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> ~MacResult {
@@ -71,6 +74,17 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	let block = cx.expr_block(cx.block(sp, calls, Some(cx.expr_ident(sp, router_ident))));
 	
 	MacExpr::new(block)
+}
+
+fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> ~MacResult {
+	let routes = parse_routes(cx, tts).move_iter().map(|(path, method, handler)| {
+		let path_expr = cx.parse_expr("\"" + path + "\"");
+		let method_expr = cx.expr_path(method);
+		let handler_expr = cx.expr_path(handler);
+		mk_tup(sp, vec!(method_expr, path_expr, handler_expr))
+	}).collect();
+
+	MacExpr::new(cx.expr_vec(sp, routes))
 }
 
 fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(~str, ast::Path, ast::Path)> {
@@ -156,49 +170,17 @@ fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, ast::Path)> {
 	methods.move_iter().map(|m| (m, handler.clone())).collect()
 }
 
-/**
-A macro which creates a vector of routes. See `router!(...)` for syntax details.
-
-```
-fn main() {
-	let routes = routes!("/" => Get: say_hello, "/:person" => Get: say_hello);
-
-	let server = Server {
-		handlers: Router::from_routes(routes),
-		port: 8080
-	};
-
-	server.run();
+fn mk_tup(sp: codemap::Span, content: Vec<@ast::Expr>) -> @ast::Expr {
+	dummy_expr(sp, ast::ExprTup(content))
 }
-```
-**/
-#[macro_export]
-#[experimental]
-macro_rules! routes(
-	($($path:expr => {$($method:ident: $handler:expr),+}),*) => ({
-		[
-			$(
-				$((::http::method::$method, $path, $handler)),+
-			),*
-		]
-	});
 
-	($($path:expr => {$($($method:ident)|+: $handler:expr),+}),*) => ({
-		routes!($($path => {$($($method: $handler),+),+}),*)
-	});
-
-	($($path:expr => $method:ident: $handler:expr),*) => ({
-		[
-			$(
-				(::http::method::$method, $path, $handler)
-			),*
-		]
-	});
-
-	($($path:expr => $($method:ident)|+: $handler:expr),*) => ({
-		routes!($($path => {$($method: $handler),+}),*)
-	});
-)
+fn dummy_expr(sp: codemap::Span, e: ast::Expr_) -> @ast::Expr {
+	@ast::Expr {
+		id: ast::DUMMY_NODE_ID,
+		node: e,
+		span: sp,
+	}
+}
 
 
 /**

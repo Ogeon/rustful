@@ -5,6 +5,7 @@ extern crate rustful;
 extern crate rustful;
 extern crate http;
 use rustful::{Server, Router, Request, Response};
+use http::method::Get;
 
 fn say_hello(request: &Request, response: &mut Response) {
 	let person = match request.variables.find(&~"person") {

@@ -79,6 +79,38 @@
 //!	}
 //!);
 //!```
+//!
+//!There is also a macro for creating a route vector, like the one in the first example:
+//!
+//!```rust
+//!#![feature(phase)]
+//!#[phase(syntax)]
+//!extern crate rustful;
+//!
+//!extern crate rustful;
+//!
+//!...
+//!
+//!
+//!let routes = routes!(
+//!	"/" => Get: show_home,
+//!	"home" => Get: show_home,
+//!	"user/:username" => {Get: show_user, Post: save_user},
+//!	"product" => {
+//!		Get: show_all_products,
+//!
+//!		"json" => Get: send_all_product_data
+//!		":id" => {
+//!			Get: show_product,
+//!			Post | Delete: edit_product,
+//!
+//!			"json" => Get: send_product_data
+//!		},
+//!	}
+//!);
+//!
+//!let router = Router::from_routes(routes);
+//!```
 use collections::hashmap::HashMap;
 use http::method::Method;
 use std::vec::Vec;
