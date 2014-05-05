@@ -10,12 +10,19 @@ use http::method::{Get, Post};
 fn say_hello(request: &Request, response: &mut Response) {
 	response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
-	let content = match request.post.find(&~"name") {
+	let content = match request.post.find(&"name".to_owned()) {
 		Some(name) => {
 			format!("<p>Hello, {}!</p>", name.to_str())
 		},
 		None => {
-			~"<form method=\"post\"><div><label for=\"name\">Name: </label><input id=\"name\" type=\"text\" name=\"name\" /></div><div><input type=\"submit\" value=\"Say hello\" /></div></form>"
+			"<form method=\"post\">\
+				<div>\
+					<label for=\"name\">Name: </label><input id=\"name\" type=\"text\" name=\"name\" />\
+				</div>\
+				<div>\
+					<input type=\"submit\" value=\"Say hello\" />\
+				</div>\
+			</form>".to_owned()
 		}
 	};
 

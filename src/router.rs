@@ -404,7 +404,7 @@ mod test {
 		assert!(match result {
 			Some((_, ref variables)) => match expected {
 				Some(expected) => {
-					let keys = vec!(~"a", ~"b", ~"c");
+					let keys = vec!("a".to_owned(), "b".to_owned(), "c".to_owned());
 					let result = keys.iter().filter_map(|key| {
 						match variables.find(key) {
 							Some(value) => Some(value.to_owned()),

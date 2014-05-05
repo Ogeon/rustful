@@ -8,9 +8,9 @@ use rustful::{Server, Router, Request, Response};
 use http::method::Get;
 
 fn say_hello(request: &Request, response: &mut Response) {
-	let person = match request.variables.find(&~"person") {
-		Some(name) => name.to_str(),
-		None => ~"stranger"
+	let person = match request.variables.find(&"person".to_owned()) {
+		Some(name) => name.as_slice(),
+		None => "stranger"
 	};
 
 	match response.write(format!("Hello, {}!", person).as_bytes()) {

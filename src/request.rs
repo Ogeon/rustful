@@ -5,7 +5,7 @@ use http::method::Method;
 use collections::hashmap::HashMap;
 
 
-pub struct Request {
+pub struct Request<'a> {
 	///Headers from the HTTP request
 	pub headers: HeaderCollection,
 
@@ -13,7 +13,7 @@ pub struct Request {
 	pub method: Method,
 
 	///The requested path
-	pub path: ~str,
+	pub path: &'a str,
 
 	///Route variables
 	pub variables: HashMap<~str, ~str>,
@@ -24,9 +24,9 @@ pub struct Request {
 	///Query variables from the path
 	pub query: HashMap<~str, ~str>,
 
-	///The fragment part of the URL (after #)
-	pub fragment: ~str,
+	///The fragment part of the URL (after #), if provided
+	pub fragment: Option<&'a str>,
 
 	///The raw body part of the request
-	pub body: ~str
+	pub body: &'a str
 }

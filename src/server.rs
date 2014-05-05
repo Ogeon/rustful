@@ -24,7 +24,7 @@ use http::headers::content_type::MediaType;
 use http::method::Post;
 
 use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
-use std::str::from_utf8;
+use std::str::from_utf8_owned;
 use std::uint;
 use std::io::BufReader;
 use std::vec::Vec;
@@ -102,15 +102,12 @@ impl HTTP for Server {
 	}
 }
 
-fn build_request(request: &http::server::request::Request) -> Option<Request> {
+fn build_request<'a>(request: &'a http::server::request::Request) -> Option<Request<'a>> {
 	let path = match request.request_uri {
 		AbsoluteUri(ref url) => {
-			let query = url.query.iter().map(|&(ref a, ref b)| {
-				(a.to_str(), b.to_str())
-			}).collect();
-			Some((url.path.to_str(), query, url.fragment.to_str()))
+			Some((url.path.as_slice(), url.query.iter().map(|v| v.clone()).collect(), url.fragment.as_ref().map(|v| v.as_slice())))
 		},
-		AbsolutePath(ref path) => Some(parse_path(path.to_str())),
+		AbsolutePath(ref path) => Some(parse_path(path.as_slice())),
 		_ => None
 	};
 
@@ -125,12 +122,12 @@ fn build_request(request: &http::server::request::Request) -> Option<Request> {
 			Some(Request {
 				headers: *request.headers.clone(),
 				method: request.method.clone(),
-				path: path.to_owned(),
+				path: path,
 				variables: HashMap::new(),
 				post: post,
 				query: query,
 				fragment: fragment,
-				body: request.body.to_str()
+				body: request.body.as_slice()
 			})
 		}
 		None => None
@@ -146,7 +143,7 @@ fn parse_parameters(source: &str) -> HashMap<~str, ~str> {
 				parameters.insert(url_decode(name), url_decode(value));
 			},
 			[name] => {
-				parameters.insert(url_decode(name), ~"");
+				parameters.insert(url_decode(name), "".to_owned());
 			},
 			[name, value, ..] => {
 				parameters.insert(url_decode(name), url_decode(value));
@@ -158,11 +155,11 @@ fn parse_parameters(source: &str) -> HashMap<~str, ~str> {
 	parameters
 }
 
-fn parse_path(path: &str) -> (~str, HashMap<~str, ~str>, ~str) {
+fn parse_path<'a>(path: &'a str) -> (&'a str, HashMap<~str, ~str>, Option<&'a str>) {
 	match path.find('?') {
 		Some(index) => {
 			let (query, fragment) = parse_fragment(path.slice(index+1, path.len()));
-			(path.slice(0, index).to_str(), parse_parameters(query), fragment)
+			(path.slice(0, index), parse_parameters(query), fragment)
 		},
 		None => {
 			let (path, fragment) = parse_fragment(path);
@@ -171,16 +168,16 @@ fn parse_path(path: &str) -> (~str, HashMap<~str, ~str>, ~str) {
 	}
 }
 
-fn parse_fragment(path: &str) -> (~str, ~str) {
+fn parse_fragment<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
 	match path.find('#') {
-		Some(index) => (path.slice(0, index).to_str(), path.slice(index+1, path.len()).to_str()),
-		None => (path.to_str(), ~"")
+		Some(index) => (path.slice(0, index), Some(path.slice(index+1, path.len()))),
+		None => (path, None)
 	}
 }
 
 fn url_decode(string: &str) -> ~str {
 	let mut rdr = BufReader::new(string.as_bytes());
-	let mut out = vec!();
+	let mut out = Vec::new();
 
 	loop {
 		let mut buf = [0];
@@ -202,76 +199,73 @@ fn url_decode(string: &str) -> ~str {
 		}
 	}
 
-	match from_utf8(out.as_slice()) {
-		Some(result) => result.to_str(),
-		None => string.to_str()
-	}
+	from_utf8_owned(out.as_slice().to_owned()).unwrap_or(string.to_owned())
 }
 
 #[test]
 fn parsing_parameters() {
 	let parameters = parse_parameters("a=1&aa=2&ab=202");
-	let a = ~"1";
-	let aa = ~"2";
-	let ab = ~"202";
-	assert_eq!(parameters.find(&~"a"), Some(&a));
-	assert_eq!(parameters.find(&~"aa"), Some(&aa));
-	assert_eq!(parameters.find(&~"ab"), Some(&ab));
+	let a = "1".to_owned();
+	let aa = "2".to_owned();
+	let ab = "202".to_owned();
+	assert_eq!(parameters.find(&"a".to_owned()), Some(&a));
+	assert_eq!(parameters.find(&"aa".to_owned()), Some(&aa));
+	assert_eq!(parameters.find(&"ab".to_owned()), Some(&ab));
 }
 
 #[test]
 fn parsing_strange_parameters() {
 	let parameters = parse_parameters("a=1=2&=2&ab=");
-	let a = ~"1";
-	let aa = ~"2";
-	let ab = ~"";
-	assert_eq!(parameters.find(&~"a"), Some(&a));
-	assert_eq!(parameters.find(&~""), Some(&aa));
-	assert_eq!(parameters.find(&~"ab"), Some(&ab));
+	let a = "1".to_owned();
+	let aa = "2".to_owned();
+	let ab = "".to_owned();
+	assert_eq!(parameters.find(&"a".to_owned()), Some(&a));
+	assert_eq!(parameters.find(&"".to_owned()), Some(&aa));
+	assert_eq!(parameters.find(&"ab".to_owned()), Some(&ab));
 }
 
 #[test]
 fn parse_path_parts() {
-	let with = ~"this";
-	let and = ~"that";
+	let with = "this".to_owned();
+	let and = "that".to_owned();
 	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that#lol");
-	assert_eq!(path, ~"/path/to/something");
-	assert_eq!(query.find(&~"with"), Some(&with));
-	assert_eq!(query.find(&~"and"), Some(&and));
-	assert_eq!(fragment, ~"lol");
+	assert_eq!(path, "/path/to/something");
+	assert_eq!(query.find(&"with".to_owned()), Some(&with));
+	assert_eq!(query.find(&"and".to_owned()), Some(&and));
+	assert_eq!(fragment, Some("lol"));
 }
 
 #[test]
 fn parse_strange_path() {
-	let with = ~"this";
-	let and = ~"what?";
+	let with = "this".to_owned();
+	let and = "what?".to_owned();
 	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=what?#");
-	assert_eq!(path, ~"/path/to/something");
-	assert_eq!(query.find(&~"with"), Some(&with));
-	assert_eq!(query.find(&~"and"), Some(&and));
-	assert_eq!(fragment, ~"");
+	assert_eq!(path, "/path/to/something");
+	assert_eq!(query.find(&"with".to_owned()), Some(&with));
+	assert_eq!(query.find(&"and".to_owned()), Some(&and));
+	assert_eq!(fragment, Some(""));
 }
 
 #[test]
 fn parse_missing_path_parts() {
-	let with = ~"this";
-	let and = ~"that";
+	let with = "this".to_owned();
+	let and = "that".to_owned();
 	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that");
-	assert_eq!(path, ~"/path/to/something");
-	assert_eq!(query.find(&~"with"), Some(&with));
-	assert_eq!(query.find(&~"and"), Some(&and));
-	assert_eq!(fragment, ~"");
+	assert_eq!(path, "/path/to/something");
+	assert_eq!(query.find(&"with".to_owned()), Some(&with));
+	assert_eq!(query.find(&"and".to_owned()), Some(&and));
+	assert_eq!(fragment, None);
 
 
 	let (path, query, fragment) = parse_path("/path/to/something#lol");
-	assert_eq!(path, ~"/path/to/something");
+	assert_eq!(path, "/path/to/something");
 	assert_eq!(query.len(), 0);
-	assert_eq!(fragment, ~"lol");
+	assert_eq!(fragment, Some("lol"));
 
 
 	let (path, query, fragment) = parse_path("?with=this&and=that#lol");
-	assert_eq!(path, ~"");
-	assert_eq!(query.find(&~"with"), Some(&with));
-	assert_eq!(query.find(&~"and"), Some(&and));
-	assert_eq!(fragment, ~"lol");
+	assert_eq!(path, "");
+	assert_eq!(query.find(&"with".to_owned()), Some(&with));
+	assert_eq!(query.find(&"and".to_owned()), Some(&and));
+	assert_eq!(fragment, Some("lol"));
 }
