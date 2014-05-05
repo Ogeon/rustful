@@ -186,6 +186,7 @@ fn url_decode(string: &str) -> ~str {
 			Ok(..) => buf[0] as char
 		};
 		match ch {
+			'+' => out.push(' ' as u8),
 			'%' => {
 				let mut bytes = [0, 0];
 				match rdr.read(bytes) {
@@ -208,6 +209,17 @@ fn parsing_parameters() {
 	let a = "1".to_owned();
 	let aa = "2".to_owned();
 	let ab = "202".to_owned();
+	assert_eq!(parameters.find(&"a".to_owned()), Some(&a));
+	assert_eq!(parameters.find(&"aa".to_owned()), Some(&aa));
+	assert_eq!(parameters.find(&"ab".to_owned()), Some(&ab));
+}
+
+#[test]
+fn parsing_parameters_with_plus() {
+	let parameters = parse_parameters("a=1&aa=2+%2B+extra+meat&ab=202+fifth+avenue");
+	let a = "1".to_owned();
+	let aa = "2 + extra meat".to_owned();
+	let ab = "202 fifth avenue".to_owned();
 	assert_eq!(parameters.find(&"a".to_owned()), Some(&a));
 	assert_eq!(parameters.find(&"aa".to_owned()), Some(&aa));
 	assert_eq!(parameters.find(&"ab".to_owned()), Some(&ab));
