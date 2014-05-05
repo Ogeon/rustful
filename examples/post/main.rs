@@ -33,6 +33,8 @@ fn say_hello(request: &Request, response: &mut Response) {
 }
 
 fn main() {
+	println!("Visit http://localhost:8080 to try this example.");
+
 	let server = Server {
 		handlers: router!{"/" => Get | Post: say_hello},
 		port: 8080

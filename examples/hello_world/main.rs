@@ -20,6 +20,8 @@ fn say_hello(request: &Request, response: &mut Response) {
 }
 
 fn main() {
+	println!("Visit http://localhost:8080 or http://localhost:8080/Peter (if your name is Peter) to try this example.");
+
 	let routes = routes!{"/" => Get: say_hello, "/:person" => Get: say_hello};
 
 	let server = Server {
