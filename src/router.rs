@@ -117,6 +117,13 @@ use std::vec::Vec;
 
 pub type RouterResult<'a, T> = Option<(&'a T, HashMap<~str, ~str>)>;
 
+enum Branch {
+	Static,
+	Variable,
+	Wildcard
+}
+
+
 
 ///Stores items, such as request handlers, using an HTTP method and a path as keys.
 ///
@@ -147,8 +154,8 @@ pub type RouterResult<'a, T> = Option<(&'a T, HashMap<~str, ~str>)>;
 pub struct Router<T> {
 	items: HashMap<~str, (T, Vec<~str>)>,
 	static_routes: HashMap<~str, Router<T>>,
-	variable_route: Option<~Router<T>>,
-	wildcard_route: Option<~Router<T>>
+	variable_route: Option<Box<Router<T>>>,
+	wildcard_route: Option<Box<Router<T>>>
 }
 
 impl<T> Router<T> {
@@ -168,20 +175,20 @@ impl<T> Router<T> {
 	}
 
 	//Same as `insert_item`, but internal
-	fn insert_item_vec(&mut self, method: Method, path: &[&str], variable_names: Vec<~str>, item: T) {
+	fn insert_item_vec(&mut self, method: Method, path: &[~str], variable_names: Vec<~str>, item: T) {
 		let mut var_names = variable_names;
 
 		match path {
-			[piece] => {
-				let next = self.find_or_insert_router(piece);
+			[ref piece] => {
+				let next = self.find_or_insert_router(*piece);
 				if piece.len() > 0 && piece.char_at(0) == ':' {
 					var_names.push(piece.slice(1, piece.len()).to_owned());
 				}
 
 				next.items.insert(method.to_str(), (item, var_names));
 			},
-			[piece, ..rest] => {
-				let next = self.find_or_insert_router(piece);
+			[ref piece, ..rest] => {
+				let next = self.find_or_insert_router(*piece);
 				if piece.len() > 0 && piece.char_at(0) == ':' {
 					var_names.push(piece.slice(1, piece.len()).to_owned());
 				}
@@ -197,12 +204,12 @@ impl<T> Router<T> {
 	fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut Router<T> {
 		if key == "*" {
 			if self.wildcard_route.is_none() {
-				self.wildcard_route = Some(~Router::new());
+				self.wildcard_route = Some(box Router::new());
 			}
 			&'a mut **self.wildcard_route.as_mut::<'a>().unwrap()
 		} else if key.len() > 0 && key.char_at(0) == ':' {
 			if self.variable_route.is_none() {
-				self.variable_route = Some(~Router::new());
+				self.variable_route = Some(box Router::new());
 			}
 			&'a mut **self.variable_route.as_mut::<'a>().unwrap()
 		} else {
@@ -214,97 +221,92 @@ impl<T> Router<T> {
 
 	///Finds and returns the matching item and variables
 	pub fn find<'a>(&'a self, method: Method, path: &str) -> RouterResult<'a, T> {
-		self.search::<'a>(method, Router::<T>::path_to_vec(path.to_owned()).as_slice(), &[])
-	}
+		let path = Router::<T>::path_to_vec(path);
 
-	//Tries to find a matching item and run it
-	fn search<'a>(&'a self, method: Method, path: &[&str], variables: &[&str]) -> RouterResult<'a, T> {
-		match path {
-			[piece] => {
-				self.match_static(piece, &[], variables, |next, _, vars| { next.get::<'a>(method.clone(), vars) })
-			},
-			[piece, ..rest] => {
-				self.match_static(piece, rest, variables, |next, path, vars| { next.search::<'a>(method.clone(), path, vars) })
-			},
-			[] => {
-				self.get::<'a>(method, variables)
+		if path.len() == 0 {
+			match self.items.find(&method.to_str()) {
+				Some(&(ref item, _)) => Some((item, HashMap::new())),
+				None => None
 			}
-		}
-	}
+		} else {
+			let mut variables = Vec::from_elem(path.len(), false);
 
-	//Returns an item and a hashmap of variable values
-	fn get<'a>(&'a self, method: Method, variables: &[&str]) -> RouterResult<'a, T> {
-		match self.items.find(&method.to_str()) {
-			Some(&(ref item, ref variable_names)) => {
-				let mut var_map = HashMap::new();
-				for (key, &value) in variable_names.iter().zip(variables.iter()) {
-					var_map.insert(key.to_owned(), value.to_owned());
-				}
-				Some((item, var_map))
-			},
-			None => None
-		}
-	}
+			let mut stack = vec![(self, Wildcard, 0), (self, Variable, 0), (self, Static, 0)];
 
-	//Checks for a static route. Runs `action` if found, runs `match_variable` otherwhise
-	fn match_static<'a>(&'a self, key: &str, rest: &[&str], variables: &[&str], action: |&'a Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
-		match self.static_routes.find(&key.to_owned()) {
-			Some(next) => {
-				match action(next, rest, variables) {
-					None => self.match_variable(key, rest, variables, action),
-					result => result
-				}
-			},
-			None => self.match_variable(key, rest, variables, action)
-		}
-	}
+			while stack.len() > 0 {
+				let (current, branch, index) = stack.pop().unwrap();
 
-	//Checks for a variable route. Runs `action` if found, runs `match_wildcard` otherwhise
-	fn match_variable<'a>(&'a self, key: &str, rest: &[&str], variables: &[&str], action: |&'a Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
-		match self.variable_route {
-			Some(ref next) => {
+				if index == path.len() {
+					match current.items.find(&method.to_str()) {
+						Some(&(ref item, ref variable_names)) => {
+							let values = path.move_iter().zip(variables.move_iter()).filter_map(|(v, keep)| {
+								if keep {
+									Some(v)
+								} else {
+									None
+								}
+							});
 
-				match action(*next, rest, variables + &[key]) {
-					None => self.match_wildcard(rest, variables, action),
-					result => result
-				}
-			},
-			None => self.match_wildcard(rest, variables, action)
-		}
-	}
+							let mut var_map = variable_names.iter().zip(values).map(|(key, value)| {
+								(key.to_owned(), value)
+							});
 
-	//Checks for a wildcard route. Runs `action` if found, returns `None` otherwhise
-	fn match_wildcard<'a>(&'a self, rest: &[&str], variables: &[&str], action: |&'a Router<T>, &[&str], &[&str]| -> RouterResult<'a, T>) -> RouterResult<'a, T> {
-		match self.wildcard_route {
-			Some(ref next) => {
-				let mut path = rest;
-				while path.len() > 0 {
-					match action(*next, path, variables) {
-						None => path = path.slice(1, path.len()),
-						result => return result
+							return Some((item, var_map.collect()))
+						},
+						None => continue
 					}
 				}
 
-				action(*next, path, variables)
-			},
-			None => None
+				match branch {
+					Static => {
+						current.static_routes.find(path.get(index)).map(|next| {
+							*variables.get_mut(index) = false;
+							
+							stack.push((&*next, Wildcard, index+1));
+							stack.push((&*next, Variable, index+1));
+							stack.push((&*next, Static, index+1));
+						});
+					},
+					Variable => {
+						current.variable_route.as_ref().map(|next| {
+							*variables.get_mut(index) = true;
+
+							stack.push((&**next, Wildcard, index+1));
+							stack.push((&**next, Variable, index+1));
+							stack.push((&**next, Static, index+1));
+						});
+					},
+					Wildcard => {
+						current.wildcard_route.as_ref().map(|next| {
+							*variables.get_mut(index) = false;
+
+							stack.push((current, Wildcard, index+1));
+							stack.push((&**next, Wildcard, index+1));
+							stack.push((&**next, Variable, index+1));
+							stack.push((&**next, Static, index+1));
+						});
+					}
+				}
+			}
+
+			None
 		}
 	}
 
 	//Converts a path to a suitable array of path segments
-	fn path_to_vec<'a>(path: &'a str) -> Vec<&'a str> {
+	fn path_to_vec<'a>(path: &'a str) -> Vec<~str> {
 		if path.len() == 0 {
 			vec!()
 		} else if path.len() == 1 {
 			if path == "/" {
 				vec!()
 			} else {
-				vec!(path)
+				vec!(path.to_owned())
 			}
 		} else {
 			let start = if path.char_at(0) == '/' { 1 } else { 0 };
 			let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
-			path.slice(start, path.len() - end).split('/').collect::<Vec<&str>>()
+			path.slice(start, path.len() - end).split('/').map(|s| s.to_owned()).collect()
 		}
 	}
 }
@@ -328,19 +330,19 @@ impl<T: Clone> Router<T> {
 	}
 
 	//Same as `insert_router`, but internal
-	fn insert_router_vec(&mut self, path: &[&str], variable_names: Vec<~str>, router: &Router<T>) {
+	fn insert_router_vec(&mut self, path: &[~str], variable_names: Vec<~str>, router: &Router<T>) {
 		let mut var_names = variable_names;
 
 		match path {
-			[piece] => {
-				let next = self.find_or_insert_router(piece);
+			[ref piece] => {
+				let next = self.find_or_insert_router(*piece);
 				if piece.len() > 0 && piece.char_at(0) == ':' {
 					var_names.push(piece.slice(1, piece.len()).to_owned());
 				}
 				next.merge_router(var_names, router);
 			},
-			[piece, ..rest] => {
-				let next = self.find_or_insert_router(piece);
+			[ref piece, ..rest] => {
+				let next = self.find_or_insert_router(*piece);
 				if piece.len() > 0 && piece.char_at(0) == ':' {
 					var_names.push(piece.slice(1, piece.len()).to_owned());
 				}
@@ -367,7 +369,7 @@ impl<T: Clone> Router<T> {
 
 		if router.variable_route.is_some() {
 			if self.variable_route.is_none() {
-				self.variable_route = Some(~Router::new());
+				self.variable_route = Some(box Router::new());
 			}
 
 			self.variable_route.as_mut().mutate(|next| {
@@ -379,7 +381,7 @@ impl<T: Clone> Router<T> {
 
 		if router.wildcard_route.is_some() {
 			if self.wildcard_route.is_none() {
-				self.wildcard_route = Some(~Router::new());
+				self.wildcard_route = Some(box Router::new());
 			}
 
 			self.wildcard_route.as_mut().mutate(|next| {

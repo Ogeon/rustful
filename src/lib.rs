@@ -47,14 +47,14 @@ pub mod response;
 #[macro_registrar]
 #[doc(hidden)]
 pub fn macro_registrar(register: |ast::Name, SyntaxExtension|) {
-	let expander = ~BasicMacroExpander{expander: expand_router, span: None};
+	let expander = box BasicMacroExpander{expander: expand_router, span: None};
 	register(token::intern("router"), NormalTT(expander, None));
 
-	let expander = ~BasicMacroExpander{expander: expand_routes, span: None};
+	let expander = box BasicMacroExpander{expander: expand_routes, span: None};
 	register(token::intern("routes"), NormalTT(expander, None));
 }
 
-fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> ~MacResult {
+fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult> {
 	let router_ident = cx.ident_of("router");
 	let insert_method = cx.ident_of("insert_item");
 
@@ -63,7 +63,7 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	);
 
 	for (path, method, handler) in parse_routes(cx, tts).move_iter() {
-		let path_expr = cx.parse_expr("\"" + path + "\"");
+		let path_expr = cx.parse_expr(format!("\"{}\"", path).to_strbuf());
 		let method_expr = cx.expr_path(method);
 		let handler_expr = cx.expr_path(handler);
 		calls.push(cx.stmt_expr(
@@ -76,9 +76,9 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	MacExpr::new(block)
 }
 
-fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> ~MacResult {
+fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult> {
 	let routes = parse_routes(cx, tts).move_iter().map(|(path, method, handler)| {
-		let path_expr = cx.parse_expr("\"" + path + "\"");
+		let path_expr = cx.parse_expr(format!("\"{}\"", path).to_strbuf());
 		let method_expr = cx.expr_path(method);
 		let handler_expr = cx.expr_path(handler);
 		mk_tup(sp, vec!(method_expr, path_expr, handler_expr))

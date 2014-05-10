@@ -37,7 +37,7 @@ impl<'a, 'b> Response<'a, 'b> {
 			//TODO: Intercept headers and status
 
 			self.writer.status = self.status.clone();
-			self.writer.headers = ~self.headers.clone();
+			self.writer.headers = box self.headers.clone();
 
 			//TODO: Begin content interception
 		}
