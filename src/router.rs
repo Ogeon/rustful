@@ -302,31 +302,25 @@ impl<T: Clone> Router<T> {
 	///Insert an other Router at a path. The content of the other Router will be merged with this one.
 	///Content with the same path and method will be overwritten.
 	pub fn insert_router(&mut self, path: &str, router: &Router<T>) {
-		self.insert_router_vec(path_to_vec(path.trim()).as_slice(), vec!(), router);
-	}
+		let path = path_to_vec(path.trim());
 
-	//Same as `insert_router`, but internal
-	fn insert_router_vec(&mut self, path: &[~str], variable_names: Vec<~str>, router: &Router<T>) {
-		let mut var_names = variable_names;
+		if path.len() == 0 {
+			self.merge_router(Vec::new(), router);
+		} else {
+			let (endpoint, variable_names) = path.move_iter().fold((self, Vec::new()),
 
-		match path {
-			[ref piece] => {
-				let next = self.find_or_insert_router(*piece);
-				if piece.len() > 0 && piece.char_at(0) == ':' {
-					var_names.push(piece.slice(1, piece.len()).to_owned());
+				|(current, mut variable_names), piece| {
+					let next = current.find_or_insert_router(piece);
+					if piece.len() > 0 && piece.char_at(0) == ':' {
+						variable_names.push(piece.slice(1, piece.len()).to_owned());
+					}
+
+					(next, variable_names)
 				}
-				next.merge_router(var_names, router);
-			},
-			[ref piece, ..rest] => {
-				let next = self.find_or_insert_router(*piece);
-				if piece.len() > 0 && piece.char_at(0) == ':' {
-					var_names.push(piece.slice(1, piece.len()).to_owned());
-				}
-				next.insert_router_vec(rest, var_names, router);
-			},
-			[] => {
-				self.merge_router(var_names, router);
-			}
+
+			);
+
+			endpoint.merge_router(variable_names, router);
 		}
 	}
 
