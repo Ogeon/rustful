@@ -171,7 +171,7 @@ impl<T> Router<T> {
 
 	///Inserts an item into the `Router` at a given path.
 	pub fn insert_item(&mut self, method: Method, path: &str, item: T) {
-		self.insert_item_vec(method, Router::<T>::path_to_vec(path.trim()).as_slice(), vec!(), item);
+		self.insert_item_vec(method, path_to_vec(path.trim()).as_slice(), vec!(), item);
 	}
 
 	//Same as `insert_item`, but internal
@@ -221,7 +221,7 @@ impl<T> Router<T> {
 
 	///Finds and returns the matching item and variables
 	pub fn find<'a>(&'a self, method: Method, path: &str) -> RouterResult<'a, T> {
-		let path = Router::<T>::path_to_vec(path);
+		let path = path_to_vec(path);
 
 		if path.len() == 0 {
 			match self.items.find(&method.to_str()) {
@@ -292,23 +292,6 @@ impl<T> Router<T> {
 			None
 		}
 	}
-
-	//Converts a path to a suitable array of path segments
-	fn path_to_vec<'a>(path: &'a str) -> Vec<~str> {
-		if path.len() == 0 {
-			vec!()
-		} else if path.len() == 1 {
-			if path == "/" {
-				vec!()
-			} else {
-				vec!(path.to_owned())
-			}
-		} else {
-			let start = if path.char_at(0) == '/' { 1 } else { 0 };
-			let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
-			path.slice(start, path.len() - end).split('/').map(|s| s.to_owned()).collect()
-		}
-	}
 }
 
 impl<T: Clone> Router<T> {
@@ -326,7 +309,7 @@ impl<T: Clone> Router<T> {
 	///Insert an other Router at a path. The content of the other Router will be merged with this one.
 	///Content with the same path and method will be overwritten.
 	pub fn insert_router(&mut self, path: &str, router: &Router<T>) {
-		self.insert_router_vec(Router::<T>::path_to_vec(path.trim()).as_slice(), vec!(), router);
+		self.insert_router_vec(path_to_vec(path.trim()).as_slice(), vec!(), router);
 	}
 
 	//Same as `insert_router`, but internal
@@ -392,6 +375,22 @@ impl<T: Clone> Router<T> {
 	}
 }
 
+//Converts a path to a suitable array of path segments
+fn path_to_vec(path: &str) -> Vec<~str> {
+	if path.len() == 0 {
+		vec!()
+	} else if path.len() == 1 {
+		if path == "/" {
+			vec!()
+		} else {
+			vec!(path.to_owned())
+		}
+	} else {
+		let start = if path.char_at(0) == '/' { 1 } else { 0 };
+		let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
+		path.slice(start, path.len() - end).split('/').map(|s| s.to_owned()).collect()
+	}
+}
 
 
 #[cfg(test)]
