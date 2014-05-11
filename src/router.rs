@@ -171,32 +171,25 @@ impl<T> Router<T> {
 
 	///Inserts an item into the `Router` at a given path.
 	pub fn insert_item(&mut self, method: Method, path: &str, item: T) {
-		self.insert_item_vec(method, path_to_vec(path.trim()).as_slice(), vec!(), item);
-	}
+		let path = path_to_vec(path.trim());
 
-	//Same as `insert_item`, but internal
-	fn insert_item_vec(&mut self, method: Method, path: &[~str], variable_names: Vec<~str>, item: T) {
-		let mut var_names = variable_names;
+		if path.len() == 0 {
+			self.items.insert(method.to_str(), (item, Vec::new()));
+		} else {
+			let (endpoint, variable_names) = path.move_iter().fold((self, Vec::new()),
 
-		match path {
-			[ref piece] => {
-				let next = self.find_or_insert_router(*piece);
-				if piece.len() > 0 && piece.char_at(0) == ':' {
-					var_names.push(piece.slice(1, piece.len()).to_owned());
+				|(current, mut variable_names), piece| {
+					let next = current.find_or_insert_router(piece);
+					if piece.len() > 0 && piece.char_at(0) == ':' {
+						variable_names.push(piece.slice(1, piece.len()).to_owned());
+					}
+
+					(next, variable_names)
 				}
 
-				next.items.insert(method.to_str(), (item, var_names));
-			},
-			[ref piece, ..rest] => {
-				let next = self.find_or_insert_router(*piece);
-				if piece.len() > 0 && piece.char_at(0) == ':' {
-					var_names.push(piece.slice(1, piece.len()).to_owned());
-				}
-				next.insert_item_vec(method, rest, var_names, item);
-			},
-			[] => {
-				self.items.insert(method.to_str(), (item, var_names));
-			}
+			);
+
+			endpoint.items.insert(method.to_str(), (item, variable_names));
 		}
 	}
 
