@@ -137,19 +137,13 @@ fn build_request<'a>(request: &'a http::server::request::Request) -> Option<Requ
 fn parse_parameters(source: &str) -> HashMap<~str, ~str> {
 	let mut parameters = HashMap::new();
 	for parameter in source.split('&') {
-		let parts: Vec<&str> = parameter.split('=').collect();
-		match parts.as_slice() {
-			[name, value] => {
-				parameters.insert(url_decode(name), url_decode(value));
-			},
-			[name] => {
-				parameters.insert(url_decode(name), "".to_owned());
-			},
-			[name, value, ..] => {
-				parameters.insert(url_decode(name), url_decode(value));
-			},
-			[] => {}
-		}
+		let mut parts = parameter.split('=');
+		parts.next().map(|name|
+			parameters.insert(
+				url_decode(name),
+				parts.next().map(|v| url_decode(v)).unwrap_or_else(|| "".to_owned())
+			)
+		);
 	}
 
 	parameters
