@@ -105,7 +105,11 @@ impl HTTP for Server {
 fn build_request<'a>(request: &'a http::server::request::Request) -> Option<Request<'a>> {
 	let path = match request.request_uri {
 		AbsoluteUri(ref url) => {
-			Some((url.path.as_slice(), url.query.iter().map(|v| v.clone()).collect(), url.fragment.as_ref().map(|v| v.as_slice())))
+			Some((
+				url.path.as_slice(),
+				url.query.iter().map(|&(ref k, ref v)| (k.to_owned(), v.to_owned()) ).collect(),
+				url.fragment.as_ref().map(|v| v.as_slice())
+			))
 		},
 		AbsolutePath(ref path) => Some(parse_path(path.as_slice())),
 		_ => None
