@@ -7,6 +7,9 @@ rustful:
 	rustc $(LIBS) --opt-level=3 src/lib.rs --out-dir lib/
 
 deps:
+	git submodule init
+	git submodule sync
+	git submodule update
 	rm -f lib/libhttp*
 	cd lib/rust-http; ./configure
 	make -C lib/rust-http clean
