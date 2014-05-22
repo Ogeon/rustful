@@ -63,7 +63,7 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	);
 
 	for (path, method, handler) in parse_routes(cx, tts).move_iter() {
-		let path_expr = cx.parse_expr(format!("\"{}\"", path).to_strbuf());
+		let path_expr = cx.parse_expr(format_strbuf!("\"{}\"", path));
 		let method_expr = cx.expr_path(method);
 		let handler_expr = cx.expr_path(handler);
 		calls.push(cx.stmt_expr(
@@ -78,7 +78,7 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 
 fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult> {
 	let routes = parse_routes(cx, tts).move_iter().map(|(path, method, handler)| {
-		let path_expr = cx.parse_expr(format!("\"{}\"", path).to_strbuf());
+		let path_expr = cx.parse_expr(format_strbuf!("\"{}\"", path));
 		let method_expr = cx.expr_path(method);
 		let handler_expr = cx.expr_path(handler);
 		mk_tup(sp, vec!(method_expr, path_expr, handler_expr))
@@ -87,7 +87,7 @@ fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	MacExpr::new(cx.expr_vec(sp, routes))
 }
 
-fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(~str, ast::Path, ast::Path)> {
+fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(StrBuf, ast::Path, ast::Path)> {
 
 	let mut parser = parse::new_parser_from_tts(
 		cx.parse_sess(), cx.cfg(), Vec::from_slice(tts)
@@ -96,7 +96,7 @@ fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(~str, ast::Pat
 	parse_subroutes("", cx, &mut parser)
 }
 
-fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(~str, ast::Path, ast::Path)> {
+fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(StrBuf, ast::Path, ast::Path)> {
 	let mut routes = Vec::new();
 
 	while !parser.eat(&token::EOF) {
@@ -107,7 +107,9 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(~s
 					break;
 				}
 
-				let new_base = base + s.to_str().trim_chars('/').to_owned() + "/";
+				let mut new_base = base.to_strbuf();
+				new_base.push_str(s.to_str().trim_chars('/'));
+				new_base.push_str("/");
 
 
 				if parser.eat(&token::EOF) {
@@ -115,7 +117,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(~s
 				}
 
 				if parser.eat(&token::LBRACE) {
-					let subroutes = parse_subroutes(new_base, cx, parser);
+					let subroutes = parse_subroutes(new_base.as_slice(), cx, parser);
 					routes.push_all(subroutes.as_slice());
 
 					if parser.eat(&token::RBRACE) {
@@ -137,7 +139,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(~s
 			},
 			None => {
 				for (method, handler) in parse_handler(parser).move_iter() {
-					routes.push((base.to_owned(), method, handler))
+					routes.push((base.to_strbuf(), method, handler))
 				}
 
 				if !parser.eat(&token::COMMA) {

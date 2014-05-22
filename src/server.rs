@@ -24,7 +24,6 @@ use http::headers::content_type::MediaType;
 use http::method::Post;
 
 use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
-use std::str::from_utf8_owned;
 use std::uint;
 use std::io::BufReader;
 use std::vec::Vec;
@@ -107,7 +106,7 @@ fn build_request<'a>(request: &'a http::server::request::Request) -> Option<Requ
 		AbsoluteUri(ref url) => {
 			Some((
 				url.path.as_slice(),
-				url.query.iter().map(|&(ref k, ref v)| (k.to_owned(), v.to_owned()) ).collect(),
+				url.query.iter().map(|&(ref k, ref v)| (k.clone(), v.clone()) ).collect(),
 				url.fragment.as_ref().map(|v| v.as_slice())
 			))
 		},
@@ -138,14 +137,14 @@ fn build_request<'a>(request: &'a http::server::request::Request) -> Option<Requ
 	}
 }
 
-fn parse_parameters(source: &str) -> HashMap<~str, ~str> {
+fn parse_parameters(source: &str) -> HashMap<StrBuf, StrBuf> {
 	let mut parameters = HashMap::new();
 	for parameter in source.split('&') {
 		let mut parts = parameter.split('=');
 		parts.next().map(|name|
 			parameters.insert(
 				url_decode(name),
-				parts.next().map(|v| url_decode(v)).unwrap_or_else(|| "".to_owned())
+				parts.next().map(|v| url_decode(v)).unwrap_or_else(|| "".into_strbuf())
 			)
 		);
 	}
@@ -153,7 +152,7 @@ fn parse_parameters(source: &str) -> HashMap<~str, ~str> {
 	parameters
 }
 
-fn parse_path<'a>(path: &'a str) -> (&'a str, HashMap<~str, ~str>, Option<&'a str>) {
+fn parse_path<'a>(path: &'a str) -> (&'a str, HashMap<StrBuf, StrBuf>, Option<&'a str>) {
 	match path.find('?') {
 		Some(index) => {
 			let (query, fragment) = parse_fragment(path.slice(index+1, path.len()));
@@ -173,7 +172,7 @@ fn parse_fragment<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
 	}
 }
 
-fn url_decode(string: &str) -> ~str {
+fn url_decode(string: &str) -> StrBuf {
 	let mut rdr = BufReader::new(string.as_bytes());
 	let mut out = Vec::new();
 
@@ -198,72 +197,72 @@ fn url_decode(string: &str) -> ~str {
 		}
 	}
 
-	from_utf8_owned(out.as_slice().to_owned()).unwrap_or(string.to_owned())
+	StrBuf::from_utf8(out).unwrap_or_else(|_| string.into_strbuf())
 }
 
 #[test]
 fn parsing_parameters() {
 	let parameters = parse_parameters("a=1&aa=2&ab=202");
-	let a = "1".to_owned();
-	let aa = "2".to_owned();
-	let ab = "202".to_owned();
-	assert_eq!(parameters.find(&"a".to_owned()), Some(&a));
-	assert_eq!(parameters.find(&"aa".to_owned()), Some(&aa));
-	assert_eq!(parameters.find(&"ab".to_owned()), Some(&ab));
+	let a = "1".into_strbuf();
+	let aa = "2".into_strbuf();
+	let ab = "202".into_strbuf();
+	assert_eq!(parameters.find(&"a".into_strbuf()), Some(&a));
+	assert_eq!(parameters.find(&"aa".into_strbuf()), Some(&aa));
+	assert_eq!(parameters.find(&"ab".into_strbuf()), Some(&ab));
 }
 
 #[test]
 fn parsing_parameters_with_plus() {
 	let parameters = parse_parameters("a=1&aa=2+%2B+extra+meat&ab=202+fifth+avenue");
-	let a = "1".to_owned();
-	let aa = "2 + extra meat".to_owned();
-	let ab = "202 fifth avenue".to_owned();
-	assert_eq!(parameters.find(&"a".to_owned()), Some(&a));
-	assert_eq!(parameters.find(&"aa".to_owned()), Some(&aa));
-	assert_eq!(parameters.find(&"ab".to_owned()), Some(&ab));
+	let a = "1".into_strbuf();
+	let aa = "2 + extra meat".into_strbuf();
+	let ab = "202 fifth avenue".into_strbuf();
+	assert_eq!(parameters.find(&"a".into_strbuf()), Some(&a));
+	assert_eq!(parameters.find(&"aa".into_strbuf()), Some(&aa));
+	assert_eq!(parameters.find(&"ab".into_strbuf()), Some(&ab));
 }
 
 #[test]
 fn parsing_strange_parameters() {
 	let parameters = parse_parameters("a=1=2&=2&ab=");
-	let a = "1".to_owned();
-	let aa = "2".to_owned();
-	let ab = "".to_owned();
-	assert_eq!(parameters.find(&"a".to_owned()), Some(&a));
-	assert_eq!(parameters.find(&"".to_owned()), Some(&aa));
-	assert_eq!(parameters.find(&"ab".to_owned()), Some(&ab));
+	let a = "1".into_strbuf();
+	let aa = "2".into_strbuf();
+	let ab = "".into_strbuf();
+	assert_eq!(parameters.find(&"a".into_strbuf()), Some(&a));
+	assert_eq!(parameters.find(&"".into_strbuf()), Some(&aa));
+	assert_eq!(parameters.find(&"ab".into_strbuf()), Some(&ab));
 }
 
 #[test]
 fn parse_path_parts() {
-	let with = "this".to_owned();
-	let and = "that".to_owned();
+	let with = "this".into_strbuf();
+	let and = "that".into_strbuf();
 	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that#lol");
 	assert_eq!(path, "/path/to/something");
-	assert_eq!(query.find(&"with".to_owned()), Some(&with));
-	assert_eq!(query.find(&"and".to_owned()), Some(&and));
+	assert_eq!(query.find(&"with".into_strbuf()), Some(&with));
+	assert_eq!(query.find(&"and".into_strbuf()), Some(&and));
 	assert_eq!(fragment, Some("lol"));
 }
 
 #[test]
 fn parse_strange_path() {
-	let with = "this".to_owned();
-	let and = "what?".to_owned();
+	let with = "this".into_strbuf();
+	let and = "what?".into_strbuf();
 	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=what?#");
 	assert_eq!(path, "/path/to/something");
-	assert_eq!(query.find(&"with".to_owned()), Some(&with));
-	assert_eq!(query.find(&"and".to_owned()), Some(&and));
+	assert_eq!(query.find(&"with".into_strbuf()), Some(&with));
+	assert_eq!(query.find(&"and".into_strbuf()), Some(&and));
 	assert_eq!(fragment, Some(""));
 }
 
 #[test]
 fn parse_missing_path_parts() {
-	let with = "this".to_owned();
-	let and = "that".to_owned();
+	let with = "this".into_strbuf();
+	let and = "that".into_strbuf();
 	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that");
 	assert_eq!(path, "/path/to/something");
-	assert_eq!(query.find(&"with".to_owned()), Some(&with));
-	assert_eq!(query.find(&"and".to_owned()), Some(&and));
+	assert_eq!(query.find(&"with".into_strbuf()), Some(&with));
+	assert_eq!(query.find(&"and".into_strbuf()), Some(&and));
 	assert_eq!(fragment, None);
 
 
@@ -275,7 +274,7 @@ fn parse_missing_path_parts() {
 
 	let (path, query, fragment) = parse_path("?with=this&and=that#lol");
 	assert_eq!(path, "");
-	assert_eq!(query.find(&"with".to_owned()), Some(&with));
-	assert_eq!(query.find(&"and".to_owned()), Some(&and));
+	assert_eq!(query.find(&"with".into_strbuf()), Some(&with));
+	assert_eq!(query.find(&"and".into_strbuf()), Some(&and));
 	assert_eq!(fragment, Some("lol"));
 }

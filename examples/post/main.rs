@@ -10,7 +10,7 @@ use http::method::{Get, Post};
 fn say_hello(request: &Request, response: &mut Response) {
 	response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
-	let content = match request.post.find(&"name".to_owned()) {
+	let content = match request.post.find(&"name".into_strbuf()) {
 		Some(name) => {
 			format!("<p>Hello, {}!</p>", name.to_str())
 		},

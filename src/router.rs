@@ -115,7 +115,7 @@ use collections::hashmap::HashMap;
 use http::method::Method;
 use std::vec::Vec;
 
-pub type RouterResult<'a, T> = Option<(&'a T, HashMap<~str, ~str>)>;
+pub type RouterResult<'a, T> = Option<(&'a T, HashMap<StrBuf, StrBuf>)>;
 
 enum Branch {
 	Static,
@@ -152,8 +152,8 @@ enum Branch {
 ///```
 #[deriving(Clone)]
 pub struct Router<T> {
-	items: HashMap<~str, (T, Vec<~str>)>,
-	static_routes: HashMap<~str, Router<T>>,
+	items: HashMap<StrBuf, (T, Vec<StrBuf>)>,
+	static_routes: HashMap<StrBuf, Router<T>>,
 	variable_route: Option<Box<Router<T>>>,
 	wildcard_route: Option<Box<Router<T>>>
 }
@@ -174,14 +174,15 @@ impl<T> Router<T> {
 		let path = path_to_vec(path.trim());
 
 		if path.len() == 0 {
-			self.items.insert(method.to_str(), (item, Vec::new()));
+			self.items.insert(method.to_str().into_strbuf(), (item, Vec::new()));
 		} else {
 			let (endpoint, variable_names) = path.move_iter().fold((self, Vec::new()),
 
-				|(current, mut variable_names), piece| {
-					let next = current.find_or_insert_router(piece);
-					if piece.len() > 0 && piece.char_at(0) == ':' {
-						variable_names.push(piece.slice(1, piece.len()).to_owned());
+				|(current, mut variable_names), mut piece| {
+					let next = current.find_or_insert_router(piece.as_slice());
+					if piece.len() > 0 && piece.as_slice().char_at(0) == ':' {
+						piece.shift_char();
+						variable_names.push(piece);
 					}
 
 					(next, variable_names)
@@ -189,7 +190,7 @@ impl<T> Router<T> {
 
 			);
 
-			endpoint.items.insert(method.to_str(), (item, variable_names));
+			endpoint.items.insert(method.to_str().into_strbuf(), (item, variable_names));
 		}
 	}
 
@@ -206,7 +207,7 @@ impl<T> Router<T> {
 			}
 			&'a mut **self.variable_route.as_mut::<'a>().unwrap()
 		} else {
-			self.static_routes.find_or_insert_with::<'a>(key.to_owned(), |_| {
+			self.static_routes.find_or_insert_with::<'a>(key.to_strbuf(), |_| {
 				Router::new()
 			})
 		}
@@ -215,9 +216,10 @@ impl<T> Router<T> {
 	///Finds and returns the matching item and variables
 	pub fn find<'a>(&'a self, method: Method, path: &str) -> RouterResult<'a, T> {
 		let path = path_to_vec(path);
+		let method_str = method.to_str().into_strbuf();
 
 		if path.len() == 0 {
-			match self.items.find(&method.to_str()) {
+			match self.items.find(&method_str) {
 				Some(&(ref item, _)) => Some((item, HashMap::new())),
 				None => None
 			}
@@ -230,7 +232,7 @@ impl<T> Router<T> {
 				let (current, branch, index) = stack.pop().unwrap();
 
 				if index == path.len() {
-					match current.items.find(&method.to_str()) {
+					match current.items.find(&method_str) {
 						Some(&(ref item, ref variable_names)) => {
 							let values = path.move_iter().zip(variables.move_iter()).filter_map(|(v, keep)| {
 								if keep {
@@ -241,7 +243,7 @@ impl<T> Router<T> {
 							});
 
 							let mut var_map = variable_names.iter().zip(values).map(|(key, value)| {
-								(key.to_owned(), value)
+								(key.clone(), value)
 							});
 
 							return Some((item, var_map.collect()))
@@ -309,10 +311,11 @@ impl<T: Clone> Router<T> {
 		} else {
 			let (endpoint, variable_names) = path.move_iter().fold((self, Vec::new()),
 
-				|(current, mut variable_names), piece| {
-					let next = current.find_or_insert_router(piece);
-					if piece.len() > 0 && piece.char_at(0) == ':' {
-						variable_names.push(piece.slice(1, piece.len()).to_owned());
+				|(current, mut variable_names), mut piece| {
+					let next = current.find_or_insert_router(piece.as_slice());
+					if piece.len() > 0 && piece.as_slice().char_at(0) == ':' {
+						piece.shift_char();
+						variable_names.push(piece);
 					}
 
 					(next, variable_names)
@@ -325,7 +328,7 @@ impl<T: Clone> Router<T> {
 	}
 
 	//Mergers this Router with an other Router.
-	fn merge_router(&mut self, variable_names: Vec<~str>, router: &Router<T>) {
+	fn merge_router(&mut self, variable_names: Vec<StrBuf>, router: &Router<T>) {
 		for (key, &(ref item, ref var_names)) in router.items.iter() {
 			let mut new_var_names = variable_names.clone();
 			new_var_names.push_all(var_names.as_slice());
@@ -363,19 +366,19 @@ impl<T: Clone> Router<T> {
 }
 
 //Converts a path to a suitable array of path segments
-fn path_to_vec(path: &str) -> Vec<~str> {
+fn path_to_vec(path: &str) -> Vec<StrBuf> {
 	if path.len() == 0 {
 		vec!()
 	} else if path.len() == 1 {
 		if path == "/" {
 			vec!()
 		} else {
-			vec!(path.to_owned())
+			vec!(path.to_strbuf())
 		}
 	} else {
 		let start = if path.char_at(0) == '/' { 1 } else { 0 };
 		let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
-		path.slice(start, path.len() - end).split('/').map(|s| s.to_owned()).collect()
+		path.slice(start, path.len() - end).split('/').map(|s| s.to_strbuf()).collect()
 	}
 }
 
@@ -388,17 +391,17 @@ mod test {
 	use http::method::{Get, Post, Delete, Put, Head};
 	use std::vec::Vec;
 
-	fn check_variable(result: Option<(& &'static str, HashMap<~str, ~str>)>, expected: Option<&str>) {
+	fn check_variable(result: Option<(& &'static str, HashMap<StrBuf, StrBuf>)>, expected: Option<&str>) {
 		assert!(match result {
-			Some((_, ref variables)) => match expected {
+			Some((_, mut variables)) => match expected {
 				Some(expected) => {
-					let keys = vec!("a".to_owned(), "b".to_owned(), "c".to_owned());
-					let result = keys.iter().filter_map(|key| {
-						match variables.find(key) {
-							Some(value) => Some(value.to_owned()),
+					let keys = vec!("a", "b", "c");
+					let result = keys.move_iter().filter_map(|key| {
+						match variables.pop(&key.into_strbuf()) {
+							Some(value) => Some(value),
 							None => None
 						}
-					}).collect::<Vec<~str>>().connect(", ");
+					}).collect::<Vec<StrBuf>>().connect(", ");
 
 					expected.to_str() == result
 				},
@@ -408,7 +411,7 @@ mod test {
 		});
 	}
 
-	fn check(result: Option<(& &'static str, HashMap<~str, ~str>)>, expected: Option<&str>) {
+	fn check(result: Option<(& &'static str, HashMap<StrBuf, StrBuf>)>, expected: Option<&str>) {
 		assert!(match result {
 			Some((result, _)) => match expected {
 				Some(expected) => result.to_str() == expected.to_str(),
