@@ -1,8 +1,5 @@
 #![feature(phase)]
-#[phase(syntax)]
-extern crate rustful;
-
-extern crate rustful;
+#[phase(syntax, link)] extern crate rustful;
 extern crate http;
 use rustful::{Server, Request, Response};
 use http::method::{Get, Post};

@@ -15,24 +15,20 @@
 use router::Router;
 use request::Request;
 use response::Response;
-use response::status::NotFound;
 
 use http;
-use http::server::{ResponseWriter, Config};
+use http::server::{ResponseWriter, Config, Server};
 use http::server::request::{AbsoluteUri, AbsolutePath};
-use http::headers::content_type::MediaType;
 use http::method::Post;
+use http::status::{NotFound, BadRequest};
 
 use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
 use std::uint;
 use std::io::BufReader;
-use std::vec::Vec;
 
 use collections::hashmap::HashMap;
 
 use time;
-
-use HTTP = http::server::Server;
 
 
 ///A handler function for routing.
@@ -50,12 +46,12 @@ pub struct Server {
 impl Server {
 	///Start the server and run forever.
 	///This will only return if the initial connection fails.
-	pub fn run(&self) {
-		self.clone().serve_forever();
+	pub fn run(self) {
+		self.serve_forever();
 	}
 }
 
-impl HTTP for Server {
+impl http::server::Server for Server {
 	fn get_config(&self) -> Config {
 		Config {
 			bind_address: SocketAddr {
@@ -68,32 +64,41 @@ impl HTTP for Server {
 	fn handle_request(&self, request: &http::server::request::Request, writer: &mut ResponseWriter) {
 		let mut response = Response::new(writer);
 		response.headers.date = Some(time::now_utc());
-		response.headers.content_type = Some(MediaType {
-			type_: StrBuf::from_str("text"),
-			subtype: StrBuf::from_str("plain"),
-			parameters: vec!((StrBuf::from_str("charset"), StrBuf::from_str("UTF-8")))
-		});
+		response.headers.content_type = content_type!("text", "plain", "charset": "UTF-8");
 		response.headers.server = Some(StrBuf::from_str("rustful"));
 
-		let found = match build_request(request) {
-			Some(mut request) => match self.handlers.find(request.method.clone(), request.path) {
-				Some((&handler, variables)) => {
-					request.variables = variables;
-					handler(&request, &mut response);
-					true
-				},
-				None => false
+		match get_path_components(request) {
+			Some((path, query, fragment)) => {
+				match self.handlers.find(request.method.clone(), path) {
+					Some((&handler, variables)) => {
+						let post = if request.method == Post {
+							parse_parameters(request.body.as_slice())
+						} else {
+							HashMap::new()
+						};
+
+						let request = Request {
+							headers: *request.headers.clone(),
+							method: request.method.clone(),
+							path: path,
+							variables: variables,
+							post: post,
+							query: query,
+							fragment: fragment,
+							body: request.body.as_slice()
+						};
+
+						handler(&request, &mut response);
+					},
+					None => {
+						response.headers.content_length = Some(0);
+						response.status = NotFound;
+					}
+				}
 			},
-			None => false
-		};
-		
-		if !found {
-			let content = bytes!("File not found");
-			response.headers.content_length = Some(content.len());
-			response.status = NotFound;
-			match response.write(content) {
-				Err(e) => println!("error while writing 404: {}", e),
-				_ => {}
+			None => {
+				response.headers.content_length = Some(0);
+				response.status = BadRequest;
 			}
 		}
 
@@ -101,8 +106,8 @@ impl HTTP for Server {
 	}
 }
 
-fn build_request<'a>(request: &'a http::server::request::Request) -> Option<Request<'a>> {
-	let path = match request.request_uri {
+fn get_path_components<'a>(request: &'a http::server::request::Request) -> Option<(&'a str, HashMap<StrBuf, StrBuf>, Option<&'a str>)> {
+	match request.request_uri {
 		AbsoluteUri(ref url) => {
 			Some((
 				url.path.as_slice(),
@@ -112,28 +117,6 @@ fn build_request<'a>(request: &'a http::server::request::Request) -> Option<Requ
 		},
 		AbsolutePath(ref path) => Some(parse_path(path.as_slice())),
 		_ => None
-	};
-
-	match path {
-		Some((path, query, fragment)) => {
-			let post = if request.method == Post {
-				parse_parameters(request.body.as_slice())
-			} else {
-				HashMap::new()
-			};
-
-			Some(Request {
-				headers: *request.headers.clone(),
-				method: request.method.clone(),
-				path: path,
-				variables: HashMap::new(),
-				post: post,
-				query: query,
-				fragment: fragment,
-				body: request.body.as_slice()
-			})
-		}
-		None => None
 	}
 }
 

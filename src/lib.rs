@@ -38,11 +38,6 @@ use syntax::parse::parser;
 use syntax::parse::parser::Parser;
 //use syntax::print::pprust;
 
-pub mod router;
-pub mod server;
-pub mod request;
-pub mod response;
-
 
 #[macro_registrar]
 #[doc(hidden)]
@@ -233,3 +228,8 @@ macro_rules! content_type(
 		})
 	});
 )
+
+pub mod router;
+pub mod server;
+pub mod request;
+pub mod response;

@@ -92,14 +92,11 @@ rustful comes with some handy macros to reduce some of the boilerplate code. The
 may be rewritten using the `router!()` macro:
 
 ```rust
-//Include rustful during compile time to be able to use the macros
+//Include rustful during both syntax and link phase to be able to use the macros
 #![feature(phase)]
-#[phase(syntax)]
-extern crate rustful;
-
-extern crate rustful;
+#[phase(syntax, link)] extern crate rustful;
 extern crate http;
-use rustful::{Server, Router, Request, Response};
+use rustful::{Server, Request, Response};
 use http::method::Get;
 
 ///Our handler function

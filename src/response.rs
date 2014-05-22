@@ -2,10 +2,9 @@
 
 use http::headers::response::HeaderCollection;
 use http::server::response::ResponseWriter;
-pub use http::headers::content_type::MediaType;
 use std::io::{Writer, IoResult};
 
-pub use http::status;
+use http::status;
 
 pub struct Response<'a, 'b> {
 	///The HTTP response headers. Date, content type (text/plain) and server is automatically set.
