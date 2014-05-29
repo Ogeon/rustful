@@ -16,13 +16,13 @@ pub struct Request<'a> {
 	pub path: &'a str,
 
 	///Route variables
-	pub variables: HashMap<StrBuf, StrBuf>,
+	pub variables: HashMap<String, String>,
 
 	///POST variables
-	pub post: HashMap<StrBuf, StrBuf>,
+	pub post: HashMap<String, String>,
 
 	///Query variables from the path
-	pub query: HashMap<StrBuf, StrBuf>,
+	pub query: HashMap<String, String>,
 
 	///The fragment part of the URL (after #), if provided
 	pub fragment: Option<&'a str>,

@@ -7,9 +7,9 @@ use http::method::{Get, Post};
 fn say_hello(request: &Request, response: &mut Response) {
 	response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
-	let content = match request.post.find(&"name".into_strbuf()) {
+	let content = match request.post.find(&"name".into_string()) {
 		Some(name) => {
-			format!("<p>Hello, {}!</p>", name.to_str())
+			format!("<p>Hello, {}!</p>", name)
 		},
 		None => {
 			"<form method=\"post\">\
@@ -19,7 +19,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 				<div>\
 					<input type=\"submit\" value=\"Say hello\" />\
 				</div>\
-			</form>".to_owned()
+			</form>".into_string()
 		}
 	};
 

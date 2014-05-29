@@ -115,7 +115,7 @@ use collections::hashmap::HashMap;
 use http::method::Method;
 use std::vec::Vec;
 
-pub type RouterResult<'a, T> = Option<(&'a T, HashMap<StrBuf, StrBuf>)>;
+pub type RouterResult<'a, T> = Option<(&'a T, HashMap<String, String>)>;
 
 enum Branch {
 	Static,
@@ -152,8 +152,8 @@ enum Branch {
 ///```
 #[deriving(Clone)]
 pub struct Router<T> {
-	items: HashMap<StrBuf, (T, Vec<StrBuf>)>,
-	static_routes: HashMap<StrBuf, Router<T>>,
+	items: HashMap<String, (T, Vec<String>)>,
+	static_routes: HashMap<String, Router<T>>,
 	variable_route: Option<Box<Router<T>>>,
 	wildcard_route: Option<Box<Router<T>>>
 }
@@ -174,7 +174,7 @@ impl<T> Router<T> {
 		let path = path_to_vec(path.trim());
 
 		if path.len() == 0 {
-			self.items.insert(method.to_str().into_strbuf(), (item, Vec::new()));
+			self.items.insert(method.to_str().into_string(), (item, Vec::new()));
 		} else {
 			let (endpoint, variable_names) = path.move_iter().fold((self, Vec::new()),
 
@@ -190,7 +190,7 @@ impl<T> Router<T> {
 
 			);
 
-			endpoint.items.insert(method.to_str().into_strbuf(), (item, variable_names));
+			endpoint.items.insert(method.to_str().into_string(), (item, variable_names));
 		}
 	}
 
@@ -207,7 +207,7 @@ impl<T> Router<T> {
 			}
 			&'a mut **self.variable_route.as_mut::<'a>().unwrap()
 		} else {
-			self.static_routes.find_or_insert_with::<'a>(key.to_strbuf(), |_| {
+			self.static_routes.find_or_insert_with::<'a>(key.to_string(), |_| {
 				Router::new()
 			})
 		}
@@ -216,7 +216,7 @@ impl<T> Router<T> {
 	///Finds and returns the matching item and variables
 	pub fn find<'a>(&'a self, method: Method, path: &str) -> RouterResult<'a, T> {
 		let path = path_to_vec(path);
-		let method_str = method.to_str().into_strbuf();
+		let method_str = method.to_str().into_string();
 
 		if path.len() == 0 {
 			match self.items.find(&method_str) {
@@ -328,7 +328,7 @@ impl<T: Clone> Router<T> {
 	}
 
 	//Mergers this Router with an other Router.
-	fn merge_router(&mut self, variable_names: Vec<StrBuf>, router: &Router<T>) {
+	fn merge_router(&mut self, variable_names: Vec<String>, router: &Router<T>) {
 		for (key, &(ref item, ref var_names)) in router.items.iter() {
 			let mut new_var_names = variable_names.clone();
 			new_var_names.push_all(var_names.as_slice());
@@ -366,19 +366,19 @@ impl<T: Clone> Router<T> {
 }
 
 //Converts a path to a suitable array of path segments
-fn path_to_vec(path: &str) -> Vec<StrBuf> {
+fn path_to_vec(path: &str) -> Vec<String> {
 	if path.len() == 0 {
 		vec!()
 	} else if path.len() == 1 {
 		if path == "/" {
 			vec!()
 		} else {
-			vec!(path.to_strbuf())
+			vec!(path.to_string())
 		}
 	} else {
 		let start = if path.char_at(0) == '/' { 1 } else { 0 };
 		let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
-		path.slice(start, path.len() - end).split('/').map(|s| s.to_strbuf()).collect()
+		path.slice(start, path.len() - end).split('/').map(|s| s.to_string()).collect()
 	}
 }
 
@@ -391,17 +391,17 @@ mod test {
 	use http::method::{Get, Post, Delete, Put, Head};
 	use std::vec::Vec;
 
-	fn check_variable(result: Option<(& &'static str, HashMap<StrBuf, StrBuf>)>, expected: Option<&str>) {
+	fn check_variable(result: Option<(& &'static str, HashMap<String, String>)>, expected: Option<&str>) {
 		assert!(match result {
 			Some((_, mut variables)) => match expected {
 				Some(expected) => {
 					let keys = vec!("a", "b", "c");
 					let result = keys.move_iter().filter_map(|key| {
-						match variables.pop(&key.into_strbuf()) {
+						match variables.pop(&key.into_string()) {
 							Some(value) => Some(value),
 							None => None
 						}
-					}).collect::<Vec<StrBuf>>().connect(", ");
+					}).collect::<Vec<String>>().connect(", ");
 
 					expected.to_str() == result
 				},
@@ -411,7 +411,7 @@ mod test {
 		});
 	}
 
-	fn check(result: Option<(& &'static str, HashMap<StrBuf, StrBuf>)>, expected: Option<&str>) {
+	fn check(result: Option<(& &'static str, HashMap<String, String>)>, expected: Option<&str>) {
 		assert!(match result {
 			Some((result, _)) => match expected {
 				Some(expected) => result.to_str() == expected.to_str(),
@@ -668,7 +668,7 @@ mod test {
 		let mut counter = 0;
 
 		b.iter(|| {
-			router.find(Get, paths[counter].to_owned());
+			router.find(Get, paths[counter]);
 			counter = (counter + 1) % paths.len()
 		});
 	}
@@ -699,7 +699,7 @@ mod test {
 		let mut counter = 0;
 
 		b.iter(|| {
-			router.find(Get, paths[counter].to_owned());
+			router.find(Get, paths[counter]);
 			counter = (counter + 1) % paths.len()
 		});
 	}

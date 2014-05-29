@@ -8,7 +8,6 @@
 #![doc(html_root_url = "http://www.rust-ci.org/Ogeon/rustful/doc/")]
 
 #![feature(macro_rules, macro_registrar, managed_boxes, quote, phase)]
-#![macro_escape]
 
 #[cfg(test)]
 extern crate test;
@@ -24,6 +23,8 @@ pub use router::Router;
 pub use server::Server;
 pub use request::Request;
 pub use response::Response;
+
+use std::path::BytesContainer;
 
 use syntax::{ast, codemap};
 use syntax::ext::base::{
@@ -58,7 +59,7 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	);
 
 	for (path, method, handler) in parse_routes(cx, tts).move_iter() {
-		let path_expr = cx.parse_expr(format_strbuf!("\"{}\"", path));
+		let path_expr = cx.parse_expr(format!("\"{}\"", path));
 		let method_expr = cx.expr_path(method);
 		let handler_expr = cx.expr_path(handler);
 		calls.push(cx.stmt_expr(
@@ -73,7 +74,7 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 
 fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult> {
 	let routes = parse_routes(cx, tts).move_iter().map(|(path, method, handler)| {
-		let path_expr = cx.parse_expr(format_strbuf!("\"{}\"", path));
+		let path_expr = cx.parse_expr(format!("\"{}\"", path));
 		let method_expr = cx.expr_path(method);
 		let handler_expr = cx.expr_path(handler);
 		mk_tup(sp, vec!(method_expr, path_expr, handler_expr))
@@ -82,7 +83,7 @@ fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	MacExpr::new(cx.expr_vec(sp, routes))
 }
 
-fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(StrBuf, ast::Path, ast::Path)> {
+fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::Path, ast::Path)> {
 
 	let mut parser = parse::new_parser_from_tts(
 		cx.parse_sess(), cx.cfg(), Vec::from_slice(tts)
@@ -91,7 +92,7 @@ fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(StrBuf, ast::P
 	parse_subroutes("", cx, &mut parser)
 }
 
-fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(StrBuf, ast::Path, ast::Path)> {
+fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(String, ast::Path, ast::Path)> {
 	let mut routes = Vec::new();
 
 	while !parser.eat(&token::EOF) {
@@ -102,10 +103,14 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
 					break;
 				}
 
-				let mut new_base = base.to_strbuf();
-				new_base.push_str(s.to_str().trim_chars('/'));
-				new_base.push_str("/");
-
+				let mut new_base = base.to_string();
+				match s.container_as_str() {
+					Some(s) => {
+						new_base.push_str(s.trim_chars('/'));
+						new_base.push_str("/");
+					},
+					None => cx.span_err(parser.span, "invalid path")
+				}
 
 				if parser.eat(&token::EOF) {
 					cx.span_err(parser.span, "unexpected end of routing tree");
@@ -134,7 +139,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
 			},
 			None => {
 				for (method, handler) in parse_handler(parser).move_iter() {
-					routes.push((base.to_strbuf(), method, handler))
+					routes.push((base.to_string(), method, handler))
 				}
 
 				if !parser.eat(&token::COMMA) {
@@ -187,9 +192,9 @@ It takes a main type, a sub type and a parameter list. Instead of this:
 
 ```
 response.headers.content_type = Some(MediaType {
-	type_: StrBuf::from_str("text"),
-	subtype: StrBuf::from_str("html"),
-	parameters: vec!((StrBuf::from_str("charset"), StrBuf::from_str("UTF-8")))
+	type_: String::from_str("text"),
+	subtype: String::from_str("html"),
+	parameters: vec!((String::from_str("charset"), String::from_str("UTF-8")))
 });
 ```
 
@@ -214,17 +219,17 @@ response.headers.content_type = content_type!("image", "png");
 macro_rules! content_type(
 	($main_type:expr, $sub_type:expr) => ({
 		Some(::http::headers::content_type::MediaType {
-			type_: StrBuf::from_str($main_type),
-			subtype: StrBuf::from_str($sub_type),
+			type_: String::from_str($main_type),
+			subtype: String::from_str($sub_type),
 			parameters: Vec::new()
 		})
 	});
 
 	($main_type:expr, $sub_type:expr, $($param:expr: $value:expr),+) => ({
 		Some(::http::headers::content_type::MediaType {
-			type_: StrBuf::from_str($main_type),
-			subtype: StrBuf::from_str($sub_type),
-			parameters: vec!( $( (StrBuf::from_str($param), StrBuf::from_str($value)) ),+ )
+			type_: String::from_str($main_type),
+			subtype: String::from_str($sub_type),
+			parameters: vec!( $( (String::from_str($param), String::from_str($value)) ),+ )
 		})
 	});
 )
