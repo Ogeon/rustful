@@ -8,7 +8,7 @@ light and non-intrusive foundation for HTTP based applications. It is based on a
 structure, where handler functions are assigned to paths and HTTP methods, which naturally
 allows it to run both as a single server or as multiple instances in a computer cluster.
 
-[Detailed documentation can be found here.](http://www.rust-ci.org/Ogeon/rustful/doc/rustful/)
+Online documentation can be found [here](http://ogeon.github.io/rustful/doc/rustful/).
 
 #Getting started
 Let's assume your file structure looks like this:

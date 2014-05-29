@@ -5,7 +5,7 @@
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 
-#![doc(html_root_url = "http://www.rust-ci.org/Ogeon/rustful/doc/")]
+#![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
 #![feature(macro_rules, macro_registrar, managed_boxes, quote, phase)]
 
