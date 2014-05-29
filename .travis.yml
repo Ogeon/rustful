@@ -1,7 +1,7 @@
 env:
   global:
     - secure: dQm6A7+yuwJTXrnZehIhCSX0NS9amJ8EZE6e2cD4KMKhxqoThsSuKBWmMrb3iT9l3fYhgFakc/W6jdSrsmglmcUUqdmUNCnDSB5q3Nb9cThYT6F7Ueyxl7n8Hz1RiuEl7qef/Ze45Ej481L86dctWWblB/hcywh6d+hTR0+r0O8=
-    - secure: "ZjdcfLU0lNHyf5exUt2PKXA55Mjb6rQVMLMAaqHOjNdsPKaZ2nIiOSJ5M01nzBalZTPNom7lJfmOIClh24XbP/q3+l0pB/yspzk3Dsfi4S9MfShxjqvmW/z4MaceTYef1eEV+6bulJry/kQouhDkOUfqsF8usvxedLa61vNgZ1k="
+    - secure: "MvCGPnHryMhBTgqLo7ehOhT3VNkioqBpk/LmH+Zsbs5zrdjZlOkoegq1RbzaT0O5pjlCPDi/GzmCHDwXK5geKJ99spN6BFj/NL99/+f/KKGwzsiRtJg64daEjbxMqJeUzllXd4frDEfunZthziU1vVVWsaScG7IGyFk2QH1d1CY="
 install:
   - curl -s http://www.rust-lang.org/rustup.sh | sudo sh
   - make deps
