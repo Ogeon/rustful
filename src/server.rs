@@ -4,10 +4,7 @@
 //!# use rustful::server::Server;
 //!# use rustful::router::Router;
 //!# let routes = [];
-//!let server = Server {
-//!	handlers: Router::from_routes(routes),
-//!	port: 8080
-//!};
+//!let server = Server::new(8080, Router::from_routes(routes));
 //!
 //!server.run();
 //!```
@@ -23,9 +20,11 @@ use http::method::Post;
 use http::status::{NotFound, BadRequest};
 use http::headers::content_type::MediaType;
 
-use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
+use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
 use std::uint;
 use std::io::BufReader;
+
+use sync::Arc;
 
 use collections::hashmap::HashMap;
 
@@ -38,17 +37,34 @@ pub type HandlerFn = fn(&Request, &mut Response);
 #[deriving(Clone)]
 pub struct Server {
 	///A routing tree with response handlers
-	pub handlers: Router<HandlerFn>,
+	handlers: Arc<Router<HandlerFn>>,
 
 	///The port where the server will listen for requests
-	pub port: Port
+	port: Port,
+
+	///Host address
+	host: IpAddr
 }
 
 impl Server {
+	///Create a new `Server` which will listen on the provided port and host address `0.0.0.0`.
+	pub fn new(port: Port, handlers: Router<HandlerFn>) -> Server {
+		Server {
+			handlers: Arc::new(handlers),
+			port: port,
+			host: Ipv4Addr(0, 0, 0, 0)
+		}
+	}
+
 	///Start the server and run forever.
 	///This will only return if the initial connection fails.
 	pub fn run(self) {
 		self.serve_forever();
+	}
+
+	///Change the host address.
+	pub fn set_host(&mut self, host: IpAddr) {
+		self.host = host;
 	}
 }
 
@@ -56,7 +72,7 @@ impl http::server::Server for Server {
 	fn get_config(&self) -> Config {
 		Config {
 			bind_address: SocketAddr {
-				ip: Ipv4Addr(0, 0, 0, 0),
+				ip: self.host,
 				port: self.port
 			}
 		}

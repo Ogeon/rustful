@@ -12,6 +12,7 @@ extern crate test;
 extern crate collections;
 extern crate url;
 extern crate time;
+extern crate sync;
 extern crate http;
 
 pub use router::Router;

@@ -76,13 +76,13 @@ fn main() {
 		(Get, "/", handler)
 	];
 
-	let server = Server {
-		//Build a router tree from the routes and give it to the server
-		handlers: Router::from_routes(routes),
-
+	let server = Server::new(
 		//Set the listening port. Let's use 8080 this time
-		port: 8080
-	};
+		8080,
+
+		//Build a router tree from the routes and give it to the server
+		Router::from_routes(routes)
+	);
 
 	//Start the server. All code beyond this point is unreachable
 	server.run();
@@ -115,12 +115,7 @@ fn handler(request: &Request, response: &mut Response) {
 }
 
 fn main() {
-	let server = Server {
-		handlers: router!{"/" => Get: handler},
-
-		//Set the listening port. Let's use 8080 this time
-		port: 8080
-	};
+	let server = Server::new(8080, router!{"/" => Get: handler});
 
 	//Start the server. All code beyond this point is unreachable
 	server.run();
