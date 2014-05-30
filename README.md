@@ -45,7 +45,8 @@ make deps
 make
 ```
 
-This will put `libhttp*` and `librustful*` in the `my_project/lib/rustful/lib/` directory.
+This will put `libhttp*`, `librustful*` and `librustful_macros*` in the `my_project/lib/rustful/lib/` directory.
+The `rustful` and `rustful_macros` crates can be built separately by running `make rustful` and `make macros`.
 You can also run `make docs` to generate documentation and `make examples` to build the examples.
 
 See the rust-http README for information about SSL support.
@@ -92,9 +93,12 @@ rustful comes with some handy macros to reduce some of the boilerplate code. The
 may be rewritten using the `router!()` macro:
 
 ```rust
-//Include rustful during both syntax and link phase to be able to use the macros
+//Include rustful_macros during syntax phase to be able to use the macros
 #![feature(phase)]
-#[phase(syntax, link)] extern crate rustful;
+#[phase(syntax)]
+extern crate rustful_macros;
+
+extern crate rustful;
 extern crate http;
 use rustful::{Server, Request, Response};
 use http::method::Get;

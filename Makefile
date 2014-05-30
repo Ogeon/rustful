@@ -1,10 +1,17 @@
 LIBS=-L lib
 
-.PHONY: rustful deps test docs examples
+.PHONY: both rustful macros deps test docs examples
+
+both: rustful macros
 
 rustful:
-	rm -f lib/librustful*
+	rm -f lib/librustful-*
 	rustc $(LIBS) --opt-level=3 src/lib.rs --out-dir lib/
+
+macros:
+	rm -f lib/librustful_macros-*
+	rustc $(LIBS) --opt-level=3 src/macros.rs --out-dir lib/
+
 
 deps:
 	git submodule init
@@ -22,6 +29,7 @@ test:
 
 docs:
 	rustdoc $(LIBS) src/lib.rs
+	rustdoc $(LIBS) src/macros.rs
 
 examples:
 	rustc $(LIBS) examples/hello_world/main.rs -o examples/hello_world/main

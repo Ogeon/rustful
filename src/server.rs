@@ -21,6 +21,7 @@ use http::server::{ResponseWriter, Config, Server};
 use http::server::request::{AbsoluteUri, AbsolutePath};
 use http::method::Post;
 use http::status::{NotFound, BadRequest};
+use http::headers::content_type::MediaType;
 
 use std::io::net::ip::{SocketAddr, Ipv4Addr, Port};
 use std::uint;
@@ -64,7 +65,11 @@ impl http::server::Server for Server {
 	fn handle_request(&self, request: &http::server::request::Request, writer: &mut ResponseWriter) {
 		let mut response = Response::new(writer);
 		response.headers.date = Some(time::now_utc());
-		response.headers.content_type = content_type!("text", "plain", "charset": "UTF-8");
+		response.headers.content_type = Some(MediaType {
+			type_: String::from_str("text"),
+			subtype: String::from_str("plain"),
+			parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
+		});
 		response.headers.server = Some(String::from_str("rustful"));
 
 		match get_path_components(request) {
