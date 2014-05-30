@@ -14,9 +14,11 @@ macros:
 
 
 deps:
-	git submodule init
-	git submodule sync
-	git submodule update
+	@if [ -e .git ] ; then \
+		git submodule init; \
+		git submodule sync; \
+		git submodule update; \
+	fi
 	rm -f lib/libhttp*
 	cd lib/rust-http; ./configure
 	make -C lib/rust-http clean
