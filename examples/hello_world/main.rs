@@ -7,7 +7,7 @@ extern crate http;
 use rustful::{Server, Router, Request, Response};
 use http::method::Get;
 
-fn say_hello(request: &Request, response: &mut Response) {
+fn say_hello(request: &Request, _context: &(), response: &mut Response) {
 	let person = match request.variables.find(&"person".into_string()) {
 		Some(name) => name.as_slice(),
 		None => "stranger"
@@ -24,7 +24,7 @@ fn main() {
 
 	let routes = routes!{"/" => Get: say_hello, "/:person" => Get: say_hello};
 
-	let server = Server::new(8080, Router::from_routes(routes));
+	let server = Server::new(8080, (), Router::from_routes(routes));
 
 	server.run();
 }

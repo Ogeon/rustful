@@ -7,7 +7,7 @@ extern crate http;
 use rustful::{Server, Request, Response};
 use http::method::{Get, Post};
 
-fn say_hello(request: &Request, response: &mut Response) {
+fn say_hello(request: &Request, _context: &(), response: &mut Response) {
 	response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
 	let content = match request.post.find(&"name".into_string()) {
@@ -35,7 +35,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 fn main() {
 	println!("Visit http://localhost:8080 to try this example.");
 
-	let server = Server::new(8080, router!{"/" => Get | Post: say_hello});
+	let server = Server::new(8080, (), router!{"/" => Get | Post: say_hello});
 
 	server.run();
 }

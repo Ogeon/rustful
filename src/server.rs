@@ -4,7 +4,7 @@
 //!# use rustful::server::Server;
 //!# use rustful::router::Router;
 //!# let routes = [];
-//!let server = Server::new(8080, Router::from_routes(routes));
+//!let server = Server::new(8080, (), Router::from_routes(routes));
 //!
 //!server.run();
 //!```
@@ -32,27 +32,30 @@ use time;
 
 
 ///A handler function for routing.
-pub type HandlerFn = fn(&Request, &mut Response);
+pub type HandlerFn<T> = fn(&Request, &T, &mut Response);
 
-#[deriving(Clone)]
-pub struct Server {
-	///A routing tree with response handlers
-	handlers: Arc<Router<HandlerFn>>,
-
+pub struct Server<T> {
 	///The port where the server will listen for requests
 	port: Port,
 
 	///Host address
-	host: IpAddr
+	host: IpAddr,
+
+	///Shared context
+	context: Arc<T>,
+
+	///A routing tree with response handlers
+	handlers: Arc<Router<HandlerFn<T>>>,
 }
 
-impl Server {
+impl<T: Send+Share> Server<T> {
 	///Create a new `Server` which will listen on the provided port and host address `0.0.0.0`.
-	pub fn new(port: Port, handlers: Router<HandlerFn>) -> Server {
+	pub fn new(port: Port, context: T, handlers: Router<HandlerFn<T>>) -> Server<T> {
 		Server {
-			handlers: Arc::new(handlers),
 			port: port,
-			host: Ipv4Addr(0, 0, 0, 0)
+			host: Ipv4Addr(0, 0, 0, 0),
+			context: Arc::new(context),
+			handlers: Arc::new(handlers),
 		}
 	}
 
@@ -68,7 +71,18 @@ impl Server {
 	}
 }
 
-impl http::server::Server for Server {
+impl<T: Send+Share> Clone for Server<T> {
+	fn clone(&self) -> Server<T> {
+		Server {
+			port: self.port,
+			host: self.host,
+			context: self.context.clone(),
+			handlers: self.handlers.clone(),
+		}
+	}
+}
+
+impl<T: Send+Share> http::server::Server for Server<T> {
 	fn get_config(&self) -> Config {
 		Config {
 			bind_address: SocketAddr {
@@ -109,7 +123,7 @@ impl http::server::Server for Server {
 							body: request.body.as_slice()
 						};
 
-						handler(&request, &mut response);
+						handler(&request, self.context.deref(), &mut response);
 					},
 					None => {
 						response.headers.content_length = Some(0);
