@@ -4,38 +4,95 @@ extern crate rustful_macros;
 
 extern crate rustful;
 extern crate http;
-use rustful::{Server, Request, Response};
-use http::method::{Get, Post};
+use std::io::{File, IoResult};
+use std::os::{self_exe_path, getcwd};
 
-fn say_hello(request: &Request, response: &mut Response) {
+use rustful::{Server, Request, Response};
+use rustful::server::{Cache, CachedValue, CachedProcessedFile};
+use http::method::{Get, Post};
+use http::status::InternalServerError;
+
+fn say_hello(request: &Request, cache: &Files, response: &mut Response) {
 	response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
+	//Format the name or clone the cached form
 	let content = match request.post.find(&"name".into_string()) {
 		Some(name) => {
 			format!("<p>Hello, {}!</p>", name)
 		},
 		None => {
-			"<form method=\"post\">\
-				<div>\
-					<label for=\"name\">Name: </label><input id=\"name\" type=\"text\" name=\"name\" />\
-				</div>\
-				<div>\
-					<input type=\"submit\" value=\"Say hello\" />\
-				</div>\
-			</form>".into_string()
+			cache.form.use_value(|form| {
+				match form {
+					Some(form) => {
+						form.clone()
+					},
+					None => {
+						//Oh no! The form was not loaded! Let's print an error message on the page.
+						response.status = InternalServerError;
+						"Error: Failed to load form.html".into_string()
+					}
+				}
+			})
 		}
 	};
 
-	match response.write(format!("<!DOCTYPE html><html charset=\"UTF-8\"><head><title>Hello</title></head><body>{}</body></html>", content).as_bytes()) {
-		Err(e) => println!("error while writing hello: {}", e),
-		_ => {}
-	}
+	//Insert the content into the page and write it to the response
+	cache.page.use_value(|page| {
+		match page {
+			Some(page) => {
+				let complete_page = page.replace("{}", content.as_slice());
+				match response.write(complete_page.as_bytes()) {
+					Err(e) => println!("error while writing hello: {}", e),
+					_ => {}
+				}
+			},
+			None => {
+				//Oh no! The page was not loaded!
+				response.status = InternalServerError;
+			}
+		}
+	});
+	
 }
 
 fn main() {
 	println!("Visit http://localhost:8080 to try this example.");
 
-	let server = Server::new(8080, router!{"/" => Get | Post: say_hello});
+	//Get the directory of the file or fall back to the current working directory
+	let base_path = self_exe_path().unwrap_or_else(|| getcwd());
+
+	//Fill our cache with files
+	let cache = Files {
+		page: CachedProcessedFile::new(base_path.join("page.html"), None, read_string),
+		form: CachedProcessedFile::new(base_path.join("form.html"), None, read_string)
+	};
+
+	let server = Server::with_cache(8080, cache, router!{"/" => Get | Post: say_hello});
 
 	server.run();
+}
+
+fn read_string(f: IoResult<File>) -> Option<String> {
+	//Make the file mutable and try to read it into a string
+	let mut file = f;
+	file.read_to_str().map(|s| Some(s)).unwrap_or_else(|e| {
+		println!("Unable to read file: {}", e);
+		None
+	})
+}
+
+
+//We want to store the files as strings
+struct Files {
+	page: CachedProcessedFile<String>,
+	form: CachedProcessedFile<String>
+}
+
+impl Cache for Files {
+
+	//Cache cleaning is not used in this example, but this is implemented anyway.
+	fn free_unused(&self) {
+		self.page.clean();
+		self.form.clean();
+	}
 }

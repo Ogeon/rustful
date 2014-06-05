@@ -1,4 +1,4 @@
-//! `Server` listens for HTTP requests.
+//! This module contains the `Server` and various structs and traits for handlers and cache.
 //!
 //!```rust
 //!# use rustful::server::Server;
@@ -21,38 +21,80 @@ use http::status::{NotFound, BadRequest};
 use http::headers::content_type::MediaType;
 
 use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
+use std::io::{File, IoResult};
 use std::uint;
 use std::io::BufReader;
+use std::hash::Hash;
 
-use sync::Arc;
+use sync::{Arc, RWLock};
 
 use collections::hashmap::HashMap;
 
 use time;
+use time::Timespec;
 
 
-///A handler function for routing.
-pub type HandlerFn = fn(&Request, &mut Response);
+///A trait for request handlers.
+pub trait Handler<C> {
+	fn handle_request(&self, request: &Request, cache: &C, response: &mut Response);
+}
 
-#[deriving(Clone)]
-pub struct Server {
+impl<C> Handler<C> for fn(&Request, &mut Response) {
+	fn handle_request(&self, request: &Request, _cache: &C, response: &mut Response) {
+		(*self)(request, response);
+	}
+}
+
+impl<C> Handler<C> for fn(&Request, &C, &mut Response) {
+	fn handle_request(&self, request: &Request, cache: &C, response: &mut Response) {
+		(*self)(request, cache, response);
+	}
+}
+
+
+
+pub struct Server<H, C> {
 	///A routing tree with response handlers
-	handlers: Arc<Router<HandlerFn>>,
+	handlers: Arc<Router<H>>,
 
 	///The port where the server will listen for requests
 	port: Port,
 
 	///Host address
-	host: IpAddr
+	host: IpAddr,
+
+	cache: Arc<C>,
+	cache_clean_interval: Option<i64>,
+	last_cachel_clean: Arc<RWLock<Timespec>>
 }
 
-impl Server {
+impl<H: Handler<()> + Send + Share> Server<H, ()> {
 	///Create a new `Server` which will listen on the provided port and host address `0.0.0.0`.
-	pub fn new(port: Port, handlers: Router<HandlerFn>) -> Server {
+	pub fn new(port: Port, handlers: Router<H>) -> Server<H, ()> {
 		Server {
 			handlers: Arc::new(handlers),
 			port: port,
-			host: Ipv4Addr(0, 0, 0, 0)
+			host: Ipv4Addr(0, 0, 0, 0),
+			cache: Arc::new(()),
+			cache_clean_interval: None,
+			last_cachel_clean: Arc::new(RWLock::new(Timespec::new(0, 0)))
+		}
+	}
+}
+
+impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> Server<H, C> {
+	///Creates a new `Server` with a resource cache.
+	///
+	///The server will listen listen on the provided port and host address `0.0.0.0`.
+	///Cache cleaning is disabled by default. 
+	pub fn with_cache(port: Port, cache: C, handlers: Router<H>) -> Server<H, C> {
+		Server {
+			handlers: Arc::new(handlers),
+			port: port,
+			host: Ipv4Addr(0, 0, 0, 0),
+			cache: Arc::new(cache),
+			cache_clean_interval: None,
+			last_cachel_clean: Arc::new(RWLock::new(Timespec::new(0, 0)))
 		}
 	}
 
@@ -61,14 +103,23 @@ impl Server {
 	pub fn run(self) {
 		self.serve_forever();
 	}
+}
 
+impl<H, C> Server<H, C> {
 	///Change the host address.
 	pub fn set_host(&mut self, host: IpAddr) {
 		self.host = host;
 	}
+
+	///Set the minimal number of seconds between each cache clean.
+	///
+	///Passing `None` disables cache cleaning.
+	pub fn set_clean_interval(&mut self, interval: Option<u32>) {
+		self.cache_clean_interval = interval.map(|i| i as i64);
+	}
 }
 
-impl http::server::Server for Server {
+impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server for Server<H, C> {
 	fn get_config(&self) -> Config {
 		Config {
 			bind_address: SocketAddr {
@@ -91,7 +142,7 @@ impl http::server::Server for Server {
 		match get_path_components(request) {
 			Some((path, query, fragment)) => {
 				match self.handlers.find(request.method.clone(), path) {
-					Some((&handler, variables)) => {
+					Some((handler, variables)) => {
 						let post = if request.method == Post {
 							parse_parameters(request.body.as_slice())
 						} else {
@@ -109,7 +160,7 @@ impl http::server::Server for Server {
 							body: request.body.as_slice()
 						};
 
-						handler(&request, &mut response);
+						handler.handle_request(&request, & *self.cache, &mut response);
 					},
 					None => {
 						response.headers.content_length = Some(0);
@@ -124,6 +175,31 @@ impl http::server::Server for Server {
 		}
 
 		response.end();
+
+		self.cache_clean_interval.map(|t| {
+			let clean_time = {
+				let last_cachel_clean = self.last_cachel_clean.read();
+				Timespec::new(last_cachel_clean.sec + t, last_cachel_clean.nsec)
+			};
+
+			if time::get_time() > clean_time {
+				*self.last_cachel_clean.write() = time::get_time();
+				self.cache.free_unused();
+			}
+		});
+	}
+}
+
+impl<H: Send + Share, C: Send + Share> Clone for Server<H, C> {
+	fn clone(&self) -> Server<H, C> {
+		Server {
+			handlers: self.handlers.clone(),
+			port: self.port,
+			host: self.host.clone(),
+			cache: self.cache.clone(),
+			cache_clean_interval: self.cache_clean_interval.clone(),
+			last_cachel_clean: self.last_cachel_clean.clone()
+		}
 	}
 }
 
@@ -204,6 +280,205 @@ fn url_decode(string: &str) -> String {
 	String::from_utf8(out).unwrap_or_else(|_| string.into_string())
 }
 
+
+
+
+///A trait for cache storage.
+pub trait Cache {
+	///Free all the unused cached resources.
+	fn free_unused(&self);
+}
+
+impl Cache for () {
+	fn free_unused(&self) {}
+}
+
+impl<T, V: CachedValue<T>> Cache for Vec<V> {
+	fn free_unused(&self) {
+		self.iter().map(|v| v.clean());
+	}
+}
+
+impl<T, K: Eq + Hash, V: CachedValue<T>> Cache for HashMap<K, V> {
+	fn free_unused(&self) {
+		self.iter().map(|(_, v)| v.clean());
+	}
+}
+
+
+///This trait provides functions for handling cached resources.
+pub trait CachedValue<T> {
+	///`do_this` with the cached value, without loading or reloading it.
+	fn use_current_value<R>(&self, do_this: |Option<&T>| -> R) -> R;
+
+	///Load the cached value.
+	fn load(&self);
+
+	///Free the cached value.
+	fn free(&self);
+
+	///Check if the cached value has expired.
+	fn expired(&self) -> bool;
+
+	///Check if the cached value is unused and should be removed.
+	fn unused(&self) -> bool;
+
+	///Reload the cached value if it has expired and `do_this` with it.
+	fn use_value<R>(&self, do_this: |Option<&T>| -> R) -> R {
+		if self.expired() {
+			self.load();
+		}
+
+		self.use_current_value(do_this)
+	}
+
+	///Free the cached value if it's unused.
+	fn clean(&self) {
+		if self.unused() {
+			self.free();
+		}
+	}
+}
+
+
+///Cached raw file content.
+///
+///The whole file will be loaded when accessed.
+pub struct CachedFile {
+	path: Path,
+	file: RWLock<Option<Vec<u8>>>,
+	modified: RWLock<u64>,
+	last_accessed: RWLock<Timespec>,
+	unused_after: Option<i64>
+}
+
+impl CachedFile {
+	///Creates a new `CachedFile` which will be freed `unused_after` seconds after the latest access.
+	pub fn new(path: Path, unused_after: Option<u32>) -> CachedFile {
+		CachedFile {
+			path: path,
+			file: RWLock::new(None),
+			modified: RWLock::new(0),
+			last_accessed: RWLock::new(Timespec::new(0, 0)),
+			unused_after: unused_after.map(|i| i as i64),
+		}
+	}
+}
+
+impl CachedValue<Vec<u8>> for CachedFile {
+	fn use_current_value<R>(&self, do_this: |Option<&Vec<u8>>| -> R) -> R {
+		if self.unused_after.is_some() {
+			*self.last_accessed.write() = time::get_time();
+		}
+		
+		do_this(self.file.read().as_ref())
+	}
+
+	fn load(&self) {
+		*self.modified.write() = self.path.stat().map(|s| s.modified).unwrap_or(0);
+		*self.file.write() = File::open(&self.path).read_to_end().map(|v| Some(v)).unwrap_or(None);
+
+		if self.unused_after.is_some() {
+			*self.last_accessed.write() = time::get_time();
+		}
+	}
+
+	fn free(&self) {
+		*self.file.write() = None;
+	}
+
+	fn expired(&self) -> bool {
+		if self.file.read().is_some() {
+			self.path.stat().map(|s| s.modified > *self.modified.read()).unwrap_or(false)
+		} else {
+			true
+		}
+	}
+
+	fn unused(&self) -> bool {
+		if self.file.read().is_some() {
+			self.unused_after.map(|t| {
+				let last_accessed = self.last_accessed.read();
+				let unused_time = Timespec::new(last_accessed.sec + t, last_accessed.nsec);
+				time::get_time() > unused_time
+			}).unwrap_or(false)
+		} else {
+			false
+		}
+	}
+}
+
+
+///A processed cached file.
+///
+///The file will be processed by a provided function when loaded and the result will be stored.
+pub struct CachedProcessedFile<T> {
+	path: Path,
+	file: RWLock<Option<T>>,
+	modified: RWLock<u64>,
+	last_accessed: RWLock<Timespec>,
+	unused_after: Option<i64>,
+	processor: fn(IoResult<File>) -> Option<T>
+}
+
+impl<T: Send+Share> CachedProcessedFile<T> {
+	///Creates a new `CachedProcessedFile` which will be freed `unused_after` seconds after the latest access.
+	///The file will be processed by the provided `processor` function each time it's loaded.
+	pub fn new(path: Path, unused_after: Option<u32>, processor: fn(IoResult<File>) -> Option<T>) -> CachedProcessedFile<T> {
+		CachedProcessedFile {
+			path: path,
+			file: RWLock::new(None),
+			modified: RWLock::new(0),
+			last_accessed: RWLock::new(Timespec::new(0, 0)),
+			unused_after: unused_after.map(|i| i as i64),
+			processor: processor
+		}
+	}
+}
+
+impl<T: Send+Share> CachedValue<T> for CachedProcessedFile<T> {
+	fn use_current_value<R>(&self, do_this: |Option<&T>| -> R) -> R {
+		if self.unused_after.is_some() {
+			*self.last_accessed.write() = time::get_time();
+		}
+
+		do_this(self.file.read().as_ref())
+	}
+
+	fn load(&self) {
+		*self.modified.write() = self.path.stat().map(|s| s.modified).unwrap_or(0);
+		*self.file.write() = (self.processor)(File::open(&self.path));
+
+		if self.unused_after.is_some() {
+			*self.last_accessed.write() = time::get_time();
+		}
+	}
+
+	fn free(&self) {
+		*self.file.write() = None;
+	}
+
+	fn expired(&self) -> bool {
+		if self.file.read().is_some() {
+			self.path.stat().map(|s| s.modified > *self.modified.read()).unwrap_or(true)
+		} else {
+			true
+		}
+	}
+
+	fn unused(&self) -> bool {
+		if self.file.read().is_some() {
+			self.unused_after.map(|t| {
+				let last_accessed = self.last_accessed.read();
+				let unused_time = Timespec::new(last_accessed.sec + t, last_accessed.nsec);
+				time::get_time() > unused_time
+			}).unwrap_or(false)
+		} else {
+			false
+		}
+	}
+}
+
 #[test]
 fn parsing_parameters() {
 	let parameters = parse_parameters("a=1&aa=2&ab=202");
@@ -281,4 +556,29 @@ fn parse_missing_path_parts() {
 	assert_eq!(query.find(&"with".into_string()), Some(&with));
 	assert_eq!(query.find(&"and".into_string()), Some(&and));
 	assert_eq!(fragment, Some("lol"));
+}
+
+#[test]
+fn cached_file() {
+	let file = CachedFile::new(Path::new("LICENSE"), None);
+	assert_eq!(file.expired(), true);
+	assert!(file.use_value(|o| o.map(|v| v.len()).unwrap_or(0)) > 0);
+	assert_eq!(file.expired(), false);
+	file.free();
+	assert_eq!(file.expired(), true);
+}
+
+#[test]
+fn cached_modified_file() {
+	fn just_read(f: IoResult<File>) -> Option<Vec<u8>> {
+		let mut file = f;
+		file.read_to_end().map(|v| Some(v)).unwrap_or(None)
+	}
+
+	let file = CachedProcessedFile::new(Path::new("LICENSE"), None, just_read);
+	assert_eq!(file.expired(), true);
+	assert!(file.use_value(|o| o.map(|v| v.len()).unwrap_or(0)) > 0);
+	assert_eq!(file.expired(), false);
+	file.free();
+	assert_eq!(file.expired(), true);
 }
