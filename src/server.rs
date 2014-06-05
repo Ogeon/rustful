@@ -63,6 +63,9 @@ pub struct Server<H, C> {
 	///Host address
 	host: IpAddr,
 
+	server: String,
+	content_type: MediaType,
+
 	cache: Arc<C>,
 	cache_clean_interval: Option<i64>,
 	last_cachel_clean: Arc<RWLock<Timespec>>
@@ -75,6 +78,12 @@ impl<H: Handler<()> + Send + Share> Server<H, ()> {
 			handlers: Arc::new(handlers),
 			port: port,
 			host: Ipv4Addr(0, 0, 0, 0),
+			server: "rustful".into_string(),
+			content_type: MediaType {
+				type_: String::from_str("text"),
+				subtype: String::from_str("plain"),
+				parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
+			},
 			cache: Arc::new(()),
 			cache_clean_interval: None,
 			last_cachel_clean: Arc::new(RWLock::new(Timespec::new(0, 0)))
@@ -92,6 +101,12 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> Server<H, C> {
 			handlers: Arc::new(handlers),
 			port: port,
 			host: Ipv4Addr(0, 0, 0, 0),
+			server: "rustful".into_string(),
+			content_type: MediaType {
+				type_: String::from_str("text"),
+				subtype: String::from_str("plain"),
+				parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
+			},
 			cache: Arc::new(cache),
 			cache_clean_interval: None,
 			last_cachel_clean: Arc::new(RWLock::new(Timespec::new(0, 0)))
@@ -117,6 +132,16 @@ impl<H, C> Server<H, C> {
 	pub fn set_clean_interval(&mut self, interval: Option<u32>) {
 		self.cache_clean_interval = interval.map(|i| i as i64);
 	}
+
+	///Change the server part of the user agent string.
+	pub fn set_server_name(&mut self, name: String) {
+		self.server = name;
+	}
+
+	///Change the default content type.
+	pub fn set_content_type(&mut self, content_type: MediaType) {
+		self.content_type = content_type;
+	}
 }
 
 impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server for Server<H, C> {
@@ -132,12 +157,8 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 	fn handle_request(&self, request: &http::server::request::Request, writer: &mut ResponseWriter) {
 		let mut response = Response::new(writer);
 		response.headers.date = Some(time::now_utc());
-		response.headers.content_type = Some(MediaType {
-			type_: String::from_str("text"),
-			subtype: String::from_str("plain"),
-			parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
-		});
-		response.headers.server = Some(String::from_str("rustful"));
+		response.headers.content_type = Some(self.content_type.clone());
+		response.headers.server = Some(self.server.clone());
 
 		match get_path_components(request) {
 			Some((path, query, fragment)) => {
@@ -196,6 +217,8 @@ impl<H: Send + Share, C: Send + Share> Clone for Server<H, C> {
 			handlers: self.handlers.clone(),
 			port: self.port,
 			host: self.host.clone(),
+			server: self.server.clone(),
+			content_type: self.content_type.clone(),
 			cache: self.cache.clone(),
 			cache_clean_interval: self.cache_clean_interval.clone(),
 			last_cachel_clean: self.last_cachel_clean.clone()
