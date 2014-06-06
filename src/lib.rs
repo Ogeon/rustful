@@ -9,7 +9,6 @@
 #[cfg(test)]
 extern crate test;
 
-extern crate collections;
 extern crate url;
 extern crate time;
 extern crate sync;

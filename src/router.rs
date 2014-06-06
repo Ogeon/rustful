@@ -55,9 +55,9 @@
 //!There is also a macro for creating a route vector, like the one in the first example.
 //!These can be found in the crate `rustful_macros`.
 
-use collections::hashmap::HashMap;
-use http::method::Method;
+use std::collections::hashmap::HashMap;
 use std::vec::Vec;
+use http::method::Method;
 
 pub type RouterResult<'a, T> = Option<(&'a T, HashMap<String, String>)>;
 
@@ -330,9 +330,9 @@ fn path_to_vec(path: &str) -> Vec<String> {
 #[cfg(test)]
 mod test {
 	use test::Bencher;
-	use collections::hashmap::HashMap;
 	use super::Router;
 	use http::method::{Get, Post, Delete, Put, Head};
+	use std::collections::hashmap::HashMap;
 	use std::vec::Vec;
 
 	fn check_variable(result: Option<(& &'static str, HashMap<String, String>)>, expected: Option<&str>) {

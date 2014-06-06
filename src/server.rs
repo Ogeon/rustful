@@ -25,10 +25,10 @@ use std::io::{File, IoResult};
 use std::uint;
 use std::io::BufReader;
 use std::hash::Hash;
+use std::collections::hashmap::HashMap;
 
 use sync::{Arc, RWLock};
 
-use collections::hashmap::HashMap;
 
 use time;
 use time::Timespec;
