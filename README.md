@@ -11,13 +11,9 @@ allows it to run both as a single server or as multiple instances in a computer 
 Some of the features are:
 
 * Generic response handlers. Just implement the Handler trait and you are done.
-
 * Optional resource cache with lazy loading and simple cleaning of unused data.
-
 * Some handy macros reduces risk for typos and makes life easier.
-
 * Variables and recursive wildcards in routes.
-
 * Minimal routing overhead.
 
 Online documentation can be found [here](http://ogeon.github.io/rustful/doc/rustful/).
