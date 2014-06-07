@@ -5,12 +5,27 @@ rustful
 
 A RESTful web framework for Rust. The main purpose of rustful is to create a simple,
 light and non-intrusive foundation for HTTP based applications. It is based on a stateless
-structure, where handler functions are assigned to paths and HTTP methods, which naturally
+structure, where response handlers are assigned to paths and HTTP methods, which naturally
 allows it to run both as a single server or as multiple instances in a computer cluster.
+
+Some of the features are:
+
+* Generic response handlers. Just implement the Handler trait and you are done.
+
+* Optional resource cache with lazy loading and simple cleaning of unused data.
+
+* Some handy macros reduces risk for typos and makes life easier.
+
+* Variables and recursive wildcards in routes.
+
+* Minimal routing overhead.
 
 Online documentation can be found [here](http://ogeon.github.io/rustful/doc/rustful/).
 
 #Getting started
+The following example server is very trivial and more advanced servers can be
+found in the `examples/` directory.
+
 Let's assume your file structure looks like this:
 
 ```
@@ -131,6 +146,6 @@ rustc -L lib/rustful/lib/ -o my_server src/my_server.rs
 
 ##Contributing
 Yes, please! This is currently a one man show, so any help is welcome. Especially ideas. The best way to
-contribute, at the moment, is by giving me feedback or sending pull requests with fixes and useful/must-have
+contribute, at the moment, is by giving me feedback or sending pull requests with fixes, corrections and useful/must-have
 additions. Remember, when sending pull requests, that it is better to do a few things well, than many things
 poorly.
