@@ -1,4 +1,5 @@
 LIBS=-L lib
+EXAMPLES=$(wildcard examples/*)
 
 .PHONY: both rustful macros deps test docs examples
 
@@ -34,5 +35,4 @@ docs:
 	rustdoc $(LIBS) src/macros.rs
 
 examples:
-	rustc $(LIBS) examples/hello_world/main.rs -o examples/hello_world/main
-	rustc $(LIBS) examples/post/main.rs -o examples/post/main
+	@$(foreach DIR,$(EXAMPLES),echo compiling $(DIR); rustc $(LIBS) $(DIR)/main.rs -o $(DIR)/main;)
