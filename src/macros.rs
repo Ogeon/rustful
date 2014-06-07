@@ -139,9 +139,8 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	for (path, method, handler) in parse_routes(cx, tts).move_iter() {
 		let path_expr = cx.parse_expr(format!("\"{}\"", path));
 		let method_expr = cx.expr_path(method);
-		let handler_expr = cx.expr_path(handler);
 		calls.push(cx.stmt_expr(
-			cx.expr_method_call(sp, cx.expr_ident(sp, router_ident), insert_method, vec!(method_expr, path_expr, handler_expr))
+			cx.expr_method_call(sp, cx.expr_ident(sp, router_ident), insert_method, vec!(method_expr, path_expr, handler))
 		));
 	}
 
@@ -154,14 +153,13 @@ fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	let routes = parse_routes(cx, tts).move_iter().map(|(path, method, handler)| {
 		let path_expr = cx.parse_expr(format!("\"{}\"", path));
 		let method_expr = cx.expr_path(method);
-		let handler_expr = cx.expr_path(handler);
-		mk_tup(sp, vec!(method_expr, path_expr, handler_expr))
+		mk_tup(sp, vec!(method_expr, path_expr, handler))
 	}).collect();
 
 	MacExpr::new(cx.expr_vec(sp, routes))
 }
 
-fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::Path, ast::Path)> {
+fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::Path, @ast::Expr)> {
 
 	let mut parser = parse::new_parser_from_tts(
 		cx.parse_sess(), cx.cfg(), Vec::from_slice(tts)
@@ -170,7 +168,7 @@ fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::P
 	parse_subroutes("", cx, &mut parser)
 }
 
-fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(String, ast::Path, ast::Path)> {
+fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(String, ast::Path, @ast::Expr)> {
 	let mut routes = Vec::new();
 
 	while !parser.eat(&token::EOF) {
@@ -230,7 +228,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
 	routes
 }
 
-fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, ast::Path)> {
+fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, @ast::Expr)> {
 	let mut methods = Vec::new();
 
 	loop {
@@ -245,7 +243,7 @@ fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, ast::Path)> {
 		}
 	}
 
-	let handler = parser.parse_path(parser::NoTypesAllowed).path;
+	let handler = parser.parse_expr();
 
 	methods.move_iter().map(|m| (m, handler.clone())).collect()
 }
