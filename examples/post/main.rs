@@ -58,7 +58,7 @@ fn say_hello(request: &Request, cache: &Files, response: &mut Response) {
 fn main() {
 	println!("Visit http://localhost:8080 to try this example.");
 
-	//Get the directory of the file or fall back to the current working directory
+	//Get the directory of the example or fall back to the current working directory
 	let base_path = self_exe_path().unwrap_or_else(|| getcwd());
 
 	//Fill our cache with files
