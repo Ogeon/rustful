@@ -30,7 +30,7 @@
 //!
 //!```rust
 //!#![feature(phase)]
-//!#[phase(syntax)]
+//!#[phase(plugin)]
 //!extern crate rustful_macros;
 //!
 //!extern crate rustful;

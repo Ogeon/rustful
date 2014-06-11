@@ -6,7 +6,7 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(macro_rules, macro_registrar, managed_boxes, quote, phase)]
+#![feature(macro_rules, plugin_registrar, managed_boxes, quote, phase)]
 
 //!This crate provides some helpful macros for rustful, including `router!` and `routes!`.
 //!
@@ -18,7 +18,7 @@
 //!
 //!```rust
 //!#![feature(phase)]
-//!#[phase(syntax)]
+//!#[phase(plugin)]
 //!extern crate rustful_macros;
 //!
 //!extern crate rustful;
@@ -39,7 +39,7 @@
 //!
 //!```rust
 //!#![feature(phase)]
-//!#[phase(syntax)]
+//!#[phase(plugin)]
 //!extern crate rustful_macros;
 //!
 //!extern crate rustful;
@@ -72,7 +72,7 @@
 //!
 //!```rust
 //!#![feature(phase)]
-//!#[phase(syntax)]
+//!#[phase(plugin)]
 //!extern crate rustful_macros;
 //!
 //!extern crate rustful;
@@ -101,12 +101,13 @@
 //!```
 
 extern crate syntax;
+extern crate rustc;
 
 use std::path::BytesContainer;
 
 use syntax::{ast, codemap};
 use syntax::ext::base::{
-	SyntaxExtension, ExtCtxt, MacResult, MacExpr,
+	ExtCtxt, MacResult, MacExpr,
 	NormalTT, BasicMacroExpander
 };
 use syntax::ext::build::AstBuilder;
@@ -117,15 +118,16 @@ use syntax::parse::parser;
 use syntax::parse::parser::Parser;
 //use syntax::print::pprust;
 
+use rustc::plugin::Registry;
 
-#[macro_registrar]
+#[plugin_registrar]
 #[doc(hidden)]
-pub fn macro_registrar(register: |ast::Name, SyntaxExtension|) {
+pub fn macro_registrar(reg: &mut Registry) {
 	let expander = box BasicMacroExpander{expander: expand_router, span: None};
-	register(token::intern("router"), NormalTT(expander, None));
+	reg.register_syntax_extension(token::intern("router"), NormalTT(expander, None));
 
 	let expander = box BasicMacroExpander{expander: expand_routes, span: None};
-	register(token::intern("routes"), NormalTT(expander, None));
+	reg.register_syntax_extension(token::intern("routes"), NormalTT(expander, None));
 }
 
 fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult> {
