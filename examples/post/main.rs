@@ -7,8 +7,8 @@ extern crate http;
 use std::io::{File, IoResult};
 use std::os::{self_exe_path, getcwd};
 
-use rustful::{Server, Request, Response};
-use rustful::server::{Cache, CachedValue, CachedProcessedFile};
+use rustful::{Server, Request, Response, Cache};
+use rustful::cache::{CachedValue, CachedProcessedFile};
 use http::method::{Get, Post};
 use http::status::InternalServerError;
 

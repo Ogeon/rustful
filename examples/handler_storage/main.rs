@@ -10,8 +10,8 @@ use std::io::{File, IoResult};
 use std::os::{self_exe_path, getcwd};
 use sync::{Arc, RWLock};
 
-use rustful::{Server, Request, Response};
-use rustful::server::{Handler, CachedValue, CachedProcessedFile};
+use rustful::{Server, Request, Response, Handler};
+use rustful::cache::{CachedValue, CachedProcessedFile};
 use http::method::Get;
 use http::status::InternalServerError;
 
