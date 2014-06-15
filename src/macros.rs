@@ -6,7 +6,7 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(macro_rules, plugin_registrar, managed_boxes, quote, phase)]
+#![feature(macro_rules, plugin_registrar, quote, phase)]
 
 //!This crate provides some helpful macros for rustful, including `router!` and `routes!`.
 //!
@@ -104,6 +104,7 @@ extern crate syntax;
 extern crate rustc;
 
 use std::path::BytesContainer;
+use std::gc::{Gc, GC};
 
 use syntax::{ast, codemap};
 use syntax::ext::base::{
@@ -134,7 +135,7 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	let router_ident = cx.ident_of("router");
 	let insert_method = cx.ident_of("insert_item");
 
-	let mut calls: Vec<@ast::Stmt> = vec!(
+	let mut calls: Vec<Gc<ast::Stmt>> = vec!(
 		cx.stmt_let(sp, true, router_ident, quote_expr!(&cx, ::rustful::Router::new()))
 	);
 
@@ -161,7 +162,7 @@ fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	MacExpr::new(cx.expr_vec(sp, routes))
 }
 
-fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::Path, @ast::Expr)> {
+fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::Path, Gc<ast::Expr>)> {
 
 	let mut parser = parse::new_parser_from_tts(
 		cx.parse_sess(), cx.cfg(), Vec::from_slice(tts)
@@ -170,7 +171,7 @@ fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::P
 	parse_subroutes("", cx, &mut parser)
 }
 
-fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(String, ast::Path, @ast::Expr)> {
+fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(String, ast::Path, Gc<ast::Expr>)> {
 	let mut routes = Vec::new();
 
 	while !parser.eat(&token::EOF) {
@@ -230,7 +231,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
 	routes
 }
 
-fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, @ast::Expr)> {
+fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, Gc<ast::Expr>)> {
 	let mut methods = Vec::new();
 
 	loop {
@@ -250,12 +251,12 @@ fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, @ast::Expr)> {
 	methods.move_iter().map(|m| (m, handler.clone())).collect()
 }
 
-fn mk_tup(sp: codemap::Span, content: Vec<@ast::Expr>) -> @ast::Expr {
+fn mk_tup(sp: codemap::Span, content: Vec<Gc<ast::Expr>>) -> Gc<ast::Expr> {
 	dummy_expr(sp, ast::ExprTup(content))
 }
 
-fn dummy_expr(sp: codemap::Span, e: ast::Expr_) -> @ast::Expr {
-	@ast::Expr {
+fn dummy_expr(sp: codemap::Span, e: ast::Expr_) -> Gc<ast::Expr> {
+	box(GC) ast::Expr {
 		id: ast::DUMMY_NODE_ID,
 		node: e,
 		span: sp,
