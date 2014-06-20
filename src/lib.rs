@@ -390,7 +390,7 @@ impl<'a, 'b> Response<'a, 'b> {
 
 	///Start writing the response. Headers and status can not be changed after it has been called.
 	///
-	///This method will be called automatically by `write()` and `end()`, if it hasn't been called before.
+	///This method will be called automatically by `send()` and `end()`, if it hasn't been called before.
 	///It can only be called once.
 	pub fn begin(&mut self) {
 		if !self.started_writing {
