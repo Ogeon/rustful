@@ -74,7 +74,7 @@ use http::method::Get;
 fn handler(request: &Request, response: &mut Response) {
 
 	//Send something nice to the user
-	match response.write("Hello, user! It looks like this server works fine.".as_bytes()) {
+	match response.send("Hello, user! It looks like this server works fine.") {
 		Err(e) => println!("error while writing hello: {}", e),
 		_ => {}
 	}
@@ -118,7 +118,7 @@ use http::method::Get;
 fn handler(request: &Request, response: &mut Response) {
 
 	//Send something nice to the user
-	match response.write("Hello, user! It looks like this server works fine.".as_bytes()) {
+	match response.send("Hello, user! It looks like this server works fine.") {
 		Err(e) => println!("error while writing hello: {}", e),
 		_ => {}
 	}

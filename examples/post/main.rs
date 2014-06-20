@@ -41,7 +41,7 @@ fn say_hello(request: &Request, cache: &Files, response: &mut Response) {
 		match page {
 			Some(page) => {
 				let complete_page = page.replace("{}", content.as_slice());
-				match response.write(complete_page.as_bytes()) {
+				match response.send(complete_page) {
 					Err(e) => println!("error while writing hello: {}", e),
 					_ => {}
 				}

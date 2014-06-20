@@ -91,8 +91,9 @@ impl Handler<()> for Counter {
 		self.page.use_value(|page| {
 			match page {
 				Some(page) => {
-					let complete_page = page.replace("{}", self.value.read().deref().to_str().as_slice());
-					match response.write(complete_page.as_bytes()) {
+					let count = self.value.read().deref().to_str();
+					
+					match response.send(page.replace("{}", count.as_slice())) {
 						Err(e) => println!("error while showing page: {}", e),
 						_ => {}
 					}

@@ -13,7 +13,7 @@ fn say_hello(request: &Request, response: &mut Response) {
 		None => "stranger"
 	};
 
-	match response.write(format!("Hello, {}!", person).as_bytes()) {
+	match response.send(format!("Hello, {}!", person)) {
 		Err(e) => println!("error while writing hello: {}", e),
 		_ => {}
 	}

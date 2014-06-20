@@ -29,6 +29,7 @@ use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
 use std::uint;
 use std::io::BufReader;
 use std::collections::hashmap::HashMap;
+use std::path::BytesContainer;
 
 use sync::{Arc, RWLock};
 
@@ -381,6 +382,12 @@ impl<'a, 'b> Response<'a, 'b> {
 		}
 	}
 
+	///Writes a string or any other `BytesContainer` to the client.
+	///The headers will be written the first time `send()` is called.
+	pub fn send<S: BytesContainer>(&mut self, content: S) -> IoResult<()> {
+		self.write(content.container_as_bytes())
+	}
+
 	///Start writing the response. Headers and status can not be changed after it has been called.
 	///
 	///This method will be called automatically by `write()` and `end()`, if it hasn't been called before.
@@ -406,7 +413,6 @@ impl<'a, 'b> Response<'a, 'b> {
 }
 
 impl<'a, 'b> Writer for Response<'a, 'b> {
-	///Writes content to the client. The headers will be written the first time it's called.
 	fn write(&mut self, content: &[u8]) -> IoResult<()> {
 		self.begin();
 
