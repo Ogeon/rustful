@@ -78,7 +78,7 @@ struct Counter {
 }
 
 impl Handler<()> for Counter {
-	fn handle_request(&self, _request: &Request, _cache: &(), response: &mut Response) {
+	fn handle_request(&self, _request: Request, _cache: &(), response: &mut Response) {
 		self.operation.map(|o| {
 			//Lock the value for writing and update it
 			let mut value = self.value.write();
@@ -92,7 +92,7 @@ impl Handler<()> for Counter {
 			match page {
 				Some(page) => {
 					let count = self.value.read().deref().to_str();
-					
+
 					match response.send(page.replace("{}", count.as_slice())) {
 						Err(e) => println!("error while showing page: {}", e),
 						_ => {}

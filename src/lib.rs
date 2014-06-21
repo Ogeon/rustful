@@ -43,17 +43,17 @@ pub mod cache;
 
 ///A trait for request handlers.
 pub trait Handler<C> {
-	fn handle_request(&self, request: &Request, cache: &C, response: &mut Response);
+	fn handle_request(&self, request: Request, cache: &C, response: &mut Response);
 }
 
-impl<C> Handler<C> for fn(&Request, &mut Response) {
-	fn handle_request(&self, request: &Request, _cache: &C, response: &mut Response) {
+impl<C> Handler<C> for fn(Request, &mut Response) {
+	fn handle_request(&self, request: Request, _cache: &C, response: &mut Response) {
 		(*self)(request, response);
 	}
 }
 
-impl<C> Handler<C> for fn(&Request, &C, &mut Response) {
-	fn handle_request(&self, request: &Request, cache: &C, response: &mut Response) {
+impl<C> Handler<C> for fn(Request, &C, &mut Response) {
+	fn handle_request(&self, request: Request, cache: &C, response: &mut Response) {
 		(*self)(request, cache, response);
 	}
 }
@@ -191,7 +191,7 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 
 		match get_path_components(request) {
 			Some((path, query, fragment)) => {
-				match self.handlers.find(request.method.clone(), path) {
+				match self.handlers.find(request.method.clone(), path.as_slice()) {
 					Some((handler, variables)) => {
 						let post = if request.method == Post {
 							parse_parameters(request.body.as_slice())
@@ -207,10 +207,10 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 							post: post,
 							query: query,
 							fragment: fragment,
-							body: request.body.as_slice()
+							body: request.body.clone()
 						};
 
-						handler.handle_request(&request, & *self.cache, &mut response);
+						handler.handle_request(request, & *self.cache, &mut response);
 					},
 					None => {
 						response.headers.content_length = Some(0);
@@ -255,16 +255,16 @@ impl<H: Send + Share, C: Send + Share> Clone for Server<H, C> {
 	}
 }
 
-fn get_path_components<'a>(request: &'a http::server::request::Request) -> Option<(&'a str, HashMap<String, String>, Option<&'a str>)> {
+fn get_path_components(request: &http::server::request::Request) -> Option<(String, HashMap<String, String>, Option<String>)> {
 	match request.request_uri {
 		AbsoluteUri(ref url) => {
 			Some((
-				url.path.as_slice(),
+				url.path.clone(),
 				url.query.iter().map(|&(ref k, ref v)| (k.clone(), v.clone()) ).collect(),
-				url.fragment.as_ref().map(|v| v.as_slice())
+				url.fragment.as_ref().map(|v| v.clone())
 			))
 		},
-		AbsolutePath(ref path) => Some(parse_path(path.as_slice())),
+		AbsolutePath(ref path) => Some(parse_path(path.clone())),
 		_ => None
 	}
 }
@@ -284,15 +284,15 @@ fn parse_parameters(source: &str) -> HashMap<String, String> {
 	parameters
 }
 
-fn parse_path<'a>(path: &'a str) -> (&'a str, HashMap<String, String>, Option<&'a str>) {
-	match path.find('?') {
+fn parse_path(path: String) -> (String, HashMap<String, String>, Option<String>) {
+	match path.as_slice().find('?') {
 		Some(index) => {
-			let (query, fragment) = parse_fragment(path.slice(index+1, path.len()));
-			(path.slice(0, index), parse_parameters(query), fragment)
+			let (query, fragment) = parse_fragment(path.as_slice().slice(index+1, path.len()));
+			(path.as_slice().slice(0, index).into_string(), parse_parameters(query.as_slice()), fragment.map(|f| f.into_string()))
 		},
 		None => {
-			let (path, fragment) = parse_fragment(path);
-			(path, HashMap::new(), fragment)
+			let (path, fragment) = parse_fragment(path.as_slice());
+			(path.into_string(), HashMap::new(), fragment.map(|f| f.into_string()))
 		}
 	}
 }
@@ -334,7 +334,7 @@ fn url_decode(string: &str) -> String {
 
 
 ///A container for all the request data, including get, set and path variables.
-pub struct Request<'a> {
+pub struct Request {
 	///Headers from the HTTP request
 	pub headers: headers::request::HeaderCollection,
 
@@ -342,7 +342,7 @@ pub struct Request<'a> {
 	pub method: Method,
 
 	///The requested path
-	pub path: &'a str,
+	pub path: String,
 
 	///Route variables
 	pub variables: HashMap<String, String>,
@@ -354,10 +354,10 @@ pub struct Request<'a> {
 	pub query: HashMap<String, String>,
 
 	///The fragment part of the URL (after #), if provided
-	pub fragment: Option<&'a str>,
+	pub fragment: Option<String>,
 
 	///The raw body part of the request
-	pub body: &'a str
+	pub body: String
 }
 
 
@@ -461,44 +461,44 @@ fn parsing_strange_parameters() {
 fn parse_path_parts() {
 	let with = "this".into_string();
 	let and = "that".into_string();
-	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that#lol");
-	assert_eq!(path, "/path/to/something");
+	let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=that#lol"));
+	assert_eq!(path, String::from_str("/path/to/something"));
 	assert_eq!(query.find(&"with".into_string()), Some(&with));
 	assert_eq!(query.find(&"and".into_string()), Some(&and));
-	assert_eq!(fragment, Some("lol"));
+	assert_eq!(fragment, Some(String::from_str("lol")));
 }
 
 #[test]
 fn parse_strange_path() {
 	let with = "this".into_string();
 	let and = "what?".into_string();
-	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=what?#");
-	assert_eq!(path, "/path/to/something");
+	let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=what?#"));
+	assert_eq!(path, String::from_str("/path/to/something"));
 	assert_eq!(query.find(&"with".into_string()), Some(&with));
 	assert_eq!(query.find(&"and".into_string()), Some(&and));
-	assert_eq!(fragment, Some(""));
+	assert_eq!(fragment, Some(String::from_str("")));
 }
 
 #[test]
 fn parse_missing_path_parts() {
 	let with = "this".into_string();
 	let and = "that".into_string();
-	let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that");
-	assert_eq!(path, "/path/to/something");
+	let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=that"));
+	assert_eq!(path, String::from_str("/path/to/something"));
 	assert_eq!(query.find(&"with".into_string()), Some(&with));
 	assert_eq!(query.find(&"and".into_string()), Some(&and));
 	assert_eq!(fragment, None);
 
 
-	let (path, query, fragment) = parse_path("/path/to/something#lol");
-	assert_eq!(path, "/path/to/something");
+	let (path, query, fragment) = parse_path(String::from_str("/path/to/something#lol"));
+	assert_eq!(path, String::from_str("/path/to/something"));
 	assert_eq!(query.len(), 0);
-	assert_eq!(fragment, Some("lol"));
+	assert_eq!(fragment, Some(String::from_str("lol")));
 
 
-	let (path, query, fragment) = parse_path("?with=this&and=that#lol");
-	assert_eq!(path, "");
+	let (path, query, fragment) = parse_path(String::from_str("?with=this&and=that#lol"));
+	assert_eq!(path, String::from_str(""));
 	assert_eq!(query.find(&"with".into_string()), Some(&with));
 	assert_eq!(query.find(&"and".into_string()), Some(&and));
-	assert_eq!(fragment, Some("lol"));
+	assert_eq!(fragment, Some(String::from_str("lol")));
 }

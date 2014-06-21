@@ -71,7 +71,7 @@ use rustful::{Server, Router, Request, Response};
 use http::method::Get;
 
 ///Our handler function
-fn handler(request: &Request, response: &mut Response) {
+fn handler(request: Request, response: &mut Response) {
 
 	//Send something nice to the user
 	match response.send("Hello, user! It looks like this server works fine.") {
@@ -115,7 +115,7 @@ use rustful::{Server, Request, Response};
 use http::method::Get;
 
 ///Our handler function
-fn handler(request: &Request, response: &mut Response) {
+fn handler(request: Request, response: &mut Response) {
 
 	//Send something nice to the user
 	match response.send("Hello, user! It looks like this server works fine.") {

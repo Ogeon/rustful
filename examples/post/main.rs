@@ -12,7 +12,7 @@ use rustful::cache::{CachedValue, CachedProcessedFile};
 use http::method::{Get, Post};
 use http::status::InternalServerError;
 
-fn say_hello(request: &Request, cache: &Files, response: &mut Response) {
+fn say_hello(request: Request, cache: &Files, response: &mut Response) {
 	response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
 	//Format the name or clone the cached form
