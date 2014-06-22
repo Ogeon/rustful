@@ -40,6 +40,16 @@ pub mod router;
 pub mod cache;
 
 
+///The result from a `RequestPlugin`.
+#[experimental]
+pub enum RequestResult {
+	///Continue to the next plugin in the stack.
+	Continue(Request),
+
+	///Abort and send HTTP status.
+	Abort(status::Status)
+}
+
 
 ///A trait for request handlers.
 pub trait Handler<C> {
@@ -72,6 +82,17 @@ impl Cache for () {
 
 
 
+///A trait for request plugins.
+///
+///They are able to modify and react to a `Request` befor it's sent to the handler.
+#[experimental]
+pub trait RequestPlugin {
+	///Try to modify the `Request`.
+	fn modify(&self, request: Request) -> RequestResult;
+}
+
+
+
 ///Receives the HTTP requests and passes them on to handlers.
 ///
 ///```rust
@@ -97,26 +118,16 @@ pub struct Server<H, C> {
 
 	cache: Arc<C>,
 	cache_clean_interval: Option<i64>,
-	last_cachel_clean: Arc<RWLock<Timespec>>
+	last_cachel_clean: Arc<RWLock<Timespec>>,
+
+	//An ASCII star will be rewarded to the one who sugests a better alternative to the RWLock.
+	request_plugins: Arc<RWLock<Vec<Box<RequestPlugin + Send + Share>>>>
 }
 
 impl<H: Handler<()> + Send + Share> Server<H, ()> {
 	///Create a new `Server` which will listen on the provided port and host address `0.0.0.0`.
 	pub fn new(port: Port, handlers: Router<H>) -> Server<H, ()> {
-		Server {
-			handlers: Arc::new(handlers),
-			port: port,
-			host: Ipv4Addr(0, 0, 0, 0),
-			server: "rustful".into_string(),
-			content_type: MediaType {
-				type_: String::from_str("text"),
-				subtype: String::from_str("plain"),
-				parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
-			},
-			cache: Arc::new(()),
-			cache_clean_interval: None,
-			last_cachel_clean: Arc::new(RWLock::new(Timespec::new(0, 0)))
-		}
+		Server::with_cache(port, (), handlers)
 	}
 }
 
@@ -138,7 +149,8 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> Server<H, C> {
 			},
 			cache: Arc::new(cache),
 			cache_clean_interval: None,
-			last_cachel_clean: Arc::new(RWLock::new(Timespec::new(0, 0)))
+			last_cachel_clean: Arc::new(RWLock::new(Timespec::new(0, 0))),
+			request_plugins: Arc::new(RWLock::new(Vec::new()))
 		}
 	}
 
@@ -171,6 +183,25 @@ impl<H, C> Server<H, C> {
 	pub fn set_content_type(&mut self, content_type: MediaType) {
 		self.content_type = content_type;
 	}
+
+	///Add a request plugin to the plugin stack.
+	#[experimental]
+	pub fn add_request_plugin<P: RequestPlugin + Send + Share>(&mut self, plugin: P) {
+		self.request_plugins.write().push(box plugin as Box<RequestPlugin + Send + Share>);
+	}
+
+	fn modify_request(&self, request: Request) -> RequestResult {
+		let mut result = Continue(request);
+
+		for plugin in self.request_plugins.read().iter() {
+			result = match result {
+				Continue(request) => plugin.modify(request),
+				_ => return result
+			};
+		}
+
+		result
+	}
 }
 
 impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server for Server<H, C> {
@@ -191,30 +222,39 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 
 		match get_path_components(request) {
 			Some((path, query, fragment)) => {
-				match self.handlers.find(request.method.clone(), path.as_slice()) {
-					Some((handler, variables)) => {
-						let post = if request.method == Post {
-							parse_parameters(request.body.as_slice())
-						} else {
-							HashMap::new()
-						};
+				let post = if request.method == Post {
+					parse_parameters(request.body.as_slice())
+				} else {
+					HashMap::new()
+				};
 
-						let request = Request {
-							headers: *request.headers.clone(),
-							method: request.method.clone(),
-							path: path,
-							variables: variables,
-							post: post,
-							query: query,
-							fragment: fragment,
-							body: request.body.clone()
-						};
+				let request = Request {
+					headers: *request.headers.clone(),
+					method: request.method.clone(),
+					path: path,
+					variables: HashMap::new(),
+					post: post,
+					query: query,
+					fragment: fragment,
+					body: request.body.clone()
+				};
 
-						handler.handle_request(request, & *self.cache, &mut response);
+				match self.modify_request(request) {
+					Continue(mut request) => {
+						match self.handlers.find(request.method.clone(), request.path.as_slice()) {
+							Some((handler, variables)) => {
+								request.variables = variables;
+								handler.handle_request(request, & *self.cache, &mut response);
+							},
+							None => {
+								response.headers.content_length = Some(0);
+								response.status = NotFound;
+							}
+						}
 					},
-					None => {
+					Abort(status) => {
 						response.headers.content_length = Some(0);
-						response.status = NotFound;
+						response.status = status;
 					}
 				}
 			},
@@ -250,7 +290,8 @@ impl<H: Send + Share, C: Send + Share> Clone for Server<H, C> {
 			content_type: self.content_type.clone(),
 			cache: self.cache.clone(),
 			cache_clean_interval: self.cache_clean_interval.clone(),
-			last_cachel_clean: self.last_cachel_clean.clone()
+			last_cachel_clean: self.last_cachel_clean.clone(),
+			request_plugins: self.request_plugins.clone()
 		}
 	}
 }
