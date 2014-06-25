@@ -214,29 +214,49 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 		}
 	}
 
-	fn handle_request(&self, request: &http::server::request::Request, writer: &mut ResponseWriter) {
+	fn handle_request(&self, request: http::server::request::Request, writer: &mut ResponseWriter) {
+		let http::server::request::Request {
+			request_uri: request_uri,
+			method: request_method,
+			headers: request_headers,
+			body: request_body,
+			..
+		} = request;
+
 		let mut response = Response::new(writer);
 		response.headers.date = Some(time::now_utc());
 		response.headers.content_type = Some(self.content_type.clone());
 		response.headers.server = Some(self.server.clone());
 
-		match get_path_components(request) {
+		let path_components = match request_uri {
+			AbsoluteUri(url) => {
+				Some((
+					url.path,
+					url.query.move_iter().collect(),
+					url.fragment
+				))
+			},
+			AbsolutePath(path) => Some(parse_path(path)),
+			_ => None //TODO: Handle *
+		};
+
+		match path_components {
 			Some((path, query, fragment)) => {
-				let post = if request.method == Post {
-					parse_parameters(request.body.as_slice())
+				let post = if request_method == Post {
+					parse_parameters(request_body.as_slice())
 				} else {
 					HashMap::new()
 				};
 
 				let request = Request {
-					headers: *request.headers.clone(),
-					method: request.method.clone(),
+					headers: *request_headers,
+					method: request_method,
 					path: path,
 					variables: HashMap::new(),
 					post: post,
 					query: query,
 					fragment: fragment,
-					body: request.body.clone()
+					body: request_body
 				};
 
 				match self.modify_request(request) {
@@ -293,20 +313,6 @@ impl<H: Send + Share, C: Send + Share> Clone for Server<H, C> {
 			last_cache_clean: self.last_cache_clean.clone(),
 			request_plugins: self.request_plugins.clone()
 		}
-	}
-}
-
-fn get_path_components(request: &http::server::request::Request) -> Option<(String, HashMap<String, String>, Option<String>)> {
-	match request.request_uri {
-		AbsoluteUri(ref url) => {
-			Some((
-				url.path.clone(),
-				url.query.iter().map(|&(ref k, ref v)| (k.clone(), v.clone()) ).collect(),
-				url.fragment.as_ref().map(|v| v.clone())
-			))
-		},
-		AbsolutePath(ref path) => Some(parse_path(path.clone())),
-		_ => None
 	}
 }
 
