@@ -118,7 +118,7 @@ pub struct Server<H, C> {
 
 	cache: Arc<C>,
 	cache_clean_interval: Option<i64>,
-	last_cachel_clean: Arc<RWLock<Timespec>>,
+	last_cache_clean: Arc<RWLock<Timespec>>,
 
 	//An ASCII star will be rewarded to the one who sugests a better alternative to the RWLock.
 	request_plugins: Arc<RWLock<Vec<Box<RequestPlugin + Send + Share>>>>
@@ -149,7 +149,7 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> Server<H, C> {
 			},
 			cache: Arc::new(cache),
 			cache_clean_interval: None,
-			last_cachel_clean: Arc::new(RWLock::new(Timespec::new(0, 0))),
+			last_cache_clean: Arc::new(RWLock::new(Timespec::new(0, 0))),
 			request_plugins: Arc::new(RWLock::new(Vec::new()))
 		}
 	}
@@ -174,7 +174,7 @@ impl<H, C> Server<H, C> {
 		self.cache_clean_interval = interval.map(|i| i as i64);
 	}
 
-	///Change the server part of the user agent string.
+	///Change the server response header.
 	pub fn set_server_name(&mut self, name: String) {
 		self.server = name;
 	}
@@ -268,12 +268,12 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 
 		self.cache_clean_interval.map(|t| {
 			let clean_time = {
-				let last_cachel_clean = self.last_cachel_clean.read();
-				Timespec::new(last_cachel_clean.sec + t, last_cachel_clean.nsec)
+				let last_cache_clean = self.last_cache_clean.read();
+				Timespec::new(last_cache_clean.sec + t, last_cache_clean.nsec)
 			};
 
 			if time::get_time() > clean_time {
-				*self.last_cachel_clean.write() = time::get_time();
+				*self.last_cache_clean.write() = time::get_time();
 				self.cache.free_unused();
 			}
 		});
@@ -290,7 +290,7 @@ impl<H: Send + Share, C: Send + Share> Clone for Server<H, C> {
 			content_type: self.content_type.clone(),
 			cache: self.cache.clone(),
 			cache_clean_interval: self.cache_clean_interval.clone(),
-			last_cachel_clean: self.last_cachel_clean.clone(),
+			last_cache_clean: self.last_cache_clean.clone(),
 			request_plugins: self.request_plugins.clone()
 		}
 	}
