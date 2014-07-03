@@ -24,7 +24,7 @@ deps:
 	cd lib/rust-http; ./configure
 	make -C lib/rust-http clean
 	make -C lib/rust-http http
-	cp lib/rust-http/build/libhttp* lib/
+	cp lib/rust-http/target/libhttp* lib/
 
 test:
 	rustc $(LIBS) --opt-level=3 --test src/lib.rs -o rustful-test
