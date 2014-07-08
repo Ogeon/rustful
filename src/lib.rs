@@ -1,4 +1,4 @@
-#![crate_id = "rustful#0.1-pre"]
+#![crate_name = "rustful"]
 
 #![comment = "RESTful web framework"]
 #![license = "MIT"]
@@ -231,9 +231,9 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 		let path_components = match request_uri {
 			AbsoluteUri(url) => {
 				Some((
-					url.path,
-					url.query.move_iter().collect(),
-					url.fragment
+					url.path.path,
+					url.path.query.move_iter().collect(),
+					url.path.fragment
 				))
 			},
 			AbsolutePath(path) => Some(parse_path(path)),

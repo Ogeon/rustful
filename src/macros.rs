@@ -1,4 +1,4 @@
-#![crate_id = "rustful_macros#0.1-pre"]
+#![crate_name = "rustful_macros"]
 
 #![comment = "Macros for rustful"]
 #![license = "MIT"]

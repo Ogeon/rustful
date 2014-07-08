@@ -67,7 +67,7 @@ enum Branch {
 	Wildcard
 }
 
-
+//impl_clonable_fn!(<>, <[A], [B]>, <[A], [B], [C]>)
 
 ///Stores items, such as request handlers, using an HTTP method and a path as keys.
 ///
@@ -144,12 +144,12 @@ impl<T> Router<T> {
 			if self.wildcard_route.is_none() {
 				self.wildcard_route = Some(box Router::new());
 			}
-			&'a mut **self.wildcard_route.as_mut::<'a>().unwrap()
+			&mut **self.wildcard_route.as_mut::<'a>().unwrap()
 		} else if key.len() > 0 && key.char_at(0) == ':' {
 			if self.variable_route.is_none() {
 				self.variable_route = Some(box Router::new());
 			}
-			&'a mut **self.variable_route.as_mut::<'a>().unwrap()
+			&mut **self.variable_route.as_mut::<'a>().unwrap()
 		} else {
 			self.static_routes.find_or_insert_with::<'a>(key.to_string(), |_| {
 				Router::new()
