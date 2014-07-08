@@ -1,0 +1,19 @@
+[package]
+
+name = "rustful"
+version = "0.1.0-pre"
+authors = ["hello@erikhedvall.nu"]
+
+[[lib]]
+
+name = "rustful"
+path = "src/lib.rs"
+
+[[lib]]
+
+name = "rustful-macros"
+path = "src/macros.rs"
+
+[dependencies.http]
+
+git = "https://github.com/chris-morgan/rust-http"
