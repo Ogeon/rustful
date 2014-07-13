@@ -118,7 +118,7 @@ impl<T> Router<T> {
 		let path = path_to_vec(path.trim());
 
 		if path.len() == 0 {
-			self.items.insert(method.to_str().into_string(), (item, Vec::new()));
+			self.items.insert(method.to_string().into_string(), (item, Vec::new()));
 		} else {
 			let (endpoint, variable_names) = path.move_iter().fold((self, Vec::new()),
 
@@ -134,7 +134,7 @@ impl<T> Router<T> {
 
 			);
 
-			endpoint.items.insert(method.to_str().into_string(), (item, variable_names));
+			endpoint.items.insert(method.to_string().into_string(), (item, variable_names));
 		}
 	}
 
@@ -160,7 +160,7 @@ impl<T> Router<T> {
 	///Finds and returns the matching item and variables
 	pub fn find<'a>(&'a self, method: Method, path: &str) -> RouterResult<'a, T> {
 		let path = path_to_vec(path);
-		let method_str = method.to_str().into_string();
+		let method_str = method.to_string().into_string();
 
 		if path.len() == 0 {
 			match self.items.find(&method_str) {
@@ -347,7 +347,7 @@ mod test {
 						}
 					}).collect::<Vec<String>>().connect(", ");
 
-					expected.to_str() == result
+					expected.to_string() == result
 				},
 				None => false
 			},
@@ -358,7 +358,7 @@ mod test {
 	fn check(result: Option<(& &'static str, HashMap<String, String>)>, expected: Option<&str>) {
 		assert!(match result {
 			Some((result, _)) => match expected {
-				Some(expected) => result.to_str() == expected.to_str(),
+				Some(expected) => result.to_string() == expected.to_string(),
 				None => false
 			},
 			None => expected.is_none()

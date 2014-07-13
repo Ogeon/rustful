@@ -75,7 +75,7 @@ fn main() {
 fn read_string(f: IoResult<File>) -> Option<String> {
 	//Make the file mutable and try to read it into a string
 	let mut file = f;
-	file.read_to_str().map(|s| Some(s)).unwrap_or_else(|e| {
+	file.read_to_string().map(|s| Some(s)).unwrap_or_else(|e| {
 		println!("Unable to read file: {}", e);
 		None
 	})

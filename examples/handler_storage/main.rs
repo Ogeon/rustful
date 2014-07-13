@@ -62,7 +62,7 @@ fn sub(value: int) -> int {
 fn read_string(f: IoResult<File>) -> Option<String> {
 	//Make the file mutable and try to read it into a string
 	let mut file = f;
-	file.read_to_str().map(|s| Some(s)).unwrap_or_else(|e| {
+	file.read_to_string().map(|s| Some(s)).unwrap_or_else(|e| {
 		println!("Unable to read file: {}", e);
 		None
 	})
@@ -91,7 +91,7 @@ impl Handler<()> for Counter {
 		self.page.use_value(|page| {
 			match page {
 				Some(page) => {
-					let count = self.value.read().deref().to_str();
+					let count = self.value.read().deref().to_string();
 
 					match response.send(page.replace("{}", count.as_slice())) {
 						Err(e) => println!("error while showing page: {}", e),
