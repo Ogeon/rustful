@@ -93,10 +93,7 @@ impl Handler<()> for Counter {
 				Some(page) => {
 					let count = self.value.read().deref().to_string();
 
-					match response.send(page.replace("{}", count.as_slice())) {
-						Err(e) => println!("error while showing page: {}", e),
-						_ => {}
-					}
+					try_send!(response, page.replace("{}", count.as_slice()));
 				},
 				None => {
 					//Oh no! The page was not loaded!

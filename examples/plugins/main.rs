@@ -8,7 +8,7 @@ extern crate http;
 use std::sync::RWLock;
 
 use rustful::{Server, Request, Response, RequestPlugin};
-use rustful::{RequestResult, Continue};
+use rustful::{RequestAction, Continue};
 use http::method::Get;
 
 fn say_hello(request: Request, response: &mut Response) {
@@ -17,10 +17,7 @@ fn say_hello(request: Request, response: &mut Response) {
 		None => "stranger"
 	};
 
-	match response.send(format!("Hello, {}!", person)) {
-		Err(e) => println!("error while writing hello: {}", e),
-		_ => {}
-	}
+	try_send!(response, format!("Hello, {}!", person));
 }
 
 fn main() {
@@ -57,7 +54,7 @@ impl RequestLogger {
 
 impl RequestPlugin for RequestLogger {
 	///Count requests and log the path.
-	fn modify(&self, request: Request) -> RequestResult {
+	fn modify(&self, request: Request) -> RequestAction {
 		*self.counter.write() += 1;
 		println!("Request #{} is to '{}'", *self.counter.read(), request.path);
 		Continue(request)
@@ -79,7 +76,7 @@ impl PathPrefix {
 
 impl RequestPlugin for PathPrefix {
 	///Append the prefix to the path
-	fn modify(&self, request: Request) -> RequestResult {
+	fn modify(&self, request: Request) -> RequestAction {
 		let mut request = request;
 		request.path = format!("/{}{}", self.prefix.trim_chars('/'), request.path);
 		Continue(request)

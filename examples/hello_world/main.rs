@@ -13,10 +13,7 @@ fn say_hello(request: Request, response: &mut Response) {
 		None => "stranger"
 	};
 
-	match response.send(format!("Hello, {}!", person)) {
-		Err(e) => println!("error while writing hello: {}", e),
-		_ => {}
-	}
+	try_send!(response, format!("Hello, {}!", person) while "showing hello");
 }
 
 fn main() {

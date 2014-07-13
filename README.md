@@ -64,44 +64,6 @@ See the rust-http README for information about SSL support.
 
 ##Write your server
 Here is a simple example of how `my_project.rs` could look like:
-```rust
-extern crate rustful;
-extern crate http;
-use rustful::{Server, Router, Request, Response};
-use http::method::Get;
-
-///Our handler function
-fn handler(request: Request, response: &mut Response) {
-
-	//Send something nice to the user
-	match response.send("Hello, user! It looks like this server works fine.") {
-		Err(e) => println!("error while writing hello: {}", e),
-		_ => {}
-	}
-
-}
-
-fn main() {
-	//Set the handler to respond to GET request for /
-	let routes = [
-		(Get, "/", handler)
-	];
-
-	let server = Server::new(
-		//Set the listening port. Let's use 8080 this time
-		8080,
-
-		//Build a router tree from the routes and give it to the server
-		Router::from_routes(routes)
-	);
-
-	//Start the server. All code beyond this point is unreachable
-	server.run();
-}
-```
-
-rustful comes with some handy macros to reduce some of the boilerplate code. The example above
-may be rewritten using the `router!()` macro:
 
 ```rust
 //Include rustful_macros during syntax phase to be able to use the macros
@@ -116,13 +78,8 @@ use http::method::Get;
 
 ///Our handler function
 fn handler(request: Request, response: &mut Response) {
-
 	//Send something nice to the user
-	match response.send("Hello, user! It looks like this server works fine.") {
-		Err(e) => println!("error while writing hello: {}", e),
-		_ => {}
-	}
-
+	try_send!(response, "Hello, user! It looks like this server works fine." while "sending hello");
 }
 
 fn main() {

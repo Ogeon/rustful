@@ -24,7 +24,7 @@ use http::status::{NotFound, BadRequest, Status};
 use http::headers::content_type::MediaType;
 use http::headers;
 
-use std::io::IoResult;
+use std::io::{IoResult, IoError};
 use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
 use std::uint;
 use std::io::BufReader;
@@ -42,7 +42,7 @@ pub mod cache;
 
 ///The result from a `RequestPlugin`.
 #[experimental]
-pub enum RequestResult {
+pub enum RequestAction {
 	///Continue to the next plugin in the stack.
 	Continue(Request),
 
@@ -50,6 +50,43 @@ pub enum RequestResult {
 	Abort(status::Status)
 }
 
+///The result of a response action.
+#[experimental]
+pub enum ResponseResult {
+	///The response action was successful.
+    Success,
+
+    ///A response plugin failed.
+    PluginError(String),
+
+    ///There was an IO error.
+    IoError(IoError)
+}
+
+///The result from a `ResponsePlugin`.
+#[experimental]
+pub enum ResponseAction<'a> {
+	///Continue to the next plugin, but write nothing.
+	WriteNothing,
+
+	///Continue to the next plugin and write data in byte form.
+	WriteBytes(Vec<u8>),
+
+	///Continue to the next plugin and write data in byte form.
+	WriteByteSlice(&'a [u8]),
+
+	///Continue to the next plugin and write data in string form.
+	WriteString(String),
+
+	///Continue to the next plugin and write data in string form.
+	WriteStringSlice(&'a str),
+
+	///Do not continue to the next plugin.
+	DoNothing,
+
+	///Abort with an error.
+	Error(String)
+}
 
 ///A trait for request handlers.
 pub trait Handler<C> {
@@ -84,11 +121,44 @@ impl Cache for () {
 
 ///A trait for request plugins.
 ///
-///They are able to modify and react to a `Request` befor it's sent to the handler.
+///They are able to modify and react to a `Request` before it's sent to the handler.
 #[experimental]
 pub trait RequestPlugin {
 	///Try to modify the `Request`.
-	fn modify(&self, request: Request) -> RequestResult;
+	fn modify(&self, request: Request) -> RequestAction;
+}
+
+///A trait for response plugins.
+///
+///They are able to modify headers and data before they are sent to the client.
+#[experimental]
+pub trait ResponsePlugin {
+	///Set or modify headers before they are sent to the client.
+	fn set_headers(&self, status: Status, headers: headers::response::HeaderCollection) ->
+		Result<(Status, headers::response::HeaderCollection), String>;
+
+	///Handle data from a byte vector.
+	fn write_bytes(&self, content: Vec<u8>) -> ResponseAction;
+
+	///Handle data from a byte slice.
+	fn write_byte_slice(&self, content: &[u8]) -> ResponseAction {
+		self.write_bytes(content.to_owned())
+	}
+
+	///Handle data from a string.
+	fn write_string(&self, content: String) -> ResponseAction {
+		self.write_bytes(content.into_bytes())
+	}
+
+	///Handle data from a string slice.
+	fn write_string_slice(&self, content: &str) -> ResponseAction {
+		self.write_bytes(content.as_bytes().to_owned())
+	}
+
+	///What to do if `send` was called, but no data will be written.
+	fn write_nothing(&self) -> ResponseAction {
+		self.write_bytes(Vec::new())
+	}
 }
 
 
@@ -121,7 +191,8 @@ pub struct Server<H, C> {
 	last_cache_clean: Arc<RWLock<Timespec>>,
 
 	//An ASCII star will be rewarded to the one who sugests a better alternative to the RWLock.
-	request_plugins: Arc<RWLock<Vec<Box<RequestPlugin + Send + Share>>>>
+	request_plugins: Arc<RWLock<Vec<Box<RequestPlugin + Send + Share>>>>,
+	response_plugins: Arc<RWLock<Vec<Box<ResponsePlugin + Send + Share>>>>
 }
 
 impl<H: Handler<()> + Send + Share> Server<H, ()> {
@@ -150,7 +221,8 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> Server<H, C> {
 			cache: Arc::new(cache),
 			cache_clean_interval: None,
 			last_cache_clean: Arc::new(RWLock::new(Timespec::new(0, 0))),
-			request_plugins: Arc::new(RWLock::new(Vec::new()))
+			request_plugins: Arc::new(RWLock::new(Vec::new())),
+			response_plugins: Arc::new(RWLock::new(Vec::new())),
 		}
 	}
 
@@ -190,7 +262,13 @@ impl<H, C> Server<H, C> {
 		self.request_plugins.write().push(box plugin as Box<RequestPlugin + Send + Share>);
 	}
 
-	fn modify_request(&self, request: Request) -> RequestResult {
+	///Add a response plugin to the plugin stack.
+	#[experimental]
+	pub fn add_response_plugin<P: ResponsePlugin + Send + Share>(&mut self, plugin: P) {
+		self.response_plugins.write().push(box plugin as Box<ResponsePlugin + Send + Share>);
+	}
+
+	fn modify_request(&self, request: Request) -> RequestAction {
 		let mut result = Continue(request);
 
 		for plugin in self.request_plugins.read().iter() {
@@ -223,7 +301,8 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 			..
 		} = request;
 
-		let mut response = Response::new(writer);
+		let plugins = self.response_plugins.read();
+		let mut response = Response::new(writer, plugins.deref());
 		response.headers.date = Some(time::now_utc());
 		response.headers.content_type = Some(self.content_type.clone());
 		response.headers.server = Some(self.server.clone());
@@ -311,7 +390,8 @@ impl<H: Send + Share, C: Send + Share> Clone for Server<H, C> {
 			cache: self.cache.clone(),
 			cache_clean_interval: self.cache_clean_interval.clone(),
 			last_cache_clean: self.last_cache_clean.clone(),
-			request_plugins: self.request_plugins.clone()
+			request_plugins: self.request_plugins.clone(),
+			response_plugins: self.response_plugins.clone()
 		}
 	}
 }
@@ -416,56 +496,117 @@ pub struct Response<'a, 'b> {
 	///The HTTP response status. Ok (200) is default.
 	pub status: Status,
 	writer: &'a mut ResponseWriter<'b>,
-	started_writing: bool
+	started_writing: bool,
+	plugins: &'a Vec<Box<ResponsePlugin + Send + Share>>
 }
 
 impl<'a, 'b> Response<'a, 'b> {
-	pub fn new<'a, 'b>(writer: &'a mut ResponseWriter<'b>) -> Response<'a, 'b> {
+	pub fn new<'a, 'b>(writer: &'a mut ResponseWriter<'b>, plugins: &'a Vec<Box<ResponsePlugin + Send + Share>>) -> Response<'a, 'b> {
 		Response {
 			headers: *writer.headers.clone(), //Can't be borrowed, because writer must be borrowed
 			status: status::Ok,
 			writer: writer,
-			started_writing: false
+			started_writing: false,
+			plugins: plugins
 		}
 	}
 
 	///Writes a string or any other `BytesContainer` to the client.
 	///The headers will be written the first time `send()` is called.
-	pub fn send<S: BytesContainer>(&mut self, content: S) -> IoResult<()> {
-		self.write(content.container_as_bytes())
+	pub fn send<S: BytesContainer>(&mut self, content: S) -> ResponseResult {
+		match self.begin() {
+			Success => {
+				//TODO: Intercept content
+				let mut plugin_result = match content.container_as_str() {
+					Some(s) => WriteStringSlice(s),
+					None => WriteByteSlice(content.container_as_bytes())
+				};
+
+				for plugin in self.plugins.iter() {
+					plugin_result = match plugin_result {
+						WriteBytes(b) => plugin.write_bytes(b),
+						WriteByteSlice(b) => plugin.write_byte_slice(b),
+						WriteString(s) => plugin.write_string(s),
+						WriteStringSlice(s) => plugin.write_string_slice(s),
+						WriteNothing => plugin.write_nothing(),
+						_ => break
+					}
+				}
+
+				let write_result = match plugin_result {
+					WriteBytes(ref b) => Some(self.writer.write(b.as_slice())),
+					WriteByteSlice(b) => Some(self.writer.write(b)),
+					WriteString(ref s) => Some(self.writer.write(s.as_bytes())),
+					WriteStringSlice(s) => Some(self.writer.write(s.as_bytes())),
+					_ => None
+				};
+
+				match write_result {
+					Some(r) => match r {
+						Ok(_) => Success,
+						Err(e) => IoError(e)
+					},
+					None => match plugin_result {
+						Error(e) => PluginError(e),
+						WriteNothing => Success,
+						_ => unreachable!()
+					}
+				}
+			}
+			r => r
+		}
 	}
 
 	///Start writing the response. Headers and status can not be changed after it has been called.
 	///
 	///This method will be called automatically by `send()` and `end()`, if it hasn't been called before.
 	///It can only be called once.
-	pub fn begin(&mut self) {
+	pub fn begin(&mut self) -> ResponseResult {
 		if !self.started_writing {
 			self.started_writing = true;
-			//TODO: Intercept headers and status
+			
+			let mut header_result = Ok((self.status.clone(), self.headers.clone()));
 
-			self.writer.status = self.status.clone();
-			self.writer.headers = box self.headers.clone();
+			for plugin in self.plugins.iter() {
+				header_result = match header_result {
+					Ok((status, headers)) => plugin.set_headers(status, headers),
+					_ => break
+				}
+			}
 
-			//TODO: Begin content interception
+			match header_result {
+				Ok((status, headers)) => {
+					self.writer.status = status;
+					self.writer.headers = box headers;
+					Success
+				},
+				Err(e) => PluginError(e)
+			}
+		} else {
+			Success
 		}
 	}
 
 	///Finish writing the response.
-	pub fn end(&mut self) {
-		self.begin();
-
-		//TODO: End interception
+	pub fn end(&mut self) -> ResponseResult {
+		match self.begin() {
+			Success => Success,//TODO: End interception
+			r => r
+		}
 	}
 }
 
 impl<'a, 'b> Writer for Response<'a, 'b> {
 	fn write(&mut self, content: &[u8]) -> IoResult<()> {
-		self.begin();
-
-		//TODO: Intercept content
-
-		self.writer.write(content)
+		match self.send(content) {
+			Success => Ok(()),
+			IoError(e) => Err(e),
+			PluginError(e) => Err(IoError{
+				kind: std::io::OtherIoError,
+				desc: "response plugin error",
+				detail: Some(e)
+			})
+		}
 	}
 }
 
