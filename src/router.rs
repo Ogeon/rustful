@@ -290,7 +290,7 @@ impl<T: Clone> Router<T> {
 			}
 
 			self.variable_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names.clone(), *router.variable_route.as_ref().unwrap());
+				next.merge_router(variable_names.clone(), &**router.variable_route.as_ref().unwrap());
 				next
 			});
 			
@@ -302,7 +302,7 @@ impl<T: Clone> Router<T> {
 			}
 
 			self.wildcard_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names.clone(), *router.wildcard_route.as_ref().unwrap());
+				next.merge_router(variable_names.clone(), &**router.wildcard_route.as_ref().unwrap());
 				next
 			});
 		}
