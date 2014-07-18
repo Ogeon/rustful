@@ -198,7 +198,7 @@ impl<T> Router<T> {
 
 				match branch {
 					Static => {
-						current.static_routes.find(path.get(index)).map(|next| {
+						current.static_routes.find(&path[index]).map(|next| {
 							*variables.get_mut(index) = false;
 							
 							stack.push((&*next, Wildcard, index+1));
