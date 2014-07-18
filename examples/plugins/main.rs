@@ -7,9 +7,12 @@ extern crate http;
 
 use std::sync::RWLock;
 
-use rustful::{Server, Request, Response, RequestPlugin};
+use rustful::{Server, Request, Response, RequestPlugin, ResponsePlugin};
 use rustful::{RequestAction, Continue};
+use rustful::{ResponseAction, WriteString, WriteBytes, WriteStringSlice};
 use http::method::Get;
+use http::status::Status;
+use http::headers::response::HeaderCollection;
 
 fn say_hello(request: Request, response: &mut Response) {
 	let person = match request.variables.find(&"person".into_string()) {
@@ -17,7 +20,7 @@ fn say_hello(request: Request, response: &mut Response) {
 		None => "stranger"
 	};
 
-	try_send!(response, format!("Hello, {}!", person));
+	try_send!(response, format!("{{\"message\": \"Hello, {}!\"}}", person));
 }
 
 fn main() {
@@ -36,6 +39,8 @@ fn main() {
 	server.add_request_plugin(RequestLogger::new());
 	server.add_request_plugin(PathPrefix::new("print"));
 	server.add_request_plugin(RequestLogger::new());
+
+	server.add_response_plugin(Jsonp::new("setMessage"));
 
 	server.run();
 }
@@ -80,5 +85,31 @@ impl RequestPlugin for PathPrefix {
 		let mut request = request;
 		request.path = format!("/{}{}", self.prefix.trim_chars('/'), request.path);
 		Continue(request)
+	}
+}
+
+struct Jsonp {
+	function: &'static str
+}
+
+impl Jsonp {
+	pub fn new(function: &'static str) -> Jsonp {
+		Jsonp {
+			function: function
+		}
+	}
+}
+
+impl ResponsePlugin for Jsonp {
+	fn begin(&self, status: Status, headers: HeaderCollection) -> (Status, HeaderCollection, ResponseAction) {
+		(status, headers, WriteString(format!("{}(", self.function)))
+	}
+
+	fn write_bytes(&self, bytes: Vec<u8>) -> ResponseAction {
+		WriteBytes(bytes)
+	}
+
+	fn end(&self) -> ResponseAction {
+		WriteStringSlice(");")
 	}
 }

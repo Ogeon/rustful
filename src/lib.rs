@@ -133,12 +133,16 @@ pub trait RequestPlugin {
 ///They are able to modify headers and data before they are sent to the client.
 #[experimental]
 pub trait ResponsePlugin {
-	///Set or modify headers before they are sent to the client.
-	fn set_headers(&self, status: Status, headers: headers::response::HeaderCollection) ->
-		Result<(Status, headers::response::HeaderCollection), String>;
+	///Set or modify headers before they are sent to the client and maybe initiate the body.
+	fn begin(&self, status: Status, headers: headers::response::HeaderCollection) ->
+		(Status, headers::response::HeaderCollection, ResponseAction);
 
 	///Handle data from a byte vector.
 	fn write_bytes(&self, content: Vec<u8>) -> ResponseAction;
+
+	///End of body writing. Last chance to add content.
+	fn end(&self) -> ResponseAction;
+
 
 	///Handle data from a byte slice.
 	fn write_byte_slice(&self, content: &[u8]) -> ResponseAction {
@@ -564,23 +568,70 @@ impl<'a, 'b> Response<'a, 'b> {
 	pub fn begin(&mut self) -> ResponseResult {
 		if !self.started_writing {
 			self.started_writing = true;
-			
-			let mut header_result = Ok((self.status.clone(), self.headers.clone()));
+
+			let mut write_queue = Vec::new();
+			let mut header_result = (self.status.clone(), self.headers.clone(), WriteNothing);
 
 			for plugin in self.plugins.iter() {
 				header_result = match header_result {
-					Ok((status, headers)) => plugin.set_headers(status, headers),
-					_ => break
+					(_, _, DoNothing) => break,
+					(_, _, Error(_)) => break,
+					(status, headers, r) => {
+						write_queue.push(r);
+
+						match plugin.begin(status, headers) {
+							(status, headers, Error(e)) => (status, headers, Error(e)),
+							(status, headers, result) => {
+								let mut error = None;
+								
+								write_queue = write_queue.move_iter().filter_map(|action| match action {
+									WriteBytes(b) => Some(plugin.write_bytes(b)),
+									WriteByteSlice(b) => Some(plugin.write_byte_slice(b)),
+									WriteString(s) => Some(plugin.write_string(s)),
+									WriteStringSlice(s) => Some(plugin.write_string_slice(s)),
+									WriteNothing => Some(plugin.write_nothing()),
+									DoNothing => None,
+									Error(e) => {
+										error = Some(e);
+										None
+									}
+								}).collect();
+
+								match error {
+									Some(e) => (status, headers, Error(e)),
+									None => (status, headers, result)
+								}
+							}
+						}
+					}
 				}
 			}
 
 			match header_result {
-				Ok((status, headers)) => {
+				(_, _, Error(e)) => PluginError(e),
+				(status, headers, last_result) => {
+					write_queue.push(last_result);
+
+					for action in write_queue.move_iter() {
+						let write_result = match action {
+							WriteBytes(ref b) => self.writer.write(b.as_slice()),
+							WriteByteSlice(b) => self.writer.write(b),
+							WriteString(ref s) => self.writer.write(s.as_bytes()),
+							WriteStringSlice(s) => self.writer.write(s.as_bytes()),
+							Error(e) => return PluginError(e),
+							_ => Ok(())
+						};
+
+						match write_result {
+							Err(e) => return IoError(e),
+							_ => {}
+						}
+					}
+
 					self.writer.status = status;
 					self.writer.headers = box headers;
 					Success
 				},
-				Err(e) => PluginError(e)
 			}
 		} else {
 			Success
@@ -590,7 +641,48 @@ impl<'a, 'b> Response<'a, 'b> {
 	///Finish writing the response.
 	pub fn end(&mut self) -> ResponseResult {
 		match self.begin() {
-			Success => Success,//TODO: End interception
+			Success => {
+				let mut write_queue: Vec<ResponseAction> = Vec::new();
+
+				for plugin in self.plugins.iter() {
+					let mut error = None;
+					write_queue = write_queue.move_iter().filter_map(|action| match action {
+						WriteBytes(b) => Some(plugin.write_bytes(b)),
+						WriteByteSlice(b) => Some(plugin.write_byte_slice(b)),
+						WriteString(s) => Some(plugin.write_string(s)),
+						WriteStringSlice(s) => Some(plugin.write_string_slice(s)),
+						WriteNothing => Some(plugin.write_nothing()),
+						DoNothing => None,
+						Error(e) => {
+							error = Some(e);
+							None
+						}
+					}).collect();
+
+					match error {
+						Some(e) => return PluginError(e),
+						None => write_queue.push(plugin.end())
+					}
+				}
+
+				for action in write_queue.move_iter() {
+					let write_result = match action {
+						WriteBytes(ref b) => self.writer.write(b.as_slice()),
+						WriteByteSlice(b) => self.writer.write(b),
+						WriteString(ref s) => self.writer.write(s.as_bytes()),
+						WriteStringSlice(s) => self.writer.write(s.as_bytes()),
+						Error(e) => return PluginError(e),
+						_ => Ok(())
+					};
+
+					match write_result {
+						Err(e) => return IoError(e),
+						_ => {}
+					}
+				}
+
+				Success
+			},
 			r => r
 		}
 	}
