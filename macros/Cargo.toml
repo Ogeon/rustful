@@ -1,0 +1,11 @@
+[package]
+
+name = "rustful_macros"
+version = "0.1.0-pre"
+authors = ["hello@erikhedvall.nu"]
+
+[[lib]]
+
+name = "rustful_macros"
+path = "lib.rs"
+plugin = true

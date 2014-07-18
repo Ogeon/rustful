@@ -31,7 +31,29 @@ my_project/
         my_project.rs
 ```
 
-##Building rustful
+##Building Rustful
+
+Rustful can be built using both the Cargo package manager and `make`. Cargo is generally recommended.
+
+###Using Cargo
+
+Add the following lines to your `Cargo.toml` file to get the main library:
+
+```toml
+[dependencies.rustful]
+
+git = "https://github.com/Ogeon/rustful"
+```
+
+and the following lines to get all the helpful macros:
+
+```toml
+[dependencies.rustful_macros]
+
+git = "https://github.com/Ogeon/rustful"
+```
+
+###Using `make`
 First you need to get the latest rustful from GitHub:
 ```shell
 cd lib

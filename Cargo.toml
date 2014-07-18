@@ -9,10 +9,9 @@ authors = ["hello@erikhedvall.nu"]
 name = "rustful"
 path = "src/lib.rs"
 
-[[lib]]
+[dependencies.rustful_macros]
 
-name = "rustful-macros"
-path = "src/macros.rs"
+path = "macros"
 
 [dependencies.http]
 
