@@ -11,7 +11,7 @@ rustful:
 
 macros:
 	rm -f lib/librustful_macros-*
-	rustc $(LIBS) --opt-level=3 src/macros.rs --out-dir lib/
+	rustc $(LIBS) --opt-level=3 macros/lib.rs --out-dir lib/
 
 
 deps:
