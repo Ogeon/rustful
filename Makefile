@@ -32,7 +32,7 @@ test:
 
 docs:
 	rustdoc $(LIBS) src/lib.rs
-	rustdoc $(LIBS) src/macros.rs
+	rustdoc $(LIBS) macros/lib.rs
 
 examples:
 	@$(foreach DIR,$(EXAMPLES),echo compiling $(DIR); rustc $(LIBS) $(DIR)/main.rs -o $(DIR)/main;)
