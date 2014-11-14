@@ -34,6 +34,7 @@ and the following lines to get all the helpful macros:
 ```toml
 [dependencies.rustful_macros]
 git = "https://github.com/Ogeon/rustful"
+```
 
 ##Write your server
 Here is a simple example of how `my_project.rs` could look like:
