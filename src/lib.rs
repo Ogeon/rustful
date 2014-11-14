@@ -16,7 +16,8 @@ extern crate http;
 
 pub use router::Router;
 
-use http::server::{ResponseWriter, Config, Server};
+use http::server::Server as HttpServer;
+use http::server::{ResponseWriter, Config};
 use http::server::request::{AbsoluteUri, AbsolutePath};
 use http::method::{Post, Method};
 use http::status;
@@ -24,16 +25,16 @@ use http::status::{NotFound, BadRequest, Status};
 use http::headers::content_type::MediaType;
 use http::headers;
 
-use std::io::{IoResult, IoError};
+use std::io::IoResult;
 use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
-use std::uint;
-use std::io::BufReader;
-use std::collections::hashmap::HashMap;
+use std::collections::HashMap;
 use std::path::BytesContainer;
 
 use sync::{Arc, RWLock};
 
 use time::Timespec;
+
+use url::percent_encoding::lossy_utf8_percent_decode;
 
 
 pub mod router;
@@ -60,7 +61,7 @@ pub enum ResponseResult {
     PluginError(String),
 
     ///There was an IO error.
-    IoError(IoError)
+    IoError(std::io::IoError)
 }
 
 ///The result from a `ResponsePlugin`.
@@ -146,7 +147,7 @@ pub trait ResponsePlugin {
 
 	///Handle data from a byte slice.
 	fn write_byte_slice(&self, content: &[u8]) -> ResponseAction {
-		self.write_bytes(content.to_owned())
+		self.write_bytes(content.to_vec())
 	}
 
 	///Handle data from a string.
@@ -156,7 +157,7 @@ pub trait ResponsePlugin {
 
 	///Handle data from a string slice.
 	fn write_string_slice(&self, content: &str) -> ResponseAction {
-		self.write_bytes(content.as_bytes().to_owned())
+		self.write_bytes(content.as_bytes().to_vec())
 	}
 
 	///What to do if `send` was called, but no data will be written.
@@ -195,18 +196,18 @@ pub struct Server<H, C> {
 	last_cache_clean: Arc<RWLock<Timespec>>,
 
 	//An ASCII star will be rewarded to the one who sugests a better alternative to the RWLock.
-	request_plugins: Arc<RWLock<Vec<Box<RequestPlugin + Send + Share>>>>,
-	response_plugins: Arc<RWLock<Vec<Box<ResponsePlugin + Send + Share>>>>
+	request_plugins: Arc<RWLock<Vec<Box<RequestPlugin + Send + Sync>>>>,
+	response_plugins: Arc<RWLock<Vec<Box<ResponsePlugin + Send + Sync>>>>
 }
 
-impl<H: Handler<()> + Send + Share> Server<H, ()> {
+impl<H: Handler<()> + Send + Sync> Server<H, ()> {
 	///Create a new `Server` which will listen on the provided port and host address `0.0.0.0`.
 	pub fn new(port: Port, handlers: Router<H>) -> Server<H, ()> {
 		Server::with_cache(port, (), handlers)
 	}
 }
 
-impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> Server<H, C> {
+impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> Server<H, C> {
 	///Creates a new `Server` with a resource cache.
 	///
 	///The server will listen listen on the provided port and host address `0.0.0.0`.
@@ -262,14 +263,14 @@ impl<H, C> Server<H, C> {
 
 	///Add a request plugin to the plugin stack.
 	#[experimental]
-	pub fn add_request_plugin<P: RequestPlugin + Send + Share>(&mut self, plugin: P) {
-		self.request_plugins.write().push(box plugin as Box<RequestPlugin + Send + Share>);
+	pub fn add_request_plugin<P: RequestPlugin + Send + Sync>(&mut self, plugin: P) {
+		self.request_plugins.write().push(box plugin as Box<RequestPlugin + Send + Sync>);
 	}
 
 	///Add a response plugin to the plugin stack.
 	#[experimental]
-	pub fn add_response_plugin<P: ResponsePlugin + Send + Share>(&mut self, plugin: P) {
-		self.response_plugins.write().push(box plugin as Box<ResponsePlugin + Send + Share>);
+	pub fn add_response_plugin<P: ResponsePlugin + Send + Sync>(&mut self, plugin: P) {
+		self.response_plugins.write().push(box plugin as Box<ResponsePlugin + Send + Sync>);
 	}
 
 	fn modify_request(&self, request: Request) -> RequestAction {
@@ -286,7 +287,7 @@ impl<H, C> Server<H, C> {
 	}
 }
 
-impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server for Server<H, C> {
+impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server for Server<H, C> {
 	fn get_config(&self) -> Config {
 		Config {
 			bind_address: SocketAddr {
@@ -298,7 +299,7 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 
 	fn handle_request(&self, request: http::server::request::Request, writer: &mut ResponseWriter) {
 		let http::server::request::Request {
-			request_uri: request_uri,
+			request_uri,
 			method: request_method,
 			headers: request_headers,
 			body: request_body,
@@ -314,9 +315,9 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 		let path_components = match request_uri {
 			AbsoluteUri(url) => {
 				Some((
-					url.path.path,
-					url.path.query.move_iter().collect(),
-					url.path.fragment
+					url.serialize_path().unwrap_or_else(|| "/".to_string()),
+					url.query_pairs().unwrap_or_else(|| Vec::new()).into_iter().collect(),
+					url.fragment
 				))
 			},
 			AbsolutePath(path) => Some(parse_path(path)),
@@ -326,13 +327,13 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 		match path_components {
 			Some((path, query, fragment)) => {
 				let post = if request_method == Post {
-					parse_parameters(request_body.as_slice())
+					parse_parameters(String::from_utf8_lossy(request_body.as_slice()).as_slice())
 				} else {
 					HashMap::new()
 				};
 
 				let request = Request {
-					headers: *request_headers,
+					headers: request_headers,
 					method: request_method,
 					path: path,
 					variables: HashMap::new(),
@@ -383,7 +384,7 @@ impl<H: Handler<C> + Send + Share, C: Cache + Send + Share> http::server::Server
 	}
 }
 
-impl<H: Send + Share, C: Send + Share> Clone for Server<H, C> {
+impl<H: Send + Sync, C: Send + Sync> Clone for Server<H, C> {
 	fn clone(&self) -> Server<H, C> {
 		Server {
 			handlers: self.handlers.clone(),
@@ -406,8 +407,8 @@ fn parse_parameters(source: &str) -> HashMap<String, String> {
 		let mut parts = parameter.split('=');
 		parts.next().map(|name|
 			parameters.insert(
-				url_decode(name),
-				parts.next().map(|v| url_decode(v)).unwrap_or_else(|| "".into_string())
+				lossy_utf8_percent_decode(name.as_bytes()),
+				parts.next().map(|v| lossy_utf8_percent_decode(v.as_bytes())).unwrap_or_else(|| "".into_string())
 			)
 		);
 	}
@@ -435,34 +436,6 @@ fn parse_fragment<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
 	}
 }
 
-fn url_decode(string: &str) -> String {
-	let mut rdr = BufReader::new(string.as_bytes());
-	let mut out = Vec::new();
-
-	loop {
-		let mut buf = [0];
-		let ch = match rdr.read(buf) {
-			Err(..) => break,
-			Ok(..) => buf[0] as char
-		};
-		match ch {
-			'+' => out.push(' ' as u8),
-			'%' => {
-				let mut bytes = [0, 0];
-				match rdr.read(bytes) {
-					Ok(2) => {}
-					_ => fail!()
-				}
-				let ch = uint::parse_bytes(bytes, 16u).unwrap() as u8;
-				out.push(ch);
-			}
-			ch => out.push(ch as u8)
-		}
-	}
-
-	String::from_utf8(out).unwrap_or_else(|_| string.into_string())
-}
-
 
 ///A container for all the request data, including get, set and path variables.
 pub struct Request {
@@ -488,12 +461,12 @@ pub struct Request {
 	pub fragment: Option<String>,
 
 	///The raw body part of the request
-	pub body: String
+	pub body: Vec<u8>
 }
 
 
 ///An interface for sending HTTP response data to the client.
-pub struct Response<'a, 'b> {
+pub struct Response<'a, 'b: 'a, 'c> {
 	///The HTTP response headers. Date, content type (text/plain) and server is automatically set.
 	pub headers: headers::response::HeaderCollection,
 
@@ -501,13 +474,13 @@ pub struct Response<'a, 'b> {
 	pub status: Status,
 	writer: &'a mut ResponseWriter<'b>,
 	started_writing: bool,
-	plugins: &'a Vec<Box<ResponsePlugin + Send + Share>>
+	plugins: &'c Vec<Box<ResponsePlugin + Send + Sync>>
 }
 
-impl<'a, 'b> Response<'a, 'b> {
-	pub fn new<'a, 'b>(writer: &'a mut ResponseWriter<'b>, plugins: &'a Vec<Box<ResponsePlugin + Send + Share>>) -> Response<'a, 'b> {
+impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
+	pub fn new(writer: &'a mut ResponseWriter<'b>, plugins: &'c Vec<Box<ResponsePlugin + Send + Sync>>) -> Response<'a, 'b, 'c> {
 		Response {
-			headers: *writer.headers.clone(), //Can't be borrowed, because writer must be borrowed
+			headers: writer.headers.clone(), //Can't be borrowed, because writer must be borrowed
 			status: status::Ok,
 			writer: writer,
 			started_writing: false,
@@ -584,7 +557,7 @@ impl<'a, 'b> Response<'a, 'b> {
 							(status, headers, result) => {
 								let mut error = None;
 								
-								write_queue = write_queue.move_iter().filter_map(|action| match action {
+								write_queue = write_queue.into_iter().filter_map(|action| match action {
 									WriteBytes(b) => Some(plugin.write_bytes(b)),
 									WriteByteSlice(b) => Some(plugin.write_byte_slice(b)),
 									WriteString(s) => Some(plugin.write_string(s)),
@@ -612,7 +585,7 @@ impl<'a, 'b> Response<'a, 'b> {
 				(status, headers, last_result) => {
 					write_queue.push(last_result);
 
-					for action in write_queue.move_iter() {
+					for action in write_queue.into_iter() {
 						let write_result = match action {
 							WriteBytes(ref b) => self.writer.write(b.as_slice()),
 							WriteByteSlice(b) => self.writer.write(b),
@@ -629,7 +602,7 @@ impl<'a, 'b> Response<'a, 'b> {
 					}
 
 					self.writer.status = status;
-					self.writer.headers = box headers;
+					self.writer.headers = headers;
 					Success
 				},
 			}
@@ -646,7 +619,7 @@ impl<'a, 'b> Response<'a, 'b> {
 
 				for plugin in self.plugins.iter() {
 					let mut error = None;
-					write_queue = write_queue.move_iter().filter_map(|action| match action {
+					write_queue = write_queue.into_iter().filter_map(|action| match action {
 						WriteBytes(b) => Some(plugin.write_bytes(b)),
 						WriteByteSlice(b) => Some(plugin.write_byte_slice(b)),
 						WriteString(s) => Some(plugin.write_string(s)),
@@ -665,7 +638,7 @@ impl<'a, 'b> Response<'a, 'b> {
 					}
 				}
 
-				for action in write_queue.move_iter() {
+				for action in write_queue.into_iter() {
 					let write_result = match action {
 						WriteBytes(ref b) => self.writer.write(b.as_slice()),
 						WriteByteSlice(b) => self.writer.write(b),
@@ -688,12 +661,12 @@ impl<'a, 'b> Response<'a, 'b> {
 	}
 }
 
-impl<'a, 'b> Writer for Response<'a, 'b> {
+impl<'a, 'b, 'c> Writer for Response<'a, 'b, 'c> {
 	fn write(&mut self, content: &[u8]) -> IoResult<()> {
 		match self.send(content) {
 			Success => Ok(()),
 			IoError(e) => Err(e),
-			PluginError(e) => Err(IoError{
+			PluginError(e) => Err(std::io::IoError{
 				kind: std::io::OtherIoError,
 				desc: "response plugin error",
 				detail: Some(e)

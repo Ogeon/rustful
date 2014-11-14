@@ -55,7 +55,8 @@
 //!There is also a macro for creating a route vector, like the one in the first example.
 //!These can be found in the crate `rustful_macros`.
 
-use std::collections::hashmap::HashMap;
+use std::collections::HashMap;
+use std::collections::hash_map::{Occupied, Vacant};
 use std::vec::Vec;
 use http::method::Method;
 
@@ -120,13 +121,13 @@ impl<T> Router<T> {
 		if path.len() == 0 {
 			self.items.insert(method.to_string().into_string(), (item, Vec::new()));
 		} else {
-			let (endpoint, variable_names) = path.move_iter().fold((self, Vec::new()),
+			let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
 
-				|(current, mut variable_names), mut piece| {
+				|(current, mut variable_names), piece| {
 					let next = current.find_or_insert_router(piece.as_slice());
 					if piece.len() > 0 && piece.as_slice().char_at(0) == ':' {
-						piece.shift_char();
-						variable_names.push(piece);
+						//piece.shift_char();
+						variable_names.push(piece.slice_from(1).into_string());
 					}
 
 					(next, variable_names)
@@ -151,9 +152,10 @@ impl<T> Router<T> {
 			}
 			&mut **self.variable_route.as_mut::<'a>().unwrap()
 		} else {
-			self.static_routes.find_or_insert_with::<'a>(key.to_string(), |_| {
-				Router::new()
-			})
+			match self.static_routes.entry(key.to_string()) {
+				Occupied(entry) => entry.into_mut(),
+				Vacant(entry) => entry.set(Router::new())
+			}
 		}
 	}
 
@@ -163,7 +165,7 @@ impl<T> Router<T> {
 		let method_str = method.to_string().into_string();
 
 		if path.len() == 0 {
-			match self.items.find(&method_str) {
+			match self.items.get(&method_str) {
 				Some(&(ref item, _)) => Some((item, HashMap::new())),
 				None => None
 			}
@@ -176,9 +178,9 @@ impl<T> Router<T> {
 				let (current, branch, index) = stack.pop().unwrap();
 
 				if index == path.len() {
-					match current.items.find(&method_str) {
+					match current.items.get(&method_str) {
 						Some(&(ref item, ref variable_names)) => {
-							let values = path.move_iter().zip(variables.move_iter()).filter_map(|(v, keep)| {
+							let values = path.into_iter().zip(variables.into_iter()).filter_map(|(v, keep)| {
 								if keep {
 									Some(v)
 								} else {
@@ -198,8 +200,8 @@ impl<T> Router<T> {
 
 				match branch {
 					Static => {
-						current.static_routes.find(&path[index]).map(|next| {
-							*variables.get_mut(index) = false;
+						current.static_routes.get(&path[index]).map(|next| {
+							variables.get_mut(index).map(|v| *v = false);
 							
 							stack.push((&*next, Wildcard, index+1));
 							stack.push((&*next, Variable, index+1));
@@ -208,7 +210,7 @@ impl<T> Router<T> {
 					},
 					Variable => {
 						current.variable_route.as_ref().map(|next| {
-							*variables.get_mut(index) = true;
+							variables.get_mut(index).map(|v| *v = true);
 
 							stack.push((&**next, Wildcard, index+1));
 							stack.push((&**next, Variable, index+1));
@@ -217,7 +219,7 @@ impl<T> Router<T> {
 					},
 					Wildcard => {
 						current.wildcard_route.as_ref().map(|next| {
-							*variables.get_mut(index) = false;
+							variables.get_mut(index).map(|v| *v = false);
 
 							stack.push((current, Wildcard, index+1));
 							stack.push((&**next, Wildcard, index+1));
@@ -253,13 +255,13 @@ impl<T: Clone> Router<T> {
 		if path.len() == 0 {
 			self.merge_router(Vec::new(), router);
 		} else {
-			let (endpoint, variable_names) = path.move_iter().fold((self, Vec::new()),
+			let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
 
-				|(current, mut variable_names), mut piece| {
+				|(current, mut variable_names), piece| {
 					let next = current.find_or_insert_router(piece.as_slice());
 					if piece.len() > 0 && piece.as_slice().char_at(0) == ':' {
-						piece.shift_char();
-						variable_names.push(piece);
+						//piece.shift_char();
+						variable_names.push(piece.slice_from(1).into_string());
 					}
 
 					(next, variable_names)
@@ -280,7 +282,10 @@ impl<T: Clone> Router<T> {
 		}
 
 		for (key, router) in router.static_routes.iter() {
-			let next = self.static_routes.find_or_insert(key.clone(), Router::new());
+			let next = match self.static_routes.entry(key.clone()) {
+				Occupied(entry) => entry.into_mut(),
+				Vacant(entry) => entry.set(Router::new())
+			};
 			next.merge_router(variable_names.clone(), router);
 		}
 
@@ -289,11 +294,10 @@ impl<T: Clone> Router<T> {
 				self.variable_route = Some(box Router::new());
 			}
 
-			self.variable_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names.clone(), &**router.variable_route.as_ref().unwrap());
-				next
-			});
-			
+			match self.variable_route.as_mut() {
+				Some(next) => next.merge_router(variable_names.clone(), &**router.variable_route.as_ref().unwrap()),
+				None => {}
+			}
 		}
 
 		if router.wildcard_route.is_some() {
@@ -301,10 +305,10 @@ impl<T: Clone> Router<T> {
 				self.wildcard_route = Some(box Router::new());
 			}
 
-			self.wildcard_route.as_mut().mutate(|next| {
-				next.merge_router(variable_names.clone(), &**router.wildcard_route.as_ref().unwrap());
-				next
-			});
+			match self.wildcard_route.as_mut() {
+				Some(next) => next.merge_router(variable_names.clone(), &**router.wildcard_route.as_ref().unwrap()),
+				None => {}
+			}
 		}
 	}
 }
@@ -340,7 +344,7 @@ mod test {
 			Some((_, mut variables)) => match expected {
 				Some(expected) => {
 					let keys = vec!("a", "b", "c");
-					let result = keys.move_iter().filter_map(|key| {
+					let result = keys.into_iter().filter_map(|key| {
 						match variables.pop(&key.into_string()) {
 							Some(value) => Some(value),
 							None => None

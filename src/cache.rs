@@ -1,6 +1,7 @@
 //!Utility traits and implementations for cached resources.
 
 use std::io::{File, IoResult};
+use std::io::fs::PathExtensions;
 
 use time;
 use time::Timespec;
@@ -122,7 +123,7 @@ pub struct CachedProcessedFile<T> {
 	processor: fn(IoResult<File>) -> Option<T>
 }
 
-impl<T: Send+Share> CachedProcessedFile<T> {
+impl<T: Send+Sync> CachedProcessedFile<T> {
 	///Creates a new `CachedProcessedFile` which will be freed `unused_after` seconds after the latest access.
 	///The file will be processed by the provided `processor` function each time it's loaded.
 	pub fn new(path: Path, unused_after: Option<u32>, processor: fn(IoResult<File>) -> Option<T>) -> CachedProcessedFile<T> {
@@ -137,7 +138,7 @@ impl<T: Send+Share> CachedProcessedFile<T> {
 	}
 }
 
-impl<T: Send+Share> CachedValue<T> for CachedProcessedFile<T> {
+impl<T: Send+Sync> CachedValue<T> for CachedProcessedFile<T> {
 	fn use_current_value<R>(&self, do_this: |Option<&T>| -> R) -> R {
 		if self.unused_after.is_some() {
 			*self.last_accessed.write() = time::get_time();
