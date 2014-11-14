@@ -104,12 +104,11 @@ extern crate syntax;
 extern crate rustc;
 
 use std::path::BytesContainer;
-use std::gc::{Gc, GC};
 
 use syntax::{ast, codemap};
 use syntax::ext::base::{
 	ExtCtxt, MacResult, MacExpr,
-	NormalTT, BasicMacroExpander
+	NormalTT, TTMacroExpander
 };
 use syntax::ext::build::AstBuilder;
 use syntax::ext::quote::rt::ExtParseUtils;
@@ -117,6 +116,7 @@ use syntax::parse;
 use syntax::parse::token;
 use syntax::parse::parser;
 use syntax::parse::parser::Parser;
+use syntax::ptr::P;
 //use syntax::print::pprust;
 
 use rustc::plugin::Registry;
@@ -124,22 +124,22 @@ use rustc::plugin::Registry;
 #[plugin_registrar]
 #[doc(hidden)]
 pub fn macro_registrar(reg: &mut Registry) {
-	let expander = box BasicMacroExpander{expander: expand_router, span: None};
+	let expander = box expand_router as Box<TTMacroExpander>;
 	reg.register_syntax_extension(token::intern("router"), NormalTT(expander, None));
 
-	let expander = box BasicMacroExpander{expander: expand_routes, span: None};
+	let expander = box expand_routes as Box<TTMacroExpander>;
 	reg.register_syntax_extension(token::intern("routes"), NormalTT(expander, None));
 }
 
-fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult> {
+fn expand_router<'cx>(cx: &'cx mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult + 'cx> {
 	let router_ident = cx.ident_of("router");
 	let insert_method = cx.ident_of("insert_item");
 
-	let mut calls: Vec<Gc<ast::Stmt>> = vec!(
+	let mut calls: Vec<P<ast::Stmt>> = vec!(
 		cx.stmt_let(sp, true, router_ident, quote_expr!(&cx, ::rustful::Router::new()))
 	);
 
-	for (path, method, handler) in parse_routes(cx, tts).move_iter() {
+	for (path, method, handler) in parse_routes(cx, tts).into_iter() {
 		let path_expr = cx.parse_expr(format!("\"{}\"", path));
 		let method_expr = cx.expr_path(method);
 		calls.push(cx.stmt_expr(
@@ -152,8 +152,8 @@ fn expand_router(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	MacExpr::new(block)
 }
 
-fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult> {
-	let routes = parse_routes(cx, tts).move_iter().map(|(path, method, handler)| {
+fn expand_routes<'cx>(cx: &'cx mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult + 'cx> {
+	let routes = parse_routes(cx, tts).into_iter().map(|(path, method, handler)| {
 		let path_expr = cx.parse_expr(format!("\"{}\"", path));
 		let method_expr = cx.expr_path(method);
 		mk_tup(sp, vec!(method_expr, path_expr, handler))
@@ -162,23 +162,23 @@ fn expand_routes(cx: &mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) ->
 	MacExpr::new(cx.expr_vec(sp, routes))
 }
 
-fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::Path, Gc<ast::Expr>)> {
+fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::Path, P<ast::Expr>)> {
 
 	let mut parser = parse::new_parser_from_tts(
-		cx.parse_sess(), cx.cfg(), Vec::from_slice(tts)
+		cx.parse_sess(), cx.cfg(), tts.to_vec()
 	);
 
 	parse_subroutes("", cx, &mut parser)
 }
 
-fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(String, ast::Path, Gc<ast::Expr>)> {
+fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(String, ast::Path, P<ast::Expr>)> {
 	let mut routes = Vec::new();
 
-	while !parser.eat(&token::EOF) {
+	while !parser.eat(&token::Eof) {
 		match parser.parse_optional_str() {
 			Some((ref s, _)) => {
-				if !parser.eat(&token::FAT_ARROW) {
-					parser.expect(&token::FAT_ARROW);
+				if !parser.eat(&token::FatArrow) {
+					parser.expect(&token::FatArrow);
 					break;
 				}
 
@@ -191,37 +191,37 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
 					None => cx.span_err(parser.span, "invalid path")
 				}
 
-				if parser.eat(&token::EOF) {
+				if parser.eat(&token::Eof) {
 					cx.span_err(parser.span, "unexpected end of routing tree");
 				}
 
-				if parser.eat(&token::LBRACE) {
+				if parser.eat(&token::OpenDelim(token::Brace)) {
 					let subroutes = parse_subroutes(new_base.as_slice(), cx, parser);
 					routes.push_all(subroutes.as_slice());
 
-					if parser.eat(&token::RBRACE) {
-						if !parser.eat(&token::COMMA) {
+					if parser.eat(&token::CloseDelim(token::Brace)) {
+						if !parser.eat(&token::Comma) {
 							break;
 						}
 					} else {
-						parser.expect_one_of([token::COMMA, token::RBRACE], []);
+						parser.expect_one_of([token::Comma, token::CloseDelim(token::Brace)], []);
 					}
 				} else {
-					for (method, handler) in parse_handler(parser).move_iter() {
+					for (method, handler) in parse_handler(parser).into_iter() {
 						routes.push((new_base.clone(), method, handler))
 					}
 
-					if !parser.eat(&token::COMMA) {
+					if !parser.eat(&token::Comma) {
 						break;
 					}
 				}
 			},
 			None => {
-				for (method, handler) in parse_handler(parser).move_iter() {
+				for (method, handler) in parse_handler(parser).into_iter() {
 					routes.push((base.to_string(), method, handler))
 				}
 
-				if !parser.eat(&token::COMMA) {
+				if !parser.eat(&token::Comma) {
 					break;
 				}
 			}
@@ -231,36 +231,36 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
 	routes
 }
 
-fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, Gc<ast::Expr>)> {
+fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, P<ast::Expr>)> {
 	let mut methods = Vec::new();
 
 	loop {
 		methods.push(parser.parse_path(parser::NoTypesAllowed).path);
 
-		if parser.eat(&token::COLON) {
+		if parser.eat(&token::Colon) {
 			break;
 		}
 
-		if !parser.eat(&token::BINOP(token::OR)) {
-			parser.expect_one_of([token::COLON, token::BINOP(token::OR)], []);
+		if !parser.eat(&token::BinOp(token::Or)) {
+			parser.expect_one_of([token::Colon, token::BinOp(token::Or)], []);
 		}
 	}
 
 	let handler = parser.parse_expr();
 
-	methods.move_iter().map(|m| (m, handler.clone())).collect()
+	methods.into_iter().map(|m| (m, handler.clone())).collect()
 }
 
-fn mk_tup(sp: codemap::Span, content: Vec<Gc<ast::Expr>>) -> Gc<ast::Expr> {
+fn mk_tup(sp: codemap::Span, content: Vec<P<ast::Expr>>) -> P<ast::Expr> {
 	dummy_expr(sp, ast::ExprTup(content))
 }
 
-fn dummy_expr(sp: codemap::Span, e: ast::Expr_) -> Gc<ast::Expr> {
-	box(GC) ast::Expr {
+fn dummy_expr(sp: codemap::Span, e: ast::Expr_) -> P<ast::Expr> {
+	P(ast::Expr {
 		id: ast::DUMMY_NODE_ID,
 		node: e,
 		span: sp,
-	}
+	})
 }
 
 
