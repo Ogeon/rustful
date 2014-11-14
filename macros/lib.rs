@@ -16,7 +16,7 @@
 //!
 //!##Example 1
 //!
-//!```rust
+//!```rust ignore
 //!#![feature(phase)]
 //!#[phase(plugin)]
 //!extern crate rustful_macros;
@@ -37,7 +37,7 @@
 //!
 //!##Example 2
 //!
-//!```rust
+//!```rust ignore
 //!#![feature(phase)]
 //!#[phase(plugin)]
 //!extern crate rustful_macros;
@@ -70,7 +70,7 @@
 //!The `routes!` macro generates a vector of routes, which can be used to create a `Router`.
 //!It has the same syntax as `routes!`.
 //!
-//!```rust
+//!```rust ignore
 //!#![feature(phase)]
 //!#[phase(plugin)]
 //!extern crate rustful_macros;

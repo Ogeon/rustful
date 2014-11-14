@@ -5,7 +5,6 @@ extern crate rustful_macros;
 extern crate rustful;
 extern crate http;
 use std::io::{File, IoResult};
-use std::os::{self_exe_path, getcwd};
 
 use rustful::{Server, Request, Response, Cache};
 use rustful::cache::{CachedValue, CachedProcessedFile};
@@ -16,7 +15,7 @@ fn say_hello(request: Request, cache: &Files, response: &mut Response) {
 	response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
 	//Format the name or clone the cached form
-	let content = match request.post.find(&"name".into_string()) {
+	let content = match request.post.get(&"name".into_string()) {
 		Some(name) => {
 			format!("<p>Hello, {}!</p>", name)
 		},
@@ -55,13 +54,10 @@ fn say_hello(request: Request, cache: &Files, response: &mut Response) {
 fn main() {
 	println!("Visit http://localhost:8080 to try this example.");
 
-	//Get the directory of the example or fall back to the current working directory
-	let base_path = self_exe_path().unwrap_or_else(|| getcwd());
-
 	//Fill our cache with files
 	let cache = Files {
-		page: CachedProcessedFile::new(base_path.join("page.html"), None, read_string),
-		form: CachedProcessedFile::new(base_path.join("form.html"), None, read_string)
+		page: CachedProcessedFile::new(Path::new("examples/post/page.html"), None, read_string),
+		form: CachedProcessedFile::new(Path::new("examples/post/form.html"), None, read_string)
 	};
 
 	let server = Server::with_cache(8080, cache, router!{"/" => Get | Post: say_hello});

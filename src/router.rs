@@ -2,7 +2,7 @@
 //!
 //!The `Router` can be created from a vector of predefined paths, like this:
 //!
-//!```rust
+//!```ignore
 //!let routes = [
 //!	(Get, "/about", about_us),
 //!	(Get, "/user/:user", show_user),
@@ -16,7 +16,7 @@
 //!
 //!Routes may also be added after the `Router` was created, like this:
 //!
-//!```rust
+//!```ignore
 //!let mut router = Router::new();
 //!
 //!router.insert_item(Get, "/about", about_us);
@@ -28,7 +28,7 @@
 //!
 //!There is also a special macro for creating routers, called `router!(...)`:
 //!
-//!```rust
+//!```ignore
 //!#![feature(phase)]
 //!#[phase(plugin)]
 //!extern crate rustful_macros;
@@ -336,7 +336,7 @@ mod test {
 	use test::Bencher;
 	use super::Router;
 	use http::method::{Get, Post, Delete, Put, Head};
-	use std::collections::hashmap::HashMap;
+	use std::collections::HashMap;
 	use std::vec::Vec;
 
 	fn check_variable(result: Option<(& &'static str, HashMap<String, String>)>, expected: Option<&str>) {
@@ -345,7 +345,7 @@ mod test {
 				Some(expected) => {
 					let keys = vec!("a", "b", "c");
 					let result = keys.into_iter().filter_map(|key| {
-						match variables.pop(&key.into_string()) {
+						match variables.remove(&key.into_string()) {
 							Some(value) => Some(value),
 							None => None
 						}

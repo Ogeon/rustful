@@ -170,10 +170,11 @@ pub trait ResponsePlugin {
 
 ///Receives the HTTP requests and passes them on to handlers.
 ///
-///```rust
-///# use rustful::server::Server;
+///```ignore
+///# use rustful::Server;
 ///# use rustful::router::Router;
-///# let routes = [];
+///# use http::method::Method;
+///# let routes: &[(Method, &str, ()), ..0] = [].as_slice();
 ///let server = Server::new(8080, Router::from_routes(routes));
 ///
 ///server.run();
@@ -407,8 +408,8 @@ fn parse_parameters(source: &str) -> HashMap<String, String> {
 		let mut parts = parameter.split('=');
 		parts.next().map(|name|
 			parameters.insert(
-				lossy_utf8_percent_decode(name.as_bytes()),
-				parts.next().map(|v| lossy_utf8_percent_decode(v.as_bytes())).unwrap_or_else(|| "".into_string())
+				lossy_utf8_percent_decode(name.replace("+", " ").as_bytes()),
+				parts.next().map(|v| lossy_utf8_percent_decode(v.replace("+", " ").as_bytes())).unwrap_or_else(|| "".into_string())
 			)
 		);
 	}
@@ -683,9 +684,9 @@ fn parsing_parameters() {
 	let a = "1".into_string();
 	let aa = "2".into_string();
 	let ab = "202".into_string();
-	assert_eq!(parameters.find(&"a".into_string()), Some(&a));
-	assert_eq!(parameters.find(&"aa".into_string()), Some(&aa));
-	assert_eq!(parameters.find(&"ab".into_string()), Some(&ab));
+	assert_eq!(parameters.get(&"a".into_string()), Some(&a));
+	assert_eq!(parameters.get(&"aa".into_string()), Some(&aa));
+	assert_eq!(parameters.get(&"ab".into_string()), Some(&ab));
 }
 
 #[test]
@@ -694,9 +695,9 @@ fn parsing_parameters_with_plus() {
 	let a = "1".into_string();
 	let aa = "2 + extra meat".into_string();
 	let ab = "202 fifth avenue".into_string();
-	assert_eq!(parameters.find(&"a".into_string()), Some(&a));
-	assert_eq!(parameters.find(&"aa".into_string()), Some(&aa));
-	assert_eq!(parameters.find(&"ab".into_string()), Some(&ab));
+	assert_eq!(parameters.get(&"a".into_string()), Some(&a));
+	assert_eq!(parameters.get(&"aa".into_string()), Some(&aa));
+	assert_eq!(parameters.get(&"ab".into_string()), Some(&ab));
 }
 
 #[test]
@@ -705,9 +706,9 @@ fn parsing_strange_parameters() {
 	let a = "1".into_string();
 	let aa = "2".into_string();
 	let ab = "".into_string();
-	assert_eq!(parameters.find(&"a".into_string()), Some(&a));
-	assert_eq!(parameters.find(&"".into_string()), Some(&aa));
-	assert_eq!(parameters.find(&"ab".into_string()), Some(&ab));
+	assert_eq!(parameters.get(&"a".into_string()), Some(&a));
+	assert_eq!(parameters.get(&"".into_string()), Some(&aa));
+	assert_eq!(parameters.get(&"ab".into_string()), Some(&ab));
 }
 
 #[test]
@@ -716,8 +717,8 @@ fn parse_path_parts() {
 	let and = "that".into_string();
 	let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=that#lol"));
 	assert_eq!(path, String::from_str("/path/to/something"));
-	assert_eq!(query.find(&"with".into_string()), Some(&with));
-	assert_eq!(query.find(&"and".into_string()), Some(&and));
+	assert_eq!(query.get(&"with".into_string()), Some(&with));
+	assert_eq!(query.get(&"and".into_string()), Some(&and));
 	assert_eq!(fragment, Some(String::from_str("lol")));
 }
 
@@ -727,8 +728,8 @@ fn parse_strange_path() {
 	let and = "what?".into_string();
 	let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=what?#"));
 	assert_eq!(path, String::from_str("/path/to/something"));
-	assert_eq!(query.find(&"with".into_string()), Some(&with));
-	assert_eq!(query.find(&"and".into_string()), Some(&and));
+	assert_eq!(query.get(&"with".into_string()), Some(&with));
+	assert_eq!(query.get(&"and".into_string()), Some(&and));
 	assert_eq!(fragment, Some(String::from_str("")));
 }
 
@@ -738,8 +739,8 @@ fn parse_missing_path_parts() {
 	let and = "that".into_string();
 	let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=that"));
 	assert_eq!(path, String::from_str("/path/to/something"));
-	assert_eq!(query.find(&"with".into_string()), Some(&with));
-	assert_eq!(query.find(&"and".into_string()), Some(&and));
+	assert_eq!(query.get(&"with".into_string()), Some(&with));
+	assert_eq!(query.get(&"and".into_string()), Some(&and));
 	assert_eq!(fragment, None);
 
 
@@ -751,7 +752,7 @@ fn parse_missing_path_parts() {
 
 	let (path, query, fragment) = parse_path(String::from_str("?with=this&and=that#lol"));
 	assert_eq!(path, String::from_str(""));
-	assert_eq!(query.find(&"with".into_string()), Some(&with));
-	assert_eq!(query.find(&"and".into_string()), Some(&and));
+	assert_eq!(query.get(&"with".into_string()), Some(&with));
+	assert_eq!(query.get(&"and".into_string()), Some(&and));
 	assert_eq!(fragment, Some(String::from_str("lol")));
 }

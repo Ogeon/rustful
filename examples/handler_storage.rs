@@ -7,7 +7,6 @@ extern crate rustful;
 extern crate http;
 
 use std::io::{File, IoResult};
-use std::os::{self_exe_path, getcwd};
 use sync::{Arc, RWLock};
 
 use rustful::{Server, Request, Response, Handler};
@@ -18,11 +17,8 @@ use http::status::InternalServerError;
 fn main() {
 	println!("Visit http://localhost:8080 to try this example.");
 
-	//Get the directory of the example or fall back to the current working directory
-	let base_path = self_exe_path().unwrap_or_else(|| getcwd());
-
 	//Cache the page
-	let page = Arc::new(CachedProcessedFile::new(base_path.join("page.html"), None, read_string));
+	let page = Arc::new(CachedProcessedFile::new(Path::new("examples/handler_storage/page.html"), None, read_string));
 
 	//The shared counter state
 	let value = Arc::new(RWLock::new(0));

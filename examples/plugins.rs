@@ -15,7 +15,7 @@ use http::status::Status;
 use http::headers::response::HeaderCollection;
 
 fn say_hello(request: Request, response: &mut Response) {
-	let person = match request.variables.find(&"person".into_string()) {
+	let person = match request.variables.get(&"person".into_string()) {
 		Some(name) => name.as_slice(),
 		None => "stranger"
 	};
