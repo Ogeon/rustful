@@ -4,7 +4,7 @@ name = "rustful_macros"
 version = "0.1.0-pre"
 authors = ["hello@erikhedvall.nu"]
 
-[[lib]]
+[lib]
 
 name = "rustful_macros"
 path = "lib.rs"
