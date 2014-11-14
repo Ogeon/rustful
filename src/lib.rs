@@ -316,12 +316,15 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server f
 		let path_components = match request_uri {
 			AbsoluteUri(url) => {
 				Some((
-					url.serialize_path().unwrap_or_else(|| "/".to_string()),
+					url.serialize_path().map(|p| p.into_bytes()).unwrap_or_else(|| vec!['/' as u8]),
 					url.query_pairs().unwrap_or_else(|| Vec::new()).into_iter().collect(),
 					url.fragment
 				))
 			},
-			AbsolutePath(path) => Some(parse_path(path)),
+			AbsolutePath(path) => {
+				let (path, query, fragment) = parse_path(path);
+				Some((path.into_bytes(), query, fragment))
+			},
 			_ => None //TODO: Handle *
 		};
 
@@ -336,7 +339,7 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server f
 				let request = Request {
 					headers: request_headers,
 					method: request_method,
-					path: path,
+					path: lossy_utf8_percent_decode(path.as_slice()),
 					variables: HashMap::new(),
 					post: post,
 					query: query,
