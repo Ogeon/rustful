@@ -19,7 +19,7 @@ pub use router::Router;
 use http::server::Server as HttpServer;
 use http::server::{ResponseWriter, Config};
 use http::server::request::{AbsoluteUri, AbsolutePath};
-use http::method::{Post, Method};
+use http::method::Method;
 use http::status;
 use http::status::{NotFound, BadRequest, Status};
 use http::headers::content_type::MediaType;
@@ -36,9 +36,11 @@ use time::Timespec;
 
 use url::percent_encoding::lossy_utf8_percent_decode;
 
+mod utils;
 
 pub mod router;
 pub mod cache;
+pub mod request_extensions;
 
 
 ///The result from a `RequestPlugin`.
@@ -330,18 +332,12 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server f
 
 		match path_components {
 			Some((path, query, fragment)) => {
-				let post = if request_method == Post {
-					parse_parameters(String::from_utf8_lossy(request_body.as_slice()).as_slice())
-				} else {
-					HashMap::new()
-				};
 
 				let request = Request {
 					headers: request_headers,
 					method: request_method,
 					path: lossy_utf8_percent_decode(path.as_slice()),
 					variables: HashMap::new(),
-					post: post,
 					query: query,
 					fragment: fragment,
 					body: request_body
@@ -405,26 +401,11 @@ impl<H: Send + Sync, C: Send + Sync> Clone for Server<H, C> {
 	}
 }
 
-fn parse_parameters(source: &str) -> HashMap<String, String> {
-	let mut parameters = HashMap::new();
-	for parameter in source.split('&') {
-		let mut parts = parameter.split('=');
-		parts.next().map(|name|
-			parameters.insert(
-				lossy_utf8_percent_decode(name.replace("+", " ").as_bytes()),
-				parts.next().map(|v| lossy_utf8_percent_decode(v.replace("+", " ").as_bytes())).unwrap_or_else(|| "".into_string())
-			)
-		);
-	}
-
-	parameters
-}
-
 fn parse_path(path: String) -> (String, HashMap<String, String>, Option<String>) {
 	match path.as_slice().find('?') {
 		Some(index) => {
 			let (query, fragment) = parse_fragment(path.as_slice().slice(index+1, path.len()));
-			(path.as_slice().slice(0, index).into_string(), parse_parameters(query.as_slice()), fragment.map(|f| f.into_string()))
+			(path.as_slice().slice(0, index).into_string(), utils::parse_parameters(query.as_bytes()), fragment.map(|f| f.into_string()))
 		},
 		None => {
 			let (path, fragment) = parse_fragment(path.as_slice());
@@ -454,9 +435,6 @@ pub struct Request {
 
 	///Route variables
 	pub variables: HashMap<String, String>,
-
-	///POST variables
-	pub post: HashMap<String, String>,
 
 	///Query variables from the path
 	pub query: HashMap<String, String>,
@@ -681,38 +659,6 @@ impl<'a, 'b, 'c> Writer for Response<'a, 'b, 'c> {
 
 
 
-#[test]
-fn parsing_parameters() {
-	let parameters = parse_parameters("a=1&aa=2&ab=202");
-	let a = "1".into_string();
-	let aa = "2".into_string();
-	let ab = "202".into_string();
-	assert_eq!(parameters.get(&"a".into_string()), Some(&a));
-	assert_eq!(parameters.get(&"aa".into_string()), Some(&aa));
-	assert_eq!(parameters.get(&"ab".into_string()), Some(&ab));
-}
-
-#[test]
-fn parsing_parameters_with_plus() {
-	let parameters = parse_parameters("a=1&aa=2+%2B+extra+meat&ab=202+fifth+avenue");
-	let a = "1".into_string();
-	let aa = "2 + extra meat".into_string();
-	let ab = "202 fifth avenue".into_string();
-	assert_eq!(parameters.get(&"a".into_string()), Some(&a));
-	assert_eq!(parameters.get(&"aa".into_string()), Some(&aa));
-	assert_eq!(parameters.get(&"ab".into_string()), Some(&ab));
-}
-
-#[test]
-fn parsing_strange_parameters() {
-	let parameters = parse_parameters("a=1=2&=2&ab=");
-	let a = "1".into_string();
-	let aa = "2".into_string();
-	let ab = "".into_string();
-	assert_eq!(parameters.get(&"a".into_string()), Some(&a));
-	assert_eq!(parameters.get(&"".into_string()), Some(&aa));
-	assert_eq!(parameters.get(&"ab".into_string()), Some(&ab));
-}
 
 #[test]
 fn parse_path_parts() {

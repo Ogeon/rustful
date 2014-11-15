@@ -8,6 +8,8 @@ use std::io::{File, IoResult};
 
 use rustful::{Server, Request, Response, Cache};
 use rustful::cache::{CachedValue, CachedProcessedFile};
+use rustful::request_extensions::QueryBody;
+
 use http::method::{Get, Post};
 use http::status::InternalServerError;
 
@@ -15,7 +17,7 @@ fn say_hello(request: Request, cache: &Files, response: &mut Response) {
 	response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
 	//Format the name or clone the cached form
-	let content = match request.post.get(&"name".into_string()) {
+	let content = match request.parse_query_body().get(&"name".into_string()) {
 		Some(name) => {
 			format!("<p>Hello, {}!</p>", name)
 		},
