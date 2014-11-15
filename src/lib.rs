@@ -536,7 +536,7 @@ pub struct Response<'a, 'b: 'a, 'c> {
 }
 
 impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
-	pub fn new(writer: &'a mut ResponseWriter<'b>, plugins: &'c Vec<Box<ResponsePlugin + Send + Sync>>) -> Response<'a, 'b, 'c> {
+	fn new(writer: &'a mut ResponseWriter<'b>, plugins: &'c Vec<Box<ResponsePlugin + Send + Sync>>) -> Response<'a, 'b, 'c> {
 		Response {
 			headers: writer.headers.clone(), //Can't be borrowed, because writer must be borrowed
 			status: status::Ok,
