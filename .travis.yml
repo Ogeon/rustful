@@ -11,6 +11,6 @@ script:
   - cargo test -v
   - cargo doc --no-deps
 after_script:
-  - cd target
+  - mv target/doc doc
   - curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
   - bash upload_doc.sh
