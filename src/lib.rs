@@ -28,7 +28,6 @@ use http::headers;
 use std::io::IoResult;
 use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
 use std::collections::HashMap;
-use std::path::BytesContainer;
 
 use sync::{Arc, RWLock};
 
@@ -69,20 +68,8 @@ pub enum ResponseResult {
 ///The result from a `ResponsePlugin`.
 #[experimental]
 pub enum ResponseAction<'a> {
-	///Continue to the next plugin, but write nothing.
-	WriteNothing,
-
-	///Continue to the next plugin and write data in byte form.
-	WriteBytes(Vec<u8>),
-
-	///Continue to the next plugin and write data in byte form.
-	WriteByteSlice(&'a [u8]),
-
-	///Continue to the next plugin and write data in string form.
-	WriteString(String),
-
-	///Continue to the next plugin and write data in string form.
-	WriteStringSlice(&'a str),
+	///Continue to the next plugin and maybe write data.
+	Write(Option<ResponseData<'a>>),
 
 	///Do not continue to the next plugin.
 	DoNothing,
@@ -90,6 +77,116 @@ pub enum ResponseAction<'a> {
 	///Abort with an error.
 	Error(String)
 }
+
+impl<'a> ResponseAction<'a> {
+	pub fn write<'a, T: IntoResponseData<'a>>(data: Option<T>) -> ResponseAction<'a> {
+		Write(data.map(|d| d.into_response_data()))
+	}
+
+	pub fn do_nothing() -> ResponseAction<'static> {
+		DoNothing
+	}
+
+	pub fn error(message: String) -> ResponseAction<'static> {
+		Error(message)
+	}
+}
+
+#[experimental]
+pub enum ResponseData<'a> {
+	///Data in byte form.
+	Bytes(Vec<u8>),
+
+	///Data in byte form.
+	ByteSlice(&'a [u8]),
+
+	///Data in string form.
+	Str(String),
+
+	///Data in string form.
+	StrSlice(&'a str)
+}
+
+impl<'a> ResponseData<'a> {
+	///Borrow the content as a byte slice.
+	pub fn as_bytes(&self) -> &[u8] {
+		match self {
+			&Bytes(ref bytes) => bytes.as_slice(),
+			&ByteSlice(ref bytes) => *bytes,
+			&Str(ref string) => string.as_bytes(),
+			&StrSlice(ref string) => string.as_bytes()
+		}
+	}
+
+	///Turns the content into a byte vector. Slices are copied.
+	pub fn into_bytes(self) -> Vec<u8> {
+		match self {
+			Bytes(bytes) => bytes,
+			ByteSlice(bytes) => bytes.to_vec(),
+			Str(string) => string.into_bytes(),
+			StrSlice(string) => string.as_bytes().to_vec()
+		}
+	}
+
+	///Borrow the content as a string slice if the content is a string.
+	///Returns an `None` if the content is a byte vector, a byte slice or if the action is `Error`.
+	pub fn as_string(&self) -> Option<&str> {
+		match self {
+			&Str(ref string) => Some(string.as_slice()),
+			&StrSlice(ref string) => Some(string.as_slice()),
+			_ => None
+		}
+	}
+
+	///Extract the contained string or string slice if there is any.
+	///Returns an `None` if the content is a byte vector, a byte slice or if the action is `Error`.
+	///Slices are copied.
+	pub fn into_string(self) -> Option<String> {
+		match self {
+			Str(string) => Some(string),
+			StrSlice(string) => Some(string.into_string()),
+			_ => None
+		}
+	}
+}
+
+
+
+pub trait IntoResponseData<'a> {
+	fn into_response_data(self) -> ResponseData<'a>;
+}
+
+impl IntoResponseData<'static> for Vec<u8> {
+	fn into_response_data(self) -> ResponseData<'static> {
+		Bytes(self)
+	}
+}
+
+impl<'a> IntoResponseData<'a> for &'a [u8] {
+	fn into_response_data(self) -> ResponseData<'a> {
+		ByteSlice(self)
+	}
+}
+
+impl IntoResponseData<'static> for String {
+	fn into_response_data(self) -> ResponseData<'static> {
+		Str(self)
+	}
+}
+
+impl<'a> IntoResponseData<'a> for &'a str {
+	fn into_response_data(self) -> ResponseData<'a> {
+		StrSlice(self)
+	}
+}
+
+impl<'a> IntoResponseData<'a> for ResponseData<'a> {
+	fn into_response_data(self) -> ResponseData<'a> {
+		self
+	}
+}
+
+
 
 ///A trait for request handlers.
 pub trait Handler<C> {
@@ -133,39 +230,18 @@ pub trait RequestPlugin {
 
 ///A trait for response plugins.
 ///
-///They are able to modify headers and data before they are sent to the client.
+///They are able to modify headers and data before it gets written in the response.
 #[experimental]
 pub trait ResponsePlugin {
 	///Set or modify headers before they are sent to the client and maybe initiate the body.
 	fn begin(&self, status: Status, headers: headers::response::HeaderCollection) ->
 		(Status, headers::response::HeaderCollection, ResponseAction);
 
-	///Handle data from a byte vector.
-	fn write_bytes(&self, content: Vec<u8>) -> ResponseAction;
+	///Handle content before writing it to the body.
+	fn write<'a>(&'a self, content: Option<ResponseData<'a>>) -> ResponseAction;
 
 	///End of body writing. Last chance to add content.
 	fn end(&self) -> ResponseAction;
-
-
-	///Handle data from a byte slice.
-	fn write_byte_slice(&self, content: &[u8]) -> ResponseAction {
-		self.write_bytes(content.to_vec())
-	}
-
-	///Handle data from a string.
-	fn write_string(&self, content: String) -> ResponseAction {
-		self.write_bytes(content.into_bytes())
-	}
-
-	///Handle data from a string slice.
-	fn write_string_slice(&self, content: &str) -> ResponseAction {
-		self.write_bytes(content.as_bytes().to_vec())
-	}
-
-	///What to do if `send` was called, but no data will be written.
-	fn write_nothing(&self) -> ResponseAction {
-		self.write_bytes(Vec::new())
-	}
 }
 
 
@@ -472,42 +548,29 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 
 	///Writes a string or any other `BytesContainer` to the client.
 	///The headers will be written the first time `send()` is called.
-	pub fn send<S: BytesContainer>(&mut self, content: S) -> ResponseResult {
+	pub fn send<'a, Content: IntoResponseData<'a>>(&mut self, content: Content) -> ResponseResult {
 		match self.begin() {
 			Success => {
-				//TODO: Intercept content
-				let mut plugin_result = match content.container_as_str() {
-					Some(s) => WriteStringSlice(s),
-					None => WriteByteSlice(content.container_as_bytes())
-				};
+				let mut plugin_result = ResponseAction::write(Some(content));
 
 				for plugin in self.plugins.iter() {
 					plugin_result = match plugin_result {
-						WriteBytes(b) => plugin.write_bytes(b),
-						WriteByteSlice(b) => plugin.write_byte_slice(b),
-						WriteString(s) => plugin.write_string(s),
-						WriteStringSlice(s) => plugin.write_string_slice(s),
-						WriteNothing => plugin.write_nothing(),
+						Write(content) => plugin.write(content),
 						_ => break
 					}
 				}
 
 				let write_result = match plugin_result {
-					WriteBytes(ref b) => Some(self.writer.write(b.as_slice())),
-					WriteByteSlice(b) => Some(self.writer.write(b)),
-					WriteString(ref s) => Some(self.writer.write(s.as_bytes())),
-					WriteStringSlice(s) => Some(self.writer.write(s.as_bytes())),
+					Write(Some(ref s)) => Some(self.writer.write(s.as_bytes())),
 					_ => None
 				};
 
 				match write_result {
-					Some(r) => match r {
-						Ok(_) => Success,
-						Err(e) => IoError(e)
-					},
+					Some(Ok(_)) => Success,
+					Some(Err(e)) => IoError(e),
 					None => match plugin_result {
 						Error(e) => PluginError(e),
-						WriteNothing => Success,
+						Write(None) => Success,
 						_ => unreachable!()
 					}
 				}
@@ -525,7 +588,7 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 			self.started_writing = true;
 
 			let mut write_queue = Vec::new();
-			let mut header_result = (self.status.clone(), self.headers.clone(), WriteNothing);
+			let mut header_result = (self.status.clone(), self.headers.clone(), Write(None));
 
 			for plugin in self.plugins.iter() {
 				header_result = match header_result {
@@ -540,11 +603,7 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 								let mut error = None;
 								
 								write_queue = write_queue.into_iter().filter_map(|action| match action {
-									WriteBytes(b) => Some(plugin.write_bytes(b)),
-									WriteByteSlice(b) => Some(plugin.write_byte_slice(b)),
-									WriteString(s) => Some(plugin.write_string(s)),
-									WriteStringSlice(s) => Some(plugin.write_string_slice(s)),
-									WriteNothing => Some(plugin.write_nothing()),
+									Write(content) => Some(plugin.write(content)),
 									DoNothing => None,
 									Error(e) => {
 										error = Some(e);
@@ -569,10 +628,7 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 
 					for action in write_queue.into_iter() {
 						let write_result = match action {
-							WriteBytes(ref b) => self.writer.write(b.as_slice()),
-							WriteByteSlice(b) => self.writer.write(b),
-							WriteString(ref s) => self.writer.write(s.as_bytes()),
-							WriteStringSlice(s) => self.writer.write(s.as_bytes()),
+							Write(Some(content)) => self.writer.write(content.as_bytes()),
 							Error(e) => return PluginError(e),
 							_ => Ok(())
 						};
@@ -602,11 +658,7 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 				for plugin in self.plugins.iter() {
 					let mut error = None;
 					write_queue = write_queue.into_iter().filter_map(|action| match action {
-						WriteBytes(b) => Some(plugin.write_bytes(b)),
-						WriteByteSlice(b) => Some(plugin.write_byte_slice(b)),
-						WriteString(s) => Some(plugin.write_string(s)),
-						WriteStringSlice(s) => Some(plugin.write_string_slice(s)),
-						WriteNothing => Some(plugin.write_nothing()),
+						Write(content) => Some(plugin.write(content)),
 						DoNothing => None,
 						Error(e) => {
 							error = Some(e);
@@ -622,10 +674,7 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 
 				for action in write_queue.into_iter() {
 					let write_result = match action {
-						WriteBytes(ref b) => self.writer.write(b.as_slice()),
-						WriteByteSlice(b) => self.writer.write(b),
-						WriteString(ref s) => self.writer.write(s.as_bytes()),
-						WriteStringSlice(s) => self.writer.write(s.as_bytes()),
+						Write(Some(content)) => self.writer.write(content.as_bytes()),
 						Error(e) => return PluginError(e),
 						_ => Ok(())
 					};

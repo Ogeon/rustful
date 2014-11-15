@@ -9,7 +9,7 @@ use std::sync::RWLock;
 
 use rustful::{Server, Request, Response, RequestPlugin, ResponsePlugin};
 use rustful::{RequestAction, Continue};
-use rustful::{ResponseAction, WriteString, WriteBytes, WriteStringSlice};
+use rustful::{ResponseAction, ResponseData};
 use http::method::Get;
 use http::status::Status;
 use http::headers::response::HeaderCollection;
@@ -102,14 +102,15 @@ impl Jsonp {
 
 impl ResponsePlugin for Jsonp {
 	fn begin(&self, status: Status, headers: HeaderCollection) -> (Status, HeaderCollection, ResponseAction) {
-		(status, headers, WriteString(format!("{}(", self.function)))
+		let action = ResponseAction::write(Some(format!("{}(", self.function)));
+		(status, headers, action)
 	}
 
-	fn write_bytes(&self, bytes: Vec<u8>) -> ResponseAction {
-		WriteBytes(bytes)
+	fn write<'a>(&'a self, bytes: Option<ResponseData<'a>>) -> ResponseAction {
+		ResponseAction::write(bytes)
 	}
 
 	fn end(&self) -> ResponseAction {
-		WriteStringSlice(");")
+		ResponseAction::write(Some(");"))
 	}
 }
