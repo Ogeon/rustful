@@ -55,13 +55,9 @@ fn sub(value: int) -> int {
 	value - 1
 }
 
-fn read_string(f: IoResult<File>) -> Option<String> {
+fn read_string(mut file: IoResult<File>) -> IoResult<Option<String>> {
 	//Make the file mutable and try to read it into a string
-	let mut file = f;
-	file.read_to_string().map(|s| Some(s)).unwrap_or_else(|e| {
-		println!("Unable to read file: {}", e);
-		None
-	})
+	file.read_to_string().map(|s| Some(s))
 }
 
 
@@ -84,18 +80,16 @@ impl Handler<()> for Counter {
 		response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
 
 		//Insert the value into the page and write it to the response
-		self.page.use_value(|page| {
-			match page {
-				Some(page) => {
-					let count = self.value.read().deref().to_string();
+		match *self.page.borrow() {
+			Some(ref page) => {
+				let count = self.value.read().deref().to_string();
 
-					try_send!(response, page.replace("{}", count.as_slice()));
-				},
-				None => {
-					//Oh no! The page was not loaded!
-					response.status = InternalServerError;
-				}
+				try_send!(response, page.replace("{}", count.as_slice()));
+			},
+			None => {
+				//Oh no! The page was not loaded!
+				response.status = InternalServerError;
 			}
-		});
+		}
 	}
 }

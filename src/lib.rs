@@ -6,6 +6,8 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
+#![feature(associated_types)]
+
 #[cfg(test)]
 extern crate test;
 

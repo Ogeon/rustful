@@ -22,34 +22,30 @@ fn say_hello(request: Request, cache: &Files, response: &mut Response) {
 			format!("<p>Hello, {}!</p>", name)
 		},
 		None => {
-			cache.form.use_value(|form| {
-				match form {
-					Some(form) => {
-						form.clone()
-					},
-					None => {
-						//Oh no! The form was not loaded! Let's print an error message on the page.
-						response.status = InternalServerError;
-						"Error: Failed to load form.html".into_string()
-					}
+			match *cache.form.borrow() {
+				Some(ref form) => {
+					form.clone()
+				},
+				None => {
+					//Oh no! The form was not loaded! Let's print an error message on the page.
+					response.status = InternalServerError;
+					"Error: Failed to load form.html".into_string()
 				}
-			})
+			}
 		}
 	};
 
 	//Insert the content into the page and write it to the response
-	cache.page.use_value(|page| {
-		match page {
-			Some(page) => {
-				let complete_page = page.replace("{}", content.as_slice());
-				try_send!(response, complete_page);
-			},
-			None => {
-				//Oh no! The page was not loaded!
-				response.status = InternalServerError;
-			}
+	match *cache.page.borrow() {
+		Some(ref page) => {
+			let complete_page = page.replace("{}", content.as_slice());
+			try_send!(response, complete_page);
+		},
+		None => {
+			//Oh no! The page was not loaded!
+			response.status = InternalServerError;
 		}
-	});
+	}
 	
 }
 
@@ -67,13 +63,9 @@ fn main() {
 	server.run();
 }
 
-fn read_string(f: IoResult<File>) -> Option<String> {
+fn read_string(mut file: IoResult<File>) -> IoResult<Option<String>> {
 	//Make the file mutable and try to read it into a string
-	let mut file = f;
-	file.read_to_string().map(|s| Some(s)).unwrap_or_else(|e| {
-		println!("Unable to read file: {}", e);
-		None
-	})
+	file.read_to_string().map(|s| Some(s))
 }
 
 

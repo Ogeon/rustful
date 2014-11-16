@@ -6,12 +6,13 @@ use std::io::fs::PathExtensions;
 use time;
 use time::Timespec;
 
-use sync::RWLock;
+use sync::{RWLock, RWLockReadGuard};
 
 ///This trait provides functions for handling cached resources.
-pub trait CachedValue<T> {
-	///`do_this` with the cached value, without loading or reloading it.
-	fn use_current_value<R>(&self, do_this: |Option<&T>| -> R) -> R;
+pub trait CachedValue<'a, Value> {
+
+	///Borrow the cached value, without loading or reloading it.
+	fn borrow_current(&'a self) -> Value;
 
 	///Load the cached value.
 	fn load(&self);
@@ -25,13 +26,13 @@ pub trait CachedValue<T> {
 	///Check if the cached value is unused and should be removed.
 	fn unused(&self) -> bool;
 
-	///Reload the cached value if it has expired and `do_this` with it.
-	fn use_value<R>(&self, do_this: |Option<&T>| -> R) -> R {
+	///Reload the cached value if it has expired and borrow it.
+	fn borrow(&'a self) -> Value {
 		if self.expired() {
 			self.load();
 		}
 
-		self.use_current_value(do_this)
+		self.borrow_current()
 	}
 
 	///Free the cached value if it's unused.
@@ -42,10 +43,20 @@ pub trait CachedValue<T> {
 	}
 }
 
-
 ///Cached raw file content.
 ///
 ///The whole file will be loaded when accessed.
+///
+///```rust
+///use rustful::cache::{CachedValue, CachedFile};
+///
+///let file = CachedFile::new(Path::new("/some/file/path.txt"), None);
+///
+///match *file.borrow() {
+///    Some(ref content) => println!("loaded file with {} bytes of data", content.len()),
+///    None => println!("the file was not loaded")
+///}
+///```
 pub struct CachedFile {
 	path: Path,
 	file: RWLock<Option<Vec<u8>>>,
@@ -67,18 +78,18 @@ impl CachedFile {
 	}
 }
 
-impl CachedValue<Vec<u8>> for CachedFile {
-	fn use_current_value<R>(&self, do_this: |Option<&Vec<u8>>| -> R) -> R {
+impl<'a> CachedValue<'a, RWLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
+	fn borrow_current(&'a self) -> RWLockReadGuard<'a, Option<Vec<u8>>> {
 		if self.unused_after.is_some() {
 			*self.last_accessed.write() = time::get_time();
 		}
 		
-		do_this(self.file.read().as_ref())
+		self.file.read()
 	}
 
 	fn load(&self) {
 		*self.modified.write() = self.path.stat().map(|s| s.modified).unwrap_or(0);
-		*self.file.write() = File::open(&self.path).read_to_end().map(|v| Some(v)).unwrap_or(None);
+		*self.file.write() = File::open(&self.path).read_to_end().ok();
 
 		if self.unused_after.is_some() {
 			*self.last_accessed.write() = time::get_time();
@@ -113,20 +124,37 @@ impl CachedValue<Vec<u8>> for CachedFile {
 
 ///A processed cached file.
 ///
-///The file will be processed by a provided function when loaded and the result will be stored.
+///The file will be processed by a provided function
+///each time it is loaded and the result will be stored.
+///
+///```rust
+///use std::io::{File, IoResult};
+///use rustful::cache::{CachedValue, CachedProcessedFile};
+///
+///fn get_size(file: IoResult<File>) -> IoResult<Option<u64>> {
+///    file.and_then(|mut file| file.stat()).map(|stat| Some(stat.size))
+///}
+///
+///let file = CachedProcessedFile::new(Path::new("/some/file/path.txt"), None, get_size);
+///
+///match *file.borrow() {
+///    Some(ref size) => println!("file contains {} bytes of data", size),
+///    None => println!("the file was not loaded")
+///}
+///```
 pub struct CachedProcessedFile<T> {
 	path: Path,
 	file: RWLock<Option<T>>,
 	modified: RWLock<u64>,
 	last_accessed: RWLock<Timespec>,
 	unused_after: Option<i64>,
-	processor: fn(IoResult<File>) -> Option<T>
+	processor: fn(IoResult<File>) -> IoResult<Option<T>>
 }
 
 impl<T: Send+Sync> CachedProcessedFile<T> {
 	///Creates a new `CachedProcessedFile` which will be freed `unused_after` seconds after the latest access.
 	///The file will be processed by the provided `processor` function each time it's loaded.
-	pub fn new(path: Path, unused_after: Option<u32>, processor: fn(IoResult<File>) -> Option<T>) -> CachedProcessedFile<T> {
+	pub fn new(path: Path, unused_after: Option<u32>, processor: fn(IoResult<File>) -> IoResult<Option<T>>) -> CachedProcessedFile<T> {
 		CachedProcessedFile {
 			path: path,
 			file: RWLock::new(None),
@@ -138,18 +166,18 @@ impl<T: Send+Sync> CachedProcessedFile<T> {
 	}
 }
 
-impl<T: Send+Sync> CachedValue<T> for CachedProcessedFile<T> {
-	fn use_current_value<R>(&self, do_this: |Option<&T>| -> R) -> R {
+impl<'a, T: Send+Sync> CachedValue<'a, RWLockReadGuard<'a, Option<T>>> for CachedProcessedFile<T> {
+	fn borrow_current(&'a self) -> RWLockReadGuard<'a, Option<T>> {
 		if self.unused_after.is_some() {
 			*self.last_accessed.write() = time::get_time();
 		}
 
-		do_this(self.file.read().as_ref())
+		self.file.read()
 	}
 
 	fn load(&self) {
 		*self.modified.write() = self.path.stat().map(|s| s.modified).unwrap_or(0);
-		*self.file.write() = (self.processor)(File::open(&self.path));
+		*self.file.write() = (self.processor)(File::open(&self.path)).ok().and_then(|result| result);
 
 		if self.unused_after.is_some() {
 			*self.last_accessed.write() = time::get_time();
@@ -187,7 +215,7 @@ impl<T: Send+Sync> CachedValue<T> for CachedProcessedFile<T> {
 fn file() {
 	let file = CachedFile::new(Path::new("LICENSE"), None);
 	assert_eq!(file.expired(), true);
-	assert!(file.use_value(|o| o.map(|v| v.len()).unwrap_or(0)) > 0);
+	assert!(file.borrow().as_ref().map(|v| v.len()).unwrap_or(0) > 0);
 	assert_eq!(file.expired(), false);
 	file.free();
 	assert_eq!(file.expired(), true);
@@ -195,14 +223,13 @@ fn file() {
 
 #[test]
 fn modified_file() {
-	fn just_read(f: IoResult<File>) -> Option<Vec<u8>> {
-		let mut file = f;
-		file.read_to_end().map(|v| Some(v)).unwrap_or(None)
+	fn just_read(mut file: IoResult<File>) -> IoResult<Option<Vec<u8>>> {
+		file.read_to_end().map(|v| Some(v))
 	}
 
 	let file = CachedProcessedFile::new(Path::new("LICENSE"), None, just_read);
 	assert_eq!(file.expired(), true);
-	assert!(file.use_value(|o| o.map(|v| v.len()).unwrap_or(0)) > 0);
+	assert!(file.borrow().as_ref().map(|v| v.len()).unwrap_or(0) > 0);
 	assert_eq!(file.expired(), false);
 	file.free();
 	assert_eq!(file.expired(), true);
