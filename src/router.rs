@@ -60,6 +60,8 @@ use std::collections::hash_map::{Occupied, Vacant};
 use std::vec::Vec;
 use http::method::Method;
 
+use self::Branch::{Static, Variable, Wildcard};
+
 pub type RouterResult<'a, T> = Option<(&'a T, HashMap<String, String>)>;
 
 enum Branch {

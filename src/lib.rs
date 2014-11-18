@@ -27,15 +27,18 @@ use http::status::{NotFound, BadRequest, Status};
 use http::headers::content_type::MediaType;
 use http::headers;
 
-use std::io::IoResult;
+use std::io::{IoResult, IoError};
 use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
 use std::collections::HashMap;
+use std::error::FromError;
 
 use sync::{Arc, RWLock};
 
 use time::Timespec;
 
 use url::percent_encoding::lossy_utf8_percent_decode;
+
+use self::ResponseAction::{Write, DoNothing, Error};
 
 mod utils;
 
@@ -56,15 +59,18 @@ pub enum RequestAction {
 
 ///The result of a response action.
 #[experimental]
-pub enum ResponseResult {
-	///The response action was successful.
-    Success,
-
-    ///A response plugin failed.
+pub enum ResponseError {
+	///A response plugin failed.
     PluginError(String),
 
     ///There was an IO error.
-    IoError(std::io::IoError)
+    IoError(IoError)
+}
+
+impl FromError<IoError> for ResponseError {
+	fn from_error(err: IoError) -> ResponseError {
+		ResponseError::IoError(err)
+	}
 }
 
 ///The result from a `ResponsePlugin`.
@@ -82,15 +88,15 @@ pub enum ResponseAction<'a> {
 
 impl<'a> ResponseAction<'a> {
 	pub fn write<'a, T: IntoResponseData<'a>>(data: Option<T>) -> ResponseAction<'a> {
-		Write(data.map(|d| d.into_response_data()))
+		ResponseAction::Write(data.map(|d| d.into_response_data()))
 	}
 
 	pub fn do_nothing() -> ResponseAction<'static> {
-		DoNothing
+		ResponseAction::DoNothing
 	}
 
 	pub fn error(message: String) -> ResponseAction<'static> {
-		Error(message)
+		ResponseAction::Error(message)
 	}
 }
 
@@ -103,30 +109,30 @@ pub enum ResponseData<'a> {
 	ByteSlice(&'a [u8]),
 
 	///Data in string form.
-	Str(String),
+	String(String),
 
 	///Data in string form.
-	StrSlice(&'a str)
+	StringSlice(&'a str)
 }
 
 impl<'a> ResponseData<'a> {
 	///Borrow the content as a byte slice.
 	pub fn as_bytes(&self) -> &[u8] {
 		match self {
-			&Bytes(ref bytes) => bytes.as_slice(),
-			&ByteSlice(ref bytes) => *bytes,
-			&Str(ref string) => string.as_bytes(),
-			&StrSlice(ref string) => string.as_bytes()
+			&ResponseData::Bytes(ref bytes) => bytes.as_slice(),
+			&ResponseData::ByteSlice(ref bytes) => *bytes,
+			&ResponseData::String(ref string) => string.as_bytes(),
+			&ResponseData::StringSlice(ref string) => string.as_bytes()
 		}
 	}
 
 	///Turns the content into a byte vector. Slices are copied.
 	pub fn into_bytes(self) -> Vec<u8> {
 		match self {
-			Bytes(bytes) => bytes,
-			ByteSlice(bytes) => bytes.to_vec(),
-			Str(string) => string.into_bytes(),
-			StrSlice(string) => string.as_bytes().to_vec()
+			ResponseData::Bytes(bytes) => bytes,
+			ResponseData::ByteSlice(bytes) => bytes.to_vec(),
+			ResponseData::String(string) => string.into_bytes(),
+			ResponseData::StringSlice(string) => string.as_bytes().to_vec()
 		}
 	}
 
@@ -134,8 +140,8 @@ impl<'a> ResponseData<'a> {
 	///Returns an `None` if the content is a byte vector, a byte slice or if the action is `Error`.
 	pub fn as_string(&self) -> Option<&str> {
 		match self {
-			&Str(ref string) => Some(string.as_slice()),
-			&StrSlice(ref string) => Some(string.as_slice()),
+			&ResponseData::String(ref string) => Some(string.as_slice()),
+			&ResponseData::StringSlice(ref string) => Some(string.as_slice()),
 			_ => None
 		}
 	}
@@ -145,8 +151,8 @@ impl<'a> ResponseData<'a> {
 	///Slices are copied.
 	pub fn into_string(self) -> Option<String> {
 		match self {
-			Str(string) => Some(string),
-			StrSlice(string) => Some(string.into_string()),
+			ResponseData::String(string) => Some(string),
+			ResponseData::StringSlice(string) => Some(string.into_string()),
 			_ => None
 		}
 	}
@@ -160,25 +166,25 @@ pub trait IntoResponseData<'a> {
 
 impl IntoResponseData<'static> for Vec<u8> {
 	fn into_response_data(self) -> ResponseData<'static> {
-		Bytes(self)
+		ResponseData::Bytes(self)
 	}
 }
 
 impl<'a> IntoResponseData<'a> for &'a [u8] {
 	fn into_response_data(self) -> ResponseData<'a> {
-		ByteSlice(self)
+		ResponseData::ByteSlice(self)
 	}
 }
 
 impl IntoResponseData<'static> for String {
 	fn into_response_data(self) -> ResponseData<'static> {
-		Str(self)
+		ResponseData::String(self)
 	}
 }
 
 impl<'a> IntoResponseData<'a> for &'a str {
 	fn into_response_data(self) -> ResponseData<'a> {
-		StrSlice(self)
+		ResponseData::StringSlice(self)
 	}
 }
 
@@ -355,11 +361,11 @@ impl<H, C> Server<H, C> {
 	}
 
 	fn modify_request(&self, request: Request) -> RequestAction {
-		let mut result = Continue(request);
+		let mut result = RequestAction::Continue(request);
 
 		for plugin in self.request_plugins.read().iter() {
 			result = match result {
-				Continue(request) => plugin.modify(request),
+				RequestAction::Continue(request) => plugin.modify(request),
 				_ => return result
 			};
 		}
@@ -422,7 +428,7 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server f
 				};
 
 				match self.modify_request(request) {
-					Continue(mut request) => {
+					RequestAction::Continue(mut request) => {
 						match self.handlers.find(request.method.clone(), request.path.as_slice()) {
 							Some((handler, variables)) => {
 								request.variables = variables;
@@ -434,7 +440,7 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server f
 							}
 						}
 					},
-					Abort(status) => {
+					RequestAction::Abort(status) => {
 						response.headers.content_length = Some(0);
 						response.status = status;
 					}
@@ -446,7 +452,10 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server f
 			}
 		}
 
-		response.end();
+		//TODO: Maybe log errors here.
+		match response.end() {
+			_ => {}
+		}
 
 		self.cache_clean_interval.map(|t| {
 			let clean_time = {
@@ -550,34 +559,30 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 
 	///Writes a string or any other `BytesContainer` to the client.
 	///The headers will be written the first time `send()` is called.
-	pub fn send<'a, Content: IntoResponseData<'a>>(&mut self, content: Content) -> ResponseResult {
-		match self.begin() {
-			Success => {
-				let mut plugin_result = ResponseAction::write(Some(content));
+	pub fn send<'a, Content: IntoResponseData<'a>>(&mut self, content: Content) -> Result<(), ResponseError> {
+		try!(self.begin());
+		let mut plugin_result = ResponseAction::write(Some(content));
 
-				for plugin in self.plugins.iter() {
-					plugin_result = match plugin_result {
-						Write(content) => plugin.write(content),
-						_ => break
-					}
-				}
-
-				let write_result = match plugin_result {
-					Write(Some(ref s)) => Some(self.writer.write(s.as_bytes())),
-					_ => None
-				};
-
-				match write_result {
-					Some(Ok(_)) => Success,
-					Some(Err(e)) => IoError(e),
-					None => match plugin_result {
-						Error(e) => PluginError(e),
-						Write(None) => Success,
-						_ => unreachable!()
-					}
-				}
+		for plugin in self.plugins.iter() {
+			plugin_result = match plugin_result {
+				Write(content) => plugin.write(content),
+				_ => break
 			}
-			r => r
+		}
+
+		let write_result = match plugin_result {
+			Write(Some(ref s)) => Some(self.writer.write(s.as_bytes())),
+			_ => None
+		};
+
+		match write_result {
+			Some(Ok(_)) => Ok(()),
+			Some(Err(e)) => Err(ResponseError::IoError(e)),
+			None => match plugin_result {
+				Error(e) => Err(ResponseError::PluginError(e)),
+				Write(None) => Ok(()),
+				_ => unreachable!()
+			}
 		}
 	}
 
@@ -585,7 +590,7 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 	///
 	///This method will be called automatically by `send()` and `end()`, if it hasn't been called before.
 	///It can only be called once.
-	pub fn begin(&mut self) -> ResponseResult {
+	pub fn begin(&mut self) -> Result<(), ResponseError> {
 		if !self.started_writing {
 			self.started_writing = true;
 
@@ -624,82 +629,72 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 			}
 
 			match header_result {
-				(_, _, Error(e)) => PluginError(e),
+				(_, _, Error(e)) => Err(ResponseError::PluginError(e)),
 				(status, headers, last_result) => {
 					write_queue.push(last_result);
 
 					for action in write_queue.into_iter() {
-						let write_result = match action {
-							Write(Some(content)) => self.writer.write(content.as_bytes()),
-							Error(e) => return PluginError(e),
-							_ => Ok(())
-						};
-
-						match write_result {
-							Err(e) => return IoError(e),
-							_ => {}
+						try!{
+							match action {
+								Write(Some(content)) => self.writer.write(content.as_bytes()),
+								Error(e) => return Err(ResponseError::PluginError(e)),
+								_ => Ok(())
+							}
 						}
 					}
 
 					self.writer.status = status;
 					self.writer.headers = headers;
-					Success
+					Ok(())
 				},
 			}
 		} else {
-			Success
+			Ok(())
 		}
 	}
 
 	///Finish writing the response.
-	pub fn end(&mut self) -> ResponseResult {
-		match self.begin() {
-			Success => {
-				let mut write_queue: Vec<ResponseAction> = Vec::new();
+	pub fn end(&mut self) -> Result<(), ResponseError> {
+		try!(self.begin());
+		let mut write_queue: Vec<ResponseAction> = Vec::new();
 
-				for plugin in self.plugins.iter() {
-					let mut error = None;
-					write_queue = write_queue.into_iter().filter_map(|action| match action {
-						Write(content) => Some(plugin.write(content)),
-						DoNothing => None,
-						Error(e) => {
-							error = Some(e);
-							None
-						}
-					}).collect();
-
-					match error {
-						Some(e) => return PluginError(e),
-						None => write_queue.push(plugin.end())
-					}
+		for plugin in self.plugins.iter() {
+			let mut error = None;
+			write_queue = write_queue.into_iter().filter_map(|action| match action {
+				Write(content) => Some(plugin.write(content)),
+				DoNothing => None,
+				Error(e) => {
+					error = Some(e);
+					None
 				}
+			}).collect();
 
-				for action in write_queue.into_iter() {
-					let write_result = match action {
-						Write(Some(content)) => self.writer.write(content.as_bytes()),
-						Error(e) => return PluginError(e),
-						_ => Ok(())
-					};
-
-					match write_result {
-						Err(e) => return IoError(e),
-						_ => {}
-					}
-				}
-
-				Success
-			},
-			r => r
+			match error {
+				Some(e) => return Err(ResponseError::PluginError(e)),
+				None => write_queue.push(plugin.end())
+			}
 		}
+
+		for action in write_queue.into_iter() {
+			try!{
+				match action {
+					Write(Some(content)) => self.writer.write(content.as_bytes()),
+					Error(e) => return Err(ResponseError::PluginError(e)),
+					_ => Ok(())
+				}
+			}
+		}
+
+		Ok(())
 	}
 }
 
 impl<'a, 'b, 'c> Writer for Response<'a, 'b, 'c> {
 	fn write(&mut self, content: &[u8]) -> IoResult<()> {
 		match self.send(content) {
-			Success => Ok(()),
-			IoError(e) => Err(e),
-			PluginError(e) => Err(std::io::IoError{
+			Ok(()) => Ok(()),
+			Err(ResponseError::IoError(e)) => Err(e),
+			Err(ResponseError::PluginError(e)) => Err(std::io::IoError{
 				kind: std::io::OtherIoError,
 				desc: "response plugin error",
 				detail: Some(e)

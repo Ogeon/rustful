@@ -325,13 +325,13 @@ broken or not, or if the headers have already been written.
 macro_rules! try_send(
 	($response:ident, $content:expr) => (
 		match $response.send($content) {
-			::rustful::Success => {},
-			::rustful::IoError(e) => {
+			Ok(v) => v,
+			Err(::rustful::ResponseError::IoError(e)) => {
 				println!("IO error: {}", e);
 				$response.status = http::status::InternalServerError;
 				return;
 			},
-			::rustful::PluginError(e) => {
+			Err(::rustful::ResponseError::PluginError(e)) => {
 				println!("plugin error: {}", e);
 				$response.status = http::status::InternalServerError;
 				return;
@@ -341,13 +341,13 @@ macro_rules! try_send(
 
 	($response:ident, $content:expr while $what:expr) => (
 		match $response.send($content) {
-			::rustful::Success => {},
-			::rustful::IoError(e) => {
+			Ok(v) => v,
+			Err(::rustful::ResponseError::IoError(e)) => {
 				println!("IO error while {}: {}", $what, e);
 				$response.status = http::status::InternalServerError;
 				return;
 			},
-			::rustful::PluginError(e) => {
+			Err(::rustful::ResponseError::PluginError(e)) => {
 				println!("plugin error while {}: {}", $what, e);
 				$response.status = http::status::InternalServerError;
 				return;
