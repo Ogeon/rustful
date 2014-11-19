@@ -11,7 +11,7 @@
 //!	(Get, "/", show_welcome)
 //!];
 //!
-//!let router = Router::from_routes(routes);
+//!let router = Router::from_routes(&routes);
 //!```
 //!
 //!Routes may also be added after the `Router` was created, like this:
@@ -375,7 +375,7 @@ mod test {
 	fn one_static_route() {
 		let routes = [(Get, "path/to/test1", "test 1")];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 		check(router.find(Get, "path/to/test1"), Some("test 1"));
 		check(router.find(Get, "path/to"), None);
@@ -390,7 +390,7 @@ mod test {
 			(Get, "path/to/test1/no/test3", "test 3")
 		];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 		check(router.find(Get, ""), Some("test 1"));
 		check(router.find(Get, "path/to/test/no2"), Some("test 2"));
@@ -402,7 +402,7 @@ mod test {
 	fn one_variable_route() {
 		let routes = [(Get, "path/:a/test1", "test_var")];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 		check_variable(router.find(Get, "path/to/test1"), Some("to"));
 		check_variable(router.find(Get, "path/to"), None);
@@ -418,7 +418,7 @@ mod test {
 			(Post, "path/to/:c/:a/:b", "test_var")
 		];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 		check_variable(router.find(Get, "path/to/test1"), Some(""));
 		check_variable(router.find(Get, "path/to/test/no2"), Some("to"));
@@ -431,7 +431,7 @@ mod test {
 	fn one_wildcard_end_route() {
 		let routes = [(Get, "path/to/*", "test 1")];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 		check(router.find(Get, "path/to/test1"), Some("test 1"));
 		check(router.find(Get, "path/to/same/test1"), Some("test 1"));
@@ -445,7 +445,7 @@ mod test {
 	fn one_wildcard_middle_route() {
 		let routes = [(Get, "path/*/test1", "test 1")];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 		check(router.find(Get, "path/to/test1"), Some("test 1"));
 		check(router.find(Get, "path/to/same/test1"), Some("test 1"));
@@ -458,7 +458,7 @@ mod test {
 	fn one_universal_wildcard_route() {
 		let routes = [(Get, "*", "test 1")];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 		check(router.find(Get, "path/to/test1"), Some("test 1"));
 		check(router.find(Get, "path/to/same/test1"), Some("test 1"));
@@ -476,7 +476,7 @@ mod test {
 			(Get, "path/to/*/*/*", "test 3")
 		];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 		check(router.find(Get, "path/to/test1"), Some("test 1"));
 		check(router.find(Get, "path/for/test/no2"), Some("test 2"));
@@ -494,7 +494,7 @@ mod test {
 			(Get, "/path/to/test3/again/", "test 3")
 		];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 		check(router.find(Get, ""), Some("test 1"));
 		check(router.find(Get, "path/to/test/no2/"), Some("test 2"));
@@ -512,7 +512,7 @@ mod test {
 			(Put, "/", "put")
 		];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 
 
 		check(router.find(Get, "/"), Some("get"));
@@ -536,8 +536,8 @@ mod test {
 			(Post, "test1/no/test3", "test 3 post")
 		];
 
-		let mut router1 = Router::from_routes(routes1);
-		let router2 = Router::from_routes(routes2);
+		let mut router1 = Router::from_routes(&routes1);
+		let router2 = Router::from_routes(&routes2);
 
 		router1.insert_router("path/to", &router2);
 
@@ -555,8 +555,8 @@ mod test {
 		let routes1 = [(Get, ":a/:b/:c", "test 2")];
 		let routes2 = [(Get, ":b/:c/test", "test 1")];
 
-		let mut router1 = Router::from_routes(routes1);
-		let router2 = Router::from_routes(routes2);
+		let mut router1 = Router::from_routes(&routes1);
+		let router2 = Router::from_routes(&routes2);
 
 		router1.insert_router(":a", &router2);
 		
@@ -570,8 +570,8 @@ mod test {
 		let routes1 = [(Get, "path/to", "test 2")];
 		let routes2 = [(Get, "*/test1", "test 1")];
 
-		let mut router1 = Router::from_routes(routes1);
-		let router2 = Router::from_routes(routes2);
+		let mut router1 = Router::from_routes(&routes1);
+		let router2 = Router::from_routes(&routes2);
 
 		router1.insert_router("path", &router2);
 
@@ -614,7 +614,7 @@ mod test {
 			"path/to/test1/nothing/at/all"
 		];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 		let mut counter = 0;
 
 		b.iter(|| {
@@ -645,7 +645,7 @@ mod test {
 			"path/to/test1/nothing/at/all/and/all/and/all/and/a"
 		];
 
-		let router = Router::from_routes(routes);
+		let router = Router::from_routes(&routes);
 		let mut counter = 0;
 
 		b.iter(|| {

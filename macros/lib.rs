@@ -97,7 +97,7 @@
 //!	}
 //!};
 //!
-//!let router = Router::from_routes(routes);
+//!let router = Router::from_routes(&routes);
 //!```
 
 extern crate syntax;
@@ -204,7 +204,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
 							break;
 						}
 					} else {
-						parser.expect_one_of([token::Comma, token::CloseDelim(token::Brace)], []);
+						parser.expect_one_of(&[token::Comma, token::CloseDelim(token::Brace)], &[]);
 					}
 				} else {
 					for (method, handler) in parse_handler(parser).into_iter() {
@@ -242,7 +242,7 @@ fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, P<ast::Expr>)> {
 		}
 
 		if !parser.eat(&token::BinOp(token::Or)) {
-			parser.expect_one_of([token::Colon, token::BinOp(token::Or)], []);
+			parser.expect_one_of(&[token::Colon, token::BinOp(token::Or)], &[]);
 		}
 	}
 
