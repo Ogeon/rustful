@@ -176,7 +176,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
 
 	while !parser.eat(&token::Eof) {
 		match parser.parse_optional_str() {
-			Some((ref s, _)) => {
+			Some((ref s, _, _)) => {
 				if !parser.eat(&token::FatArrow) {
 					parser.expect(&token::FatArrow);
 					break;
