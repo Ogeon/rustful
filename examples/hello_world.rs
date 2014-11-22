@@ -4,7 +4,7 @@ extern crate rustful_macros;
 
 extern crate rustful;
 extern crate http;
-use rustful::{Server, Router, Request, Response};
+use rustful::{Server, TreeRouter, Request, Response};
 use http::method::Get;
 
 fn say_hello(request: Request, response: &mut Response) {
@@ -21,7 +21,7 @@ fn main() {
 
 	let routes = routes!{"/" => Get: say_hello, "/:person" => Get: say_hello};
 
-	let server = Server::new(8080, Router::from_routes(&routes));
+	let server = Server::new(8080, TreeRouter::from_routes(&routes));
 
 	server.run();
 }

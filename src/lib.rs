@@ -16,7 +16,7 @@ extern crate time;
 extern crate sync;
 extern crate http;
 
-pub use router::Router;
+pub use router::TreeRouter;
 
 use http::server::Server as HttpServer;
 use http::server::{ResponseWriter, Config};
@@ -195,6 +195,12 @@ impl<'a> IntoResponseData<'a> for ResponseData<'a> {
 }
 
 
+///Routers are used to store request handlers.
+pub trait Router<Handler> {
+	///Find and return the matching handler and variable values.
+	fn find(&self, method: &Method, path: &str) -> Option<(&Handler, HashMap<String, String>)>;
+}
+
 
 ///A trait for request handlers.
 pub trait Handler<C> {
@@ -210,6 +216,12 @@ impl<C> Handler<C> for fn(Request, &mut Response) {
 impl<C> Handler<C> for fn(Request, &C, &mut Response) {
 	fn handle_request(&self, request: Request, cache: &C, response: &mut Response) {
 		(*self)(request, cache, response);
+	}
+}
+
+impl<C, H: Handler<C>> Router<H> for H {
+	fn find(&self, _method: &Method, _path: &str) -> Option<(&H, HashMap<String, String>)> {
+		Some((self, HashMap::new()))
 	}
 }
 
@@ -265,9 +277,9 @@ pub trait ResponsePlugin {
 ///
 ///server.run();
 ///```
-pub struct Server<H, C> {
+pub struct Server<R, C> {
 	///A router with response handlers
-	handlers: Arc<Router<H>>,
+	handlers: Arc<R>,
 
 	///The port where the server will listen for requests
 	port: Port,
@@ -287,19 +299,19 @@ pub struct Server<H, C> {
 	response_plugins: Arc<RWLock<Vec<Box<ResponsePlugin + Send + Sync>>>>
 }
 
-impl<H: Handler<()> + Send + Sync> Server<H, ()> {
+impl<H: Handler<()> + Send + Sync, R: Router<H> + Send + Sync> Server<R, ()> {
 	///Create a new `Server` which will listen on the provided port and host address `0.0.0.0`.
-	pub fn new(port: Port, handlers: Router<H>) -> Server<H, ()> {
+	pub fn new(port: Port, handlers: R) -> Server<R, ()> {
 		Server::with_cache(port, (), handlers)
 	}
 }
 
-impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> Server<H, C> {
+impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync, R: Router<H> + Send + Sync> Server<R, C> {
 	///Creates a new `Server` with a resource cache.
 	///
 	///The server will listen listen on the provided port and host address `0.0.0.0`.
 	///Cache cleaning is disabled by default. 
-	pub fn with_cache(port: Port, cache: C, handlers: Router<H>) -> Server<H, C> {
+	pub fn with_cache(port: Port, cache: C, handlers: R) -> Server<R, C> {
 		Server {
 			handlers: Arc::new(handlers),
 			port: port,
@@ -325,7 +337,7 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> Server<H, C> {
 	}
 }
 
-impl<H, C> Server<H, C> {
+impl<R, C> Server<R, C> {
 	///Change the host address.
 	pub fn set_host(&mut self, host: IpAddr) {
 		self.host = host;
@@ -374,7 +386,7 @@ impl<H, C> Server<H, C> {
 	}
 }
 
-impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server for Server<H, C> {
+impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync, R: Router<H> + Send + Sync> http::server::Server for Server<R, C> {
 	fn get_config(&self) -> Config {
 		Config {
 			bind_address: SocketAddr {
@@ -429,7 +441,7 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server f
 
 				match self.modify_request(request) {
 					RequestAction::Continue(mut request) => {
-						match self.handlers.find(request.method.clone(), request.path.as_slice()) {
+						match self.handlers.find(&request.method, request.path.as_slice()) {
 							Some((handler, variables)) => {
 								request.variables = variables;
 								handler.handle_request(request, & *self.cache, &mut response);
@@ -471,8 +483,8 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync> http::server::Server f
 	}
 }
 
-impl<H: Send + Sync, C: Send + Sync> Clone for Server<H, C> {
-	fn clone(&self) -> Server<H, C> {
+impl<R: Send + Sync, C: Send + Sync> Clone for Server<R, C> {
+	fn clone(&self) -> Server<R, C> {
 		Server {
 			handlers: self.handlers.clone(),
 			port: self.port,

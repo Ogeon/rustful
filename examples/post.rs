@@ -10,7 +10,6 @@ use rustful::{Server, Request, Response, Cache};
 use rustful::cache::{CachedValue, CachedProcessedFile};
 use rustful::request_extensions::QueryBody;
 
-use http::method::{Get, Post};
 use http::status::InternalServerError;
 
 fn say_hello(request: Request, cache: &Files, response: &mut Response) {
@@ -58,7 +57,8 @@ fn main() {
 		form: CachedProcessedFile::new(Path::new("examples/post/form.html"), None, read_string)
 	};
 
-	let server = Server::with_cache(8080, cache, router!{"/" => Get | Post: say_hello});
+	//Handlers implements the Router trait, so it can be passed to the server as it is
+	let server = Server::with_cache(8080, cache, say_hello);
 
 	server.run();
 }

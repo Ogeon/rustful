@@ -11,7 +11,7 @@
 //!This crate provides some helpful macros for rustful, including `router!` and `routes!`.
 //!
 //!#`router!`
-//!The `router!` macro generates a `Router` containing the provided handlers and routing tree.
+//!The `router!` macro generates a `TreeRouter` containing the provided handlers and routing tree.
 //!This can be useful to lower the risk of typing errors, among other things.
 //!
 //!##Example 1
@@ -67,7 +67,7 @@
 //!
 //!#`routes!`
 //!
-//!The `routes!` macro generates a vector of routes, which can be used to create a `Router`.
+//!The `routes!` macro generates a vector of routes, which can be used to create a `TreeRouter`.
 //!It has the same syntax as `routes!`.
 //!
 //!```rust ignore
@@ -97,7 +97,7 @@
 //!	}
 //!};
 //!
-//!let router = Router::from_routes(&routes);
+//!let router = TreeRouter::from_routes(&routes);
 //!```
 
 extern crate syntax;
@@ -136,7 +136,7 @@ fn expand_router<'cx>(cx: &'cx mut ExtCtxt, sp: codemap::Span, tts: &[ast::Token
 	let insert_method = cx.ident_of("insert_item");
 
 	let mut calls: Vec<P<ast::Stmt>> = vec!(
-		cx.stmt_let(sp, true, router_ident, quote_expr!(&cx, ::rustful::Router::new()))
+		cx.stmt_let(sp, true, router_ident, quote_expr!(&cx, ::rustful::TreeRouter::new()))
 	);
 
 	for (path, method, handler) in parse_routes(cx, tts).into_iter() {

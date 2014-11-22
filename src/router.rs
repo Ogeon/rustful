@@ -1,6 +1,6 @@
-//!`Router` stores items, such as request handlers, using an HTTP method and a path as keys.
+//!`TreeRouter` stores items, such as request handlers, using an HTTP method and a path as keys.
 //!
-//!The `Router` can be created from a vector of predefined paths, like this:
+//!The `TreeRouter` can be created from a vector of predefined paths, like this:
 //!
 //!```ignore
 //!let routes = [
@@ -11,13 +11,13 @@
 //!	(Get, "/", show_welcome)
 //!];
 //!
-//!let router = Router::from_routes(&routes);
+//!let router = TreeRouter::from_routes(&routes);
 //!```
 //!
-//!Routes may also be added after the `Router` was created, like this:
+//!Routes may also be added after the `TreeRouter` was created, like this:
 //!
 //!```ignore
-//!let mut router = Router::new();
+//!let mut router = TreeRouter::new();
 //!
 //!router.insert_item(Get, "/about", about_us);
 //!router.insert_item(Get, "/user/:user", show_user);
@@ -54,6 +54,8 @@
 //!
 //!There is also a macro for creating a route vector, like the one in the first example.
 //!These can be found in the crate `rustful_macros`.
+
+use Router;
 
 use std::collections::HashMap;
 use std::collections::hash_map::{Occupied, Vacant};
@@ -98,17 +100,17 @@ enum Branch {
 ///"a/b" -> no match
 ///```
 #[deriving(Clone)]
-pub struct Router<T> {
+pub struct TreeRouter<T> {
 	items: HashMap<String, (T, Vec<String>)>,
-	static_routes: HashMap<String, Router<T>>,
-	variable_route: Option<Box<Router<T>>>,
-	wildcard_route: Option<Box<Router<T>>>
+	static_routes: HashMap<String, TreeRouter<T>>,
+	variable_route: Option<Box<TreeRouter<T>>>,
+	wildcard_route: Option<Box<TreeRouter<T>>>
 }
 
-impl<T> Router<T> {
-	///Creates an empty `Router`.
-	pub fn new() -> Router<T> {
-		Router {
+impl<T> TreeRouter<T> {
+	///Creates an empty `TreeRouter`.
+	pub fn new() -> TreeRouter<T> {
+		TreeRouter {
 			items: HashMap::new(),
 			static_routes: HashMap::new(),
 			variable_route: None,
@@ -116,7 +118,7 @@ impl<T> Router<T> {
 		}
 	}
 
-	///Inserts an item into the `Router` at a given path.
+	///Inserts an item into the `TreeRouter` at a given path.
 	pub fn insert_item(&mut self, method: Method, path: &str, item: T) {
 		let path = path_to_vec(path.trim());
 
@@ -142,29 +144,30 @@ impl<T> Router<T> {
 	}
 
 	//Tries to find a router matching the key or inserts a new one if none exists
-	fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut Router<T> {
+	fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut TreeRouter<T> {
 		if key == "*" {
 			if self.wildcard_route.is_none() {
-				self.wildcard_route = Some(box Router::new());
+				self.wildcard_route = Some(box TreeRouter::new());
 			}
 			&mut **self.wildcard_route.as_mut::<'a>().unwrap()
 		} else if key.len() > 0 && key.char_at(0) == ':' {
 			if self.variable_route.is_none() {
-				self.variable_route = Some(box Router::new());
+				self.variable_route = Some(box TreeRouter::new());
 			}
 			&mut **self.variable_route.as_mut::<'a>().unwrap()
 		} else {
 			match self.static_routes.entry(key.to_string()) {
 				Occupied(entry) => entry.into_mut(),
-				Vacant(entry) => entry.set(Router::new())
+				Vacant(entry) => entry.set(TreeRouter::new())
 			}
 		}
 	}
+}
 
-	///Finds and returns the matching item and variables
-	pub fn find<'a>(&'a self, method: Method, path: &str) -> RouterResult<'a, T> {
+impl<T> Router<T> for TreeRouter<T> {
+	fn find<'a>(&'a self, method: &Method, path: &str) -> RouterResult<'a, T> {
 		let path = path_to_vec(path);
-		let method_str = method.to_string().into_string();
+		let method_str = method.to_string();
 
 		if path.len() == 0 {
 			match self.items.get(&method_str) {
@@ -237,10 +240,10 @@ impl<T> Router<T> {
 	}
 }
 
-impl<T: Clone> Router<T> {
-	///Generates a `Router` tree from a set of items and paths.
-	pub fn from_routes(routes: &[(Method, &str, T)]) -> Router<T> {
-		let mut root = Router::new();
+impl<T: Clone> TreeRouter<T> {
+	///Generates a `TreeRouter` tree from a set of items and paths.
+	pub fn from_routes(routes: &[(Method, &str, T)]) -> TreeRouter<T> {
+		let mut root = TreeRouter::new();
 
 		for &(ref method, path, ref item) in routes.iter() {
 			root.insert_item(method.clone(), path, item.clone());
@@ -249,9 +252,9 @@ impl<T: Clone> Router<T> {
 		root
 	}
 
-	///Insert an other Router at a path. The content of the other Router will be merged with this one.
+	///Insert an other TreeRouter at a path. The content of the other TreeRouter will be merged with this one.
 	///Content with the same path and method will be overwritten.
-	pub fn insert_router(&mut self, path: &str, router: &Router<T>) {
+	pub fn insert_router(&mut self, path: &str, router: &TreeRouter<T>) {
 		let path = path_to_vec(path.trim());
 
 		if path.len() == 0 {
@@ -275,8 +278,8 @@ impl<T: Clone> Router<T> {
 		}
 	}
 
-	//Mergers this Router with an other Router.
-	fn merge_router(&mut self, variable_names: Vec<String>, router: &Router<T>) {
+	//Mergers this TreeRouter with an other TreeRouter.
+	fn merge_router(&mut self, variable_names: Vec<String>, router: &TreeRouter<T>) {
 		for (key, &(ref item, ref var_names)) in router.items.iter() {
 			let mut new_var_names = variable_names.clone();
 			new_var_names.push_all(var_names.as_slice());
@@ -286,14 +289,14 @@ impl<T: Clone> Router<T> {
 		for (key, router) in router.static_routes.iter() {
 			let next = match self.static_routes.entry(key.clone()) {
 				Occupied(entry) => entry.into_mut(),
-				Vacant(entry) => entry.set(Router::new())
+				Vacant(entry) => entry.set(TreeRouter::new())
 			};
 			next.merge_router(variable_names.clone(), router);
 		}
 
 		if router.variable_route.is_some() {
 			if self.variable_route.is_none() {
-				self.variable_route = Some(box Router::new());
+				self.variable_route = Some(box TreeRouter::new());
 			}
 
 			match self.variable_route.as_mut() {
@@ -304,7 +307,7 @@ impl<T: Clone> Router<T> {
 
 		if router.wildcard_route.is_some() {
 			if self.wildcard_route.is_none() {
-				self.wildcard_route = Some(box Router::new());
+				self.wildcard_route = Some(box TreeRouter::new());
 			}
 
 			match self.wildcard_route.as_mut() {
@@ -335,8 +338,9 @@ fn path_to_vec(path: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod test {
+	use Router;
 	use test::Bencher;
-	use super::Router;
+	use super::TreeRouter;
 	use http::method::{Get, Post, Delete, Put, Head};
 	use std::collections::HashMap;
 	use std::vec::Vec;
@@ -375,11 +379,11 @@ mod test {
 	fn one_static_route() {
 		let routes = [(Get, "path/to/test1", "test 1")];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
-		check(router.find(Get, "path/to/test1"), Some("test 1"));
-		check(router.find(Get, "path/to"), None);
-		check(router.find(Get, "path/to/test1/nothing"), None);
+		check(router.find(&Get, "path/to/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to"), None);
+		check(router.find(&Get, "path/to/test1/nothing"), None);
 	}
 
 	#[test]
@@ -390,23 +394,23 @@ mod test {
 			(Get, "path/to/test1/no/test3", "test 3")
 		];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
-		check(router.find(Get, ""), Some("test 1"));
-		check(router.find(Get, "path/to/test/no2"), Some("test 2"));
-		check(router.find(Get, "path/to/test1/no/test3"), Some("test 3"));
-		check(router.find(Get, "path/to/test1/no"), None);
+		check(router.find(&Get, ""), Some("test 1"));
+		check(router.find(&Get, "path/to/test/no2"), Some("test 2"));
+		check(router.find(&Get, "path/to/test1/no/test3"), Some("test 3"));
+		check(router.find(&Get, "path/to/test1/no"), None);
 	}
 
 	#[test]
 	fn one_variable_route() {
 		let routes = [(Get, "path/:a/test1", "test_var")];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
-		check_variable(router.find(Get, "path/to/test1"), Some("to"));
-		check_variable(router.find(Get, "path/to"), None);
-		check_variable(router.find(Get, "path/to/test1/nothing"), None);
+		check_variable(router.find(&Get, "path/to/test1"), Some("to"));
+		check_variable(router.find(&Get, "path/to"), None);
+		check_variable(router.find(&Get, "path/to/test1/nothing"), None);
 	}
 
 	#[test]
@@ -418,26 +422,26 @@ mod test {
 			(Post, "path/to/:c/:a/:b", "test_var")
 		];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
-		check_variable(router.find(Get, "path/to/test1"), Some(""));
-		check_variable(router.find(Get, "path/to/test/no2"), Some("to"));
-		check_variable(router.find(Get, "path/to/test1/no/test3"), Some("test3, test1, no"));
-		check_variable(router.find(Post, "path/to/test1/no/test3"), Some("no, test3, test1"));
-		check_variable(router.find(Get, "path/to/test1/no"), None);
+		check_variable(router.find(&Get, "path/to/test1"), Some(""));
+		check_variable(router.find(&Get, "path/to/test/no2"), Some("to"));
+		check_variable(router.find(&Get, "path/to/test1/no/test3"), Some("test3, test1, no"));
+		check_variable(router.find(&Post, "path/to/test1/no/test3"), Some("no, test3, test1"));
+		check_variable(router.find(&Get, "path/to/test1/no"), None);
 	}
 
 	#[test]
 	fn one_wildcard_end_route() {
 		let routes = [(Get, "path/to/*", "test 1")];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
-		check(router.find(Get, "path/to/test1"), Some("test 1"));
-		check(router.find(Get, "path/to/same/test1"), Some("test 1"));
-		check(router.find(Get, "path/to/the/same/test1"), Some("test 1"));
-		check(router.find(Get, "path/to"), None);
-		check(router.find(Get, "path"), None);
+		check(router.find(&Get, "path/to/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to/same/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to/the/same/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to"), None);
+		check(router.find(&Get, "path"), None);
 	}
 
 
@@ -445,27 +449,27 @@ mod test {
 	fn one_wildcard_middle_route() {
 		let routes = [(Get, "path/*/test1", "test 1")];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
-		check(router.find(Get, "path/to/test1"), Some("test 1"));
-		check(router.find(Get, "path/to/same/test1"), Some("test 1"));
-		check(router.find(Get, "path/to/the/same/test1"), Some("test 1"));
-		check(router.find(Get, "path/to"), None);
-		check(router.find(Get, "path"), None);
+		check(router.find(&Get, "path/to/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to/same/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to/the/same/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to"), None);
+		check(router.find(&Get, "path"), None);
 	}
 
 	#[test]
 	fn one_universal_wildcard_route() {
 		let routes = [(Get, "*", "test 1")];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
-		check(router.find(Get, "path/to/test1"), Some("test 1"));
-		check(router.find(Get, "path/to/same/test1"), Some("test 1"));
-		check(router.find(Get, "path/to/the/same/test1"), Some("test 1"));
-		check(router.find(Get, "path/to"), Some("test 1"));
-		check(router.find(Get, "path"), Some("test 1"));
-		check(router.find(Get, ""), None);
+		check(router.find(&Get, "path/to/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to/same/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to/the/same/test1"), Some("test 1"));
+		check(router.find(&Get, "path/to"), Some("test 1"));
+		check(router.find(&Get, "path"), Some("test 1"));
+		check(router.find(&Get, ""), None);
 	}
 
 	#[test]
@@ -476,13 +480,13 @@ mod test {
 			(Get, "path/to/*/*/*", "test 3")
 		];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
-		check(router.find(Get, "path/to/test1"), Some("test 1"));
-		check(router.find(Get, "path/for/test/no2"), Some("test 2"));
-		check(router.find(Get, "path/to/test1/no/test3"), Some("test 3"));
-		check(router.find(Get, "path/to/test1/no/test3/again"), Some("test 3"));
-		check(router.find(Get, "path/to"), None);
+		check(router.find(&Get, "path/to/test1"), Some("test 1"));
+		check(router.find(&Get, "path/for/test/no2"), Some("test 2"));
+		check(router.find(&Get, "path/to/test1/no/test3"), Some("test 3"));
+		check(router.find(&Get, "path/to/test1/no/test3/again"), Some("test 3"));
+		check(router.find(&Get, "path/to"), None);
 	}
 
 	#[test]
@@ -494,13 +498,13 @@ mod test {
 			(Get, "/path/to/test3/again/", "test 3")
 		];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
-		check(router.find(Get, ""), Some("test 1"));
-		check(router.find(Get, "path/to/test/no2/"), Some("test 2"));
-		check(router.find(Get, "path/to/test3"), Some("test 3"));
-		check(router.find(Get, "/path/to/test3/again"), Some("test 3"));
-		check(router.find(Get, "//path/to/test3"), None);
+		check(router.find(&Get, ""), Some("test 1"));
+		check(router.find(&Get, "path/to/test/no2/"), Some("test 2"));
+		check(router.find(&Get, "path/to/test3"), Some("test 3"));
+		check(router.find(&Get, "/path/to/test3/again"), Some("test 3"));
+		check(router.find(&Get, "//path/to/test3"), None);
 	}
 
 	#[test]
@@ -512,14 +516,14 @@ mod test {
 			(Put, "/", "put")
 		];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 
 
-		check(router.find(Get, "/"), Some("get"));
-		check(router.find(Post, "/"), Some("post"));
-		check(router.find(Delete, "/"), Some("delete"));
-		check(router.find(Put, "/"), Some("put"));
-		check(router.find(Head, "/"), None);
+		check(router.find(&Get, "/"), Some("get"));
+		check(router.find(&Post, "/"), Some("post"));
+		check(router.find(&Delete, "/"), Some("delete"));
+		check(router.find(&Put, "/"), Some("put"));
+		check(router.find(&Head, "/"), None);
 	}
 
 	#[test]
@@ -536,17 +540,17 @@ mod test {
 			(Post, "test1/no/test3", "test 3 post")
 		];
 
-		let mut router1 = Router::from_routes(&routes1);
-		let router2 = Router::from_routes(&routes2);
+		let mut router1 = TreeRouter::from_routes(&routes1);
+		let router2 = TreeRouter::from_routes(&routes2);
 
 		router1.insert_router("path/to", &router2);
 
-		check(router1.find(Get, ""), Some("test 1"));
-		check(router1.find(Get, "path/to/test/no2"), Some("test 2"));
-		check(router1.find(Get, "path/to/test1/no/test3"), Some("test 3"));
-		check(router1.find(Post, "path/to/test1/no/test3"), Some("test 3 post"));
-		check(router1.find(Get, "path/to/test/no5"), Some("test 5"));
-		check(router1.find(Get, "path/to"), Some("test 1"));
+		check(router1.find(&Get, ""), Some("test 1"));
+		check(router1.find(&Get, "path/to/test/no2"), Some("test 2"));
+		check(router1.find(&Get, "path/to/test1/no/test3"), Some("test 3"));
+		check(router1.find(&Post, "path/to/test1/no/test3"), Some("test 3 post"));
+		check(router1.find(&Get, "path/to/test/no5"), Some("test 5"));
+		check(router1.find(&Get, "path/to"), Some("test 1"));
 	}
 
 
@@ -555,13 +559,13 @@ mod test {
 		let routes1 = [(Get, ":a/:b/:c", "test 2")];
 		let routes2 = [(Get, ":b/:c/test", "test 1")];
 
-		let mut router1 = Router::from_routes(&routes1);
-		let router2 = Router::from_routes(&routes2);
+		let mut router1 = TreeRouter::from_routes(&routes1);
+		let router2 = TreeRouter::from_routes(&routes2);
 
 		router1.insert_router(":a", &router2);
 		
-		check_variable(router1.find(Get, "path/to/test1"), Some("path, to, test1"));
-		check_variable(router1.find(Get, "path/to/test1/test"), Some("path, to, test1"));
+		check_variable(router1.find(&Get, "path/to/test1"), Some("path, to, test1"));
+		check_variable(router1.find(&Get, "path/to/test1/test"), Some("path, to, test1"));
 	}
 
 
@@ -570,16 +574,16 @@ mod test {
 		let routes1 = [(Get, "path/to", "test 2")];
 		let routes2 = [(Get, "*/test1", "test 1")];
 
-		let mut router1 = Router::from_routes(&routes1);
-		let router2 = Router::from_routes(&routes2);
+		let mut router1 = TreeRouter::from_routes(&routes1);
+		let router2 = TreeRouter::from_routes(&routes2);
 
 		router1.insert_router("path", &router2);
 
-		check(router1.find(Get, "path/to/test1"), Some("test 1"));
-		check(router1.find(Get, "path/to/same/test1"), Some("test 1"));
-		check(router1.find(Get, "path/to/the/same/test1"), Some("test 1"));
-		check(router1.find(Get, "path/to"), Some("test 2"));
-		check(router1.find(Get, "path"), None);
+		check(router1.find(&Get, "path/to/test1"), Some("test 1"));
+		check(router1.find(&Get, "path/to/same/test1"), Some("test 1"));
+		check(router1.find(&Get, "path/to/the/same/test1"), Some("test 1"));
+		check(router1.find(&Get, "path/to"), Some("test 2"));
+		check(router1.find(&Get, "path"), None);
 	}
 
 	
@@ -614,11 +618,11 @@ mod test {
 			"path/to/test1/nothing/at/all"
 		];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 		let mut counter = 0;
 
 		b.iter(|| {
-			router.find(Get, paths[counter]);
+			router.find(&Get, paths[counter]);
 			counter = (counter + 1) % paths.len()
 		});
 	}
@@ -645,11 +649,11 @@ mod test {
 			"path/to/test1/nothing/at/all/and/all/and/all/and/a"
 		];
 
-		let router = Router::from_routes(&routes);
+		let router = TreeRouter::from_routes(&routes);
 		let mut counter = 0;
 
 		b.iter(|| {
-			router.find(Get, paths[counter]);
+			router.find(&Get, paths[counter]);
 			counter = (counter + 1) % paths.len()
 		});
 	}
