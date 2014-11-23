@@ -207,6 +207,10 @@ pub trait Handler<C> {
 	fn handle_request(&self, request: Request, cache: &C, response: &mut Response);
 }
 
+impl<C> Handler<C> for () {
+	fn handle_request(&self, _request: Request, _cache: &C, _response: &mut Response) {}
+}
+
 impl<C> Handler<C> for fn(Request, &mut Response) {
 	fn handle_request(&self, request: Request, _cache: &C, response: &mut Response) {
 		(*self)(request, response);
@@ -219,7 +223,7 @@ impl<C> Handler<C> for fn(Request, &C, &mut Response) {
 	}
 }
 
-impl<C, H: Handler<C>> Router<H> for H {
+impl<C: Cache, H: Handler<C>> Router<H> for H {
 	fn find(&self, _method: &Method, _path: &str) -> Option<(&H, HashMap<String, String>)> {
 		Some((self, HashMap::new()))
 	}
@@ -266,25 +270,190 @@ pub trait ResponsePlugin {
 
 
 
-///Receives the HTTP requests and passes them on to handlers.
+///Used to build and run a server.
 ///
-///```ignore
+///Each field has a corresponding modifier method and
+///calls to these methods can be chained for quick setup.
+///
+///```no_run
 ///# use rustful::Server;
-///# use rustful::router::Router;
-///# use http::method::Method;
-///# let routes: &[(Method, &str, ()), ..0] = [].as_slice();
-///let server = Server::new(8080, Router::from_routes(routes));
-///
-///server.run();
+///# let router = ();
+///Server::new().port(8080).handlers(router).run();
 ///```
 pub struct Server<R, C> {
-	///A router with response handlers
+	///One or several response handlers.
+	pub handlers: R,
+
+	///The port where the server will listen for requests.
+	pub port: Port,
+
+	///The host address where the server will listen for requests.
+	pub host: IpAddr,
+
+	///The content of the server header.
+	pub server: String,
+
+	///The default media type.
+	pub content_type: MediaType,
+
+	///A structure where resources are cached.
+	pub cache: C,
+
+	///How often the cache should be cleaned. Measured in seconds.
+	pub cache_clean_interval: Option<i64>,
+
+	///The request plugin stack.
+	#[experimental]
+	pub request_plugins: Vec<Box<RequestPlugin + Send + Sync>>,
+
+	///The response plugin stack.
+	#[experimental]
+	pub response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
+}
+
+impl Server<(), ()> {
+	///Create a new empty server which will listen on host address `0.0.0.0` and port `80`.
+	pub fn new() -> Server<(), ()> {
+		Server {
+			handlers: (),
+			port: 80,
+			host: Ipv4Addr(0, 0, 0, 0),
+			server: "rustful".into_string(),
+			content_type: MediaType {
+				type_: String::from_str("text"),
+				subtype: String::from_str("plain"),
+				parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
+			},
+			cache: (),
+			cache_clean_interval: None,
+			request_plugins: Vec::new(),
+			response_plugins: Vec::new(),
+		}
+	}
+}
+
+impl<R, C> Server<R, C> {
+	///Set request handlers.
+	pub fn handlers<NewRouter: Router<H>, H: Handler<C>>(self, handlers: NewRouter) -> Server<NewRouter, C> {
+		Server {
+			handlers: handlers,
+			port: self.port,
+			host: self.host,
+			server: self.server,
+			content_type: self.content_type,
+			cache: self.cache,
+			cache_clean_interval: self.cache_clean_interval,
+			request_plugins: self.request_plugins,
+			response_plugins: self.response_plugins,
+		}
+	}
+
+	///Change the port. Default is `80`.
+	pub fn port(mut self, port: Port) -> Server<R, C> {
+		self.port = port;
+		self
+	}
+
+	///Change the host address. Default is `0.0.0.0`.
+	pub fn host(mut self, host: IpAddr) -> Server<R, C> {
+		self.host = host;
+		self
+	}
+
+	///Set resource cache.
+	pub fn cache<NewCache>(self, cache: NewCache) -> Server<R, NewCache> {
+		Server {
+			handlers: self.handlers,
+			port: self.port,
+			host: self.host,
+			server: self.server,
+			content_type: self.content_type,
+			cache: cache,
+			cache_clean_interval: self.cache_clean_interval,
+			request_plugins: self.request_plugins,
+			response_plugins: self.response_plugins,
+		}
+	}
+
+	///Set the minimal number of seconds between each cache clean.
+	///
+	///Passing `None` disables cache cleaning.
+	pub fn cache_clean_interval(mut self, interval: Option<u32>) -> Server<R, C> {
+		self.cache_clean_interval = interval.map(|i| i as i64);
+		self
+	}
+
+	///Change the server response header. Default is `rustful`.
+	pub fn server_name(mut self, name: String) -> Server<R, C> {
+		self.server = name;
+		self
+	}
+
+	///Change the default content type. Default is `text/plain`.
+	pub fn content_type(mut self, content_type: MediaType) -> Server<R, C> {
+		self.content_type = content_type;
+		self
+	}
+
+	///Add a request plugin to the plugin stack.
+	#[experimental]
+	pub fn with_request_plugin<P: RequestPlugin + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
+		self.request_plugins.push(box plugin as Box<RequestPlugin + Send + Sync>);
+		self
+	}
+
+	///Add a response plugin to the plugin stack.
+	#[experimental]
+	pub fn with_response_plugin<P: ResponsePlugin + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
+		self.response_plugins.push(box plugin as Box<ResponsePlugin + Send + Sync>);
+		self
+	}
+}
+
+impl<R, H, C> Server<R, C>
+	where
+	R: Router<H> + Send + Sync,
+	H: Handler<C> + Send + Sync,
+	C: Cache + Send + Sync
+{
+	///Start the server and run forever.
+	///This will only return if the initial connection fails.
+	pub fn run(self) {
+		let server = self.build();
+		server.serve_forever();
+	}
+
+	///Build a runnable instance of the server.
+	pub fn build(self) -> ServerInstance<R, C> {
+		ServerInstance {
+			handlers: Arc::new(self.handlers),
+			port: self.port,
+			host: self.host,
+			server: self.server,
+			content_type: self.content_type,
+			cache: Arc::new(self.cache),
+			cache_clean_interval: self.cache_clean_interval,
+			last_cache_clean: Arc::new(RWLock::new(Timespec::new(0, 0))),
+			request_plugins: Arc::new(self.request_plugins),
+			response_plugins: Arc::new(self.response_plugins),
+		}
+	}
+}
+
+///A runnable instance of a server.
+///
+///It's not meant to be used directly,
+///unless additional control is required.
+///
+///```no_run
+///# use rustful::Server;
+///# let router = ();
+///let server_instance = Server::new().port(8080).handlers(router).build();
+///```
+pub struct ServerInstance<R, C> {
 	handlers: Arc<R>,
 
-	///The port where the server will listen for requests
 	port: Port,
-
-	///Host address
 	host: IpAddr,
 
 	server: String,
@@ -294,88 +463,16 @@ pub struct Server<R, C> {
 	cache_clean_interval: Option<i64>,
 	last_cache_clean: Arc<RWLock<Timespec>>,
 
-	//An ASCII star will be rewarded to the one who sugests a better alternative to the RWLock.
-	request_plugins: Arc<RWLock<Vec<Box<RequestPlugin + Send + Sync>>>>,
-	response_plugins: Arc<RWLock<Vec<Box<ResponsePlugin + Send + Sync>>>>
+	request_plugins: Arc<Vec<Box<RequestPlugin + Send + Sync>>>,
+	response_plugins: Arc<Vec<Box<ResponsePlugin + Send + Sync>>>
 }
 
-impl<H: Handler<()> + Send + Sync, R: Router<H> + Send + Sync> Server<R, ()> {
-	///Create a new `Server` which will listen on the provided port and host address `0.0.0.0`.
-	pub fn new(port: Port, handlers: R) -> Server<R, ()> {
-		Server::with_cache(port, (), handlers)
-	}
-}
-
-impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync, R: Router<H> + Send + Sync> Server<R, C> {
-	///Creates a new `Server` with a resource cache.
-	///
-	///The server will listen listen on the provided port and host address `0.0.0.0`.
-	///Cache cleaning is disabled by default. 
-	pub fn with_cache(port: Port, cache: C, handlers: R) -> Server<R, C> {
-		Server {
-			handlers: Arc::new(handlers),
-			port: port,
-			host: Ipv4Addr(0, 0, 0, 0),
-			server: "rustful".into_string(),
-			content_type: MediaType {
-				type_: String::from_str("text"),
-				subtype: String::from_str("plain"),
-				parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
-			},
-			cache: Arc::new(cache),
-			cache_clean_interval: None,
-			last_cache_clean: Arc::new(RWLock::new(Timespec::new(0, 0))),
-			request_plugins: Arc::new(RWLock::new(Vec::new())),
-			response_plugins: Arc::new(RWLock::new(Vec::new())),
-		}
-	}
-
-	///Start the server and run forever.
-	///This will only return if the initial connection fails.
-	pub fn run(self) {
-		self.serve_forever();
-	}
-}
-
-impl<R, C> Server<R, C> {
-	///Change the host address.
-	pub fn set_host(&mut self, host: IpAddr) {
-		self.host = host;
-	}
-
-	///Set the minimal number of seconds between each cache clean.
-	///
-	///Passing `None` disables cache cleaning.
-	pub fn set_clean_interval(&mut self, interval: Option<u32>) {
-		self.cache_clean_interval = interval.map(|i| i as i64);
-	}
-
-	///Change the server response header.
-	pub fn set_server_name(&mut self, name: String) {
-		self.server = name;
-	}
-
-	///Change the default content type.
-	pub fn set_content_type(&mut self, content_type: MediaType) {
-		self.content_type = content_type;
-	}
-
-	///Add a request plugin to the plugin stack.
-	#[experimental]
-	pub fn add_request_plugin<P: RequestPlugin + Send + Sync>(&mut self, plugin: P) {
-		self.request_plugins.write().push(box plugin as Box<RequestPlugin + Send + Sync>);
-	}
-
-	///Add a response plugin to the plugin stack.
-	#[experimental]
-	pub fn add_response_plugin<P: ResponsePlugin + Send + Sync>(&mut self, plugin: P) {
-		self.response_plugins.write().push(box plugin as Box<ResponsePlugin + Send + Sync>);
-	}
+impl<R, C> ServerInstance<R, C> {
 
 	fn modify_request(&self, request: Request) -> RequestAction {
 		let mut result = RequestAction::Continue(request);
 
-		for plugin in self.request_plugins.read().iter() {
+		for plugin in self.request_plugins.iter() {
 			result = match result {
 				RequestAction::Continue(request) => plugin.modify(request),
 				_ => return result
@@ -384,9 +481,15 @@ impl<R, C> Server<R, C> {
 
 		result
 	}
+
 }
 
-impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync, R: Router<H> + Send + Sync> http::server::Server for Server<R, C> {
+impl<R, H, C> http::server::Server for ServerInstance<R, C>
+	where
+	R: Router<H> + Send + Sync,
+	H: Handler<C> + Send + Sync,
+	C: Cache + Send + Sync,
+{
 	fn get_config(&self) -> Config {
 		Config {
 			bind_address: SocketAddr {
@@ -405,8 +508,7 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync, R: Router<H> + Send + 
 			..
 		} = request;
 
-		let plugins = self.response_plugins.read();
-		let mut response = Response::new(writer, plugins.deref());
+		let mut response = Response::new(writer, self.response_plugins.deref());
 		response.headers.date = Some(time::now_utc());
 		response.headers.content_type = Some(self.content_type.clone());
 		response.headers.server = Some(self.server.clone());
@@ -483,9 +585,13 @@ impl<H: Handler<C> + Send + Sync, C: Cache + Send + Sync, R: Router<H> + Send + 
 	}
 }
 
-impl<R: Send + Sync, C: Send + Sync> Clone for Server<R, C> {
-	fn clone(&self) -> Server<R, C> {
-		Server {
+impl<R, C> Clone for ServerInstance<R, C>
+	where
+	R: Send + Sync,
+	C: Send + Sync
+{
+	fn clone(&self) -> ServerInstance<R, C> {
+		ServerInstance {
 			handlers: self.handlers.clone(),
 			port: self.port,
 			host: self.host.clone(),

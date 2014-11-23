@@ -58,9 +58,7 @@ fn main() {
 	};
 
 	//Handlers implements the Router trait, so it can be passed to the server as it is
-	let server = Server::with_cache(8080, cache, say_hello);
-
-	server.run();
+	Server::new().cache(cache).handlers(say_hello).port(8080).run();
 }
 
 fn read_string(mut file: IoResult<File>) -> IoResult<Option<String>> {

@@ -21,7 +21,5 @@ fn main() {
 
 	let routes = routes!{"/" => Get: say_hello, "/:person" => Get: say_hello};
 
-	let server = Server::new(8080, TreeRouter::from_routes(&routes));
-
-	server.run();
+	Server::new().port(8080).handlers(TreeRouter::from_routes(&routes)).run();
 }

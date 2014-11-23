@@ -57,10 +57,8 @@ fn handler(request: Request, response: &mut Response) {
 }
 
 fn main() {
-	let server = Server::new(8080, router!{"/" => Get: handler});
-
-	//Start the server. All code beyond this point is unreachable
-	server.run();
+	//Build and start the server. All code beyond this point is unreachable
+	Server::new().port(8080).handlers(router!{"/" => Get: handler}).run();
 }
 ```
 

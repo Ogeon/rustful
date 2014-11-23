@@ -14,7 +14,7 @@ use http::method::Get;
 use http::status::Status;
 use http::headers::response::HeaderCollection;
 
-fn say_hello(request: Request, response: &mut Response) {
+fn say_hello(request: Request, _cache: &(), response: &mut Response) {
 	let person = match request.variables.get(&"person".into_string()) {
 		Some(name) => name.as_slice(),
 		None => "stranger"
@@ -33,16 +33,18 @@ fn main() {
 		}
 	};
 
-	let mut server = Server::new(8080, router);
+	Server::new()
+		   .handlers(router)
+		   .port(8080)
 
-	//Log path, change path, log again
-	server.add_request_plugin(RequestLogger::new());
-	server.add_request_plugin(PathPrefix::new("print"));
-	server.add_request_plugin(RequestLogger::new());
+			//Log path, change path, log again
+		   .with_request_plugin(RequestLogger::new())
+		   .with_request_plugin(PathPrefix::new("print"))
+		   .with_request_plugin(RequestLogger::new())
 
-	server.add_response_plugin(Jsonp::new("setMessage"));
+		   .with_response_plugin(Jsonp::new("setMessage"))
 
-	server.run();
+		   .run();
 }
 
 struct RequestLogger {
