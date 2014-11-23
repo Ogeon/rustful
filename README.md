@@ -80,7 +80,6 @@ fn main() {
 ```
 
 ##Contributing
-Yes, please! This is currently a one man show, so any help is welcome. Especially ideas. The best way to
-contribute, at the moment, is by giving me feedback or sending pull requests with fixes, corrections and useful/must-have
-additions. Remember, when sending pull requests, that it is better to do a few things well, than many things
-poorly.
+Yes, please! This is currently a one man show, so any help is welcome. Just
+fork it, implement your idea or fix the bug you have found and send a pull
+request.
