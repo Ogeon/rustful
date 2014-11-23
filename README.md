@@ -37,10 +37,13 @@ git = "https://github.com/Ogeon/rustful"
 ```
 
 ##Write your server
-Here is a simple example of how `my_project.rs` could look like:
+Here is a simple example of what a simple project could look like. Visit
+`http://localhost:8080` or `http://localhost:8080/Olivia` (if your name is
+Olivia) to try it.
 
 ```rust
-//Include rustful_macros during syntax phase to be able to use the macros
+//Include `rustful_macros` during the plugin phase
+//to be able to use `router!` and `try_send!`.
 #![feature(phase)]
 #[phase(plugin)]
 extern crate rustful_macros;
@@ -50,15 +53,29 @@ extern crate http;
 use rustful::{Server, Request, Response};
 use http::method::Get;
 
-///Our handler function
-fn handler(request: Request, response: &mut Response) {
-	//Send something nice to the user
-	try_send!(response, "Hello, user! It looks like this server works fine." while "sending hello");
+fn say_hello(request: Request, response: &mut Response) {
+    //Get the value of the path variable `:person`, from below.
+    let person = match request.variables.get(&"person".into_string()) {
+        Some(name) => name.as_slice(),
+        None => "stranger"
+    };
+
+    //Use the value of the path variable to say hello.
+    try_send!(response, format!("Hello, {}!", person) while "saying hello");
 }
 
 fn main() {
-	//Build and start the server. All code beyond this point is unreachable
-	Server::new().port(8080).handlers(router!{"/" => Get: handler}).run();
+    let router = router!{
+        //Handle requests for root...
+        "/" => Get: say_hello,
+
+        //...and one level below.
+        //`:person` is a path variable and it will be accessible in the handler.
+        "/:person" => Get: say_hello
+    };
+
+    //Build and run the server. Anything below this point is unreachable.
+    Server::new().port(8080).handlers(router).run();
 }
 ```
 

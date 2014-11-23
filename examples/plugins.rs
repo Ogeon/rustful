@@ -7,7 +7,7 @@ extern crate http;
 
 use std::sync::RWLock;
 
-use rustful::{Server, Request, Response, RequestPlugin, ResponsePlugin};
+use rustful::{Server, TreeRouter, Request, Response, RequestPlugin, ResponsePlugin};
 use rustful::{RequestAction, Continue};
 use rustful::{ResponseAction, ResponseData};
 use http::method::Get;
@@ -26,7 +26,7 @@ fn say_hello(request: Request, _cache: &(), response: &mut Response) {
 fn main() {
 	println!("Visit http://localhost:8080 or http://localhost:8080/Peter (if your name is Peter) to try this example.");
 
-	let router = router!{
+	let routes = routes!{
 		"print" => {
 			Get: say_hello,
 			":person" => Get: say_hello
@@ -34,7 +34,7 @@ fn main() {
 	};
 
 	Server::new()
-		   .handlers(router)
+		   .handlers(TreeRouter::from_routes(&routes))
 		   .port(8080)
 
 			//Log path, change path, log again
