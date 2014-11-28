@@ -193,7 +193,7 @@ impl<T> Router<T> for TreeRouter<T> {
 								}
 							});
 
-							let mut var_map = variable_names.iter().zip(values).map(|(key, value)| {
+							let var_map = variable_names.iter().zip(values).map(|(key, value)| {
 								(key.clone(), value)
 							});
 
