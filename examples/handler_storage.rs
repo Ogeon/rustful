@@ -2,12 +2,11 @@
 #[phase(plugin)]
 extern crate rustful_macros;
 
-extern crate sync;
 extern crate rustful;
 extern crate http;
 
 use std::io::{File, IoResult};
-use sync::{Arc, RWLock};
+use std::sync::{Arc, RWLock};
 
 use rustful::{Server, Request, Response, Handler};
 use rustful::cache::{CachedValue, CachedProcessedFile};

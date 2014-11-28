@@ -13,7 +13,6 @@ extern crate test;
 
 extern crate url;
 extern crate time;
-extern crate sync;
 extern crate http;
 
 pub use router::TreeRouter;
@@ -32,7 +31,7 @@ use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
 use std::collections::HashMap;
 use std::error::FromError;
 
-use sync::{Arc, RWLock};
+use std::sync::{Arc, RWLock};
 
 use time::Timespec;
 

@@ -2,11 +2,11 @@
 
 use std::io::{File, IoResult};
 use std::io::fs::PathExtensions;
+use std::sync::{RWLock, RWLockReadGuard};
 
 use time;
 use time::Timespec;
 
-use sync::{RWLock, RWLockReadGuard};
 
 ///This trait provides functions for handling cached resources.
 pub trait CachedValue<'a, Value> {
