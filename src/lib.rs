@@ -30,7 +30,7 @@ use std::io::{IoResult, IoError};
 use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
 use std::collections::HashMap;
 use std::error::FromError;
-
+use std::default::Default;
 use std::sync::{Arc, RWLock};
 
 use time::Timespec;
@@ -313,21 +313,7 @@ pub struct Server<R, C> {
 impl Server<(), ()> {
 	///Create a new empty server which will listen on host address `0.0.0.0` and port `80`.
 	pub fn new() -> Server<(), ()> {
-		Server {
-			handlers: (),
-			port: 80,
-			host: Ipv4Addr(0, 0, 0, 0),
-			server: "rustful".into_string(),
-			content_type: MediaType {
-				type_: String::from_str("text"),
-				subtype: String::from_str("plain"),
-				parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
-			},
-			cache: (),
-			cache_clean_interval: None,
-			request_plugins: Vec::new(),
-			response_plugins: Vec::new(),
-		}
+		Default::default()
 	}
 }
 
@@ -435,6 +421,24 @@ impl<R, H, C> Server<R, C>
 			last_cache_clean: Arc::new(RWLock::new(Timespec::new(0, 0))),
 			request_plugins: Arc::new(self.request_plugins),
 			response_plugins: Arc::new(self.response_plugins),
+		}
+	}
+}
+
+impl<R, C> Default for Server<R, C> where R: Default, C: Default {
+	fn default() -> Server<R, C> {
+		Server {
+			port: 80,
+			host: Ipv4Addr(0, 0, 0, 0),
+			server: "rustful".into_string(),
+			content_type: MediaType {
+				type_: String::from_str("text"),
+				subtype: String::from_str("plain"),
+				parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
+			},
+			cache_clean_interval: None,
+
+			..Default::default()
 		}
 	}
 }
