@@ -19,7 +19,7 @@ pub use router::TreeRouter;
 
 use http::server::Server as HttpServer;
 use http::server::{ResponseWriter, Config};
-use http::server::request::{AbsoluteUri, AbsolutePath};
+use http::server::request::RequestUri::{AbsoluteUri, AbsolutePath};
 use http::method::Method;
 use http::status;
 use http::status::{NotFound, BadRequest, Status};

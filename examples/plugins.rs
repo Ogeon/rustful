@@ -8,7 +8,8 @@ extern crate http;
 use std::sync::RWLock;
 
 use rustful::{Server, TreeRouter, Request, Response, RequestPlugin, ResponsePlugin};
-use rustful::{RequestAction, Continue};
+use rustful::RequestAction;
+use rustful::RequestAction::Continue;
 use rustful::{ResponseAction, ResponseData};
 use http::method::Get;
 use http::status::Status;
