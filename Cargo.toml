@@ -9,13 +9,18 @@ authors = ["hello@erikhedvall.nu"]
 name = "rustful"
 path = "src/lib.rs"
 
-[dependencies.rustful_macros]
+[features]
+default = ["macros"]
+ssl = ["http/ssl"]
+macros = ["rustful_macros"]
 
+[dependencies.rustful_macros]
 path = "macros"
+optional = true
 
 [dependencies.http]
-
 git = "https://github.com/chris-morgan/rust-http"
+default-features = false
 
 [dependencies.time]
 git = "https://github.com/rust-lang/time"

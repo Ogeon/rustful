@@ -36,6 +36,14 @@ and the following lines to get all the helpful macros:
 git = "https://github.com/Ogeon/rustful"
 ```
 
+###Default Features
+
+* `macros` - A collection of helpful macros.
+
+###Optional features
+
+* `ssl` - Enables SSL in rust-http.
+
 ##Write your server
 Here is a simple example of what a simple project could look like. Visit
 `http://localhost:8080` or `http://localhost:8080/Olivia` (if your name is
