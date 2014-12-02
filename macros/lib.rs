@@ -235,7 +235,7 @@ fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, P<ast::Expr>)> {
 	let mut methods = Vec::new();
 
 	loop {
-		methods.push(parser.parse_path(parser::NoTypesAllowed).path);
+		methods.push(parser.parse_path(parser::NoTypesAllowed));
 
 		if parser.eat(&token::Colon) {
 			break;
