@@ -1,7 +1,5 @@
 #![crate_name = "rustful_macros"]
 
-#![comment = "Macros for rustful"]
-#![license = "MIT"]
 #![crate_type = "dylib"]
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]

@@ -1,7 +1,5 @@
 #![crate_name = "rustful"]
 
-#![comment = "RESTful web framework"]
-#![license = "MIT"]
 #![crate_type = "rlib"]
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
