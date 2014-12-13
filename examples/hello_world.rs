@@ -5,9 +5,8 @@
 extern crate rustful_macros;
 
 extern crate rustful;
-extern crate http;
 use rustful::{Server, Request, Response};
-use http::method::Get;
+use rustful::Method::Get;
 
 fn say_hello(request: Request, response: &mut Response) {
     //Get the value of the path variable `:person`, from below.
@@ -33,5 +32,10 @@ fn main() {
     };
 
     //Build and run the server. Anything below this point is unreachable.
-    Server::new().port(8080).handlers(router).run();
+    let server_result = Server::new().port(8080).handlers(router).run();
+
+    match server_result {
+        Ok(_server) => {},
+        Err(e) => println!("could not start server: {}", e)
+    }
 }

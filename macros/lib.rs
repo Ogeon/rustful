@@ -295,19 +295,19 @@ response.headers.content_type = content_type!("image", "png");
 #[macro_export]
 macro_rules! content_type(
 	($main_type:expr, $sub_type:expr) => ({
-		Some(::http::headers::content_type::MediaType {
-			type_: String::from_str($main_type),
-			subtype: String::from_str($sub_type),
-			parameters: Vec::new()
-		})
+		::rustful::mime::Mime (
+			std::str::FromStr::from_str($main_type).unwrap(),
+			std::str::FromStr::from_str($sub_type).unwrap(),
+			Vec::new()
+		)
 	});
 
 	($main_type:expr, $sub_type:expr, $($param:expr: $value:expr),+) => ({
-		Some(::http::headers::content_type::MediaType {
-			type_: String::from_str($main_type),
-			subtype: String::from_str($sub_type),
-			parameters: vec!( $( (String::from_str($param), String::from_str($value)) ),+ )
-		})
+		::rustful::mime::Mime (
+			std::str::FromStr::from_str($main_type).unwrap(),
+			std::str::FromStr::from_str($sub_type).unwrap(),
+			vec!( $( (std::str::FromStr::from_str($param).unwrap(), std::str::FromStr::from_str($value).unwrap()) ),+ )
+		)
 	});
 )
 
@@ -326,12 +326,12 @@ macro_rules! try_send(
 			Ok(v) => v,
 			Err(::rustful::ResponseError::IoError(e)) => {
 				println!("IO error: {}", e);
-				$response.status = http::status::InternalServerError;
+				$response.status = ::rustful::StatusCode::InternalServerError;
 				return;
 			},
 			Err(::rustful::ResponseError::PluginError(e)) => {
 				println!("plugin error: {}", e);
-				$response.status = http::status::InternalServerError;
+				$response.status = ::rustful::StatusCode::InternalServerError;
 				return;
 			}
 		}
@@ -342,12 +342,12 @@ macro_rules! try_send(
 			Ok(v) => v,
 			Err(::rustful::ResponseError::IoError(e)) => {
 				println!("IO error while {}: {}", $what, e);
-				$response.status = http::status::InternalServerError;
+				$response.status = ::rustful::StatusCode::InternalServerError;
 				return;
 			},
 			Err(::rustful::ResponseError::PluginError(e)) => {
 				println!("plugin error while {}: {}", $what, e);
-				$response.status = http::status::InternalServerError;
+				$response.status = ::rustful::StatusCode::InternalServerError;
 				return;
 			}
 		}

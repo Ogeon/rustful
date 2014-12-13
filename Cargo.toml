@@ -11,16 +11,14 @@ path = "src/lib.rs"
 
 [features]
 default = ["macros"]
-ssl = ["http/ssl"]
 macros = ["rustful_macros"]
 
 [dependencies.rustful_macros]
 path = "macros"
 optional = true
 
-[dependencies.http]
-git = "https://github.com/chris-morgan/rust-http"
-default-features = false
+[dependencies.hyper]
+git = "https://github.com/hyperium/hyper"
 
 [dependencies.time]
 git = "https://github.com/rust-lang/time"

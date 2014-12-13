@@ -60,7 +60,7 @@ use Router;
 use std::collections::HashMap;
 use std::collections::hash_map::{Occupied, Vacant};
 use std::vec::Vec;
-use http::method::Method;
+use hyper::method::Method;
 
 use self::Branch::{Static, Variable, Wildcard};
 
@@ -341,7 +341,7 @@ mod test {
 	use Router;
 	use test::Bencher;
 	use super::TreeRouter;
-	use http::method::{Get, Post, Delete, Put, Head};
+	use hyper::method::Method::{Get, Post, Delete, Put, Head};
 	use std::collections::HashMap;
 	use std::vec::Vec;
 

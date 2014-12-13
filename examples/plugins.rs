@@ -3,7 +3,6 @@
 extern crate rustful_macros;
 
 extern crate rustful;
-extern crate http;
 
 use std::sync::RWLock;
 
@@ -11,9 +10,9 @@ use rustful::{Server, TreeRouter, Request, Response, RequestPlugin, ResponsePlug
 use rustful::RequestAction;
 use rustful::RequestAction::Continue;
 use rustful::{ResponseAction, ResponseData};
-use http::method::Get;
-use http::status::Status;
-use http::headers::response::HeaderCollection;
+use rustful::Method::Get;
+use rustful::StatusCode;
+use rustful::header::Headers;
 
 fn say_hello(request: Request, _cache: &(), response: &mut Response) {
 	let person = match request.variables.get(&"person".into_string()) {
@@ -34,7 +33,7 @@ fn main() {
 		}
 	};
 
-	Server::new()
+	let server_result = Server::new()
 		   .handlers(TreeRouter::from_routes(&routes))
 		   .port(8080)
 
@@ -46,6 +45,11 @@ fn main() {
 		   .with_response_plugin(Jsonp::new("setMessage"))
 
 		   .run();
+
+	match server_result {
+		Ok(_server) => {},
+		Err(e) => println!("could not start server: {}", e)
+	}
 }
 
 struct RequestLogger {
@@ -62,10 +66,10 @@ impl RequestLogger {
 
 impl RequestPlugin for RequestLogger {
 	///Count requests and log the path.
-	fn modify(&self, request: Request) -> RequestAction {
+	fn modify(&self, request: &mut Request) -> RequestAction {
 		*self.counter.write() += 1;
 		println!("Request #{} is to '{}'", *self.counter.read(), request.path);
-		Continue(request)
+		Continue
 	}
 }
 
@@ -84,10 +88,9 @@ impl PathPrefix {
 
 impl RequestPlugin for PathPrefix {
 	///Append the prefix to the path
-	fn modify(&self, request: Request) -> RequestAction {
-		let mut request = request;
+	fn modify(&self, request: &mut Request) -> RequestAction {
 		request.path = format!("/{}{}", self.prefix.trim_chars('/'), request.path);
-		Continue(request)
+		Continue
 	}
 }
 
@@ -104,7 +107,7 @@ impl Jsonp {
 }
 
 impl ResponsePlugin for Jsonp {
-	fn begin(&self, status: Status, headers: HeaderCollection) -> (Status, HeaderCollection, ResponseAction) {
+	fn begin(&self, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
 		let action = ResponseAction::write(Some(format!("{}(", self.function)));
 		(status, headers, action)
 	}
