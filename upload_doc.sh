@@ -1,4 +1,4 @@
-if [ "$TRAVIS_PULL_REQUEST" == "false" ] && [ -e doc ]; then
+if [ "$TRAVIS_PULL_REQUEST" == "false" ] && [ "$TRAVIS_BRANCH" == "master" ] && [ -e doc ]; then
 echo Starting gh-pages upload...
 
 cp -r doc $HOME/doc
