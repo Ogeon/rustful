@@ -58,7 +58,7 @@ fn sub(value: int) -> int {
 }
 
 fn read_string(mut file: IoResult<File>) -> IoResult<Option<String>> {
-	//Make the file mutable and try to read it into a string
+	//Read file into a string
 	file.read_to_string().map(|s| Some(s))
 }
 

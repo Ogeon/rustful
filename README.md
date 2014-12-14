@@ -77,7 +77,7 @@ fn main() {
         "/:person" => Get: say_hello
     };
 
-    //Build and run the server. Anything below this point is unreachable.
+    //Build and run the server.
     let server_result = Server::new().port(8080).handlers(router).run();
 
     match server_result {
