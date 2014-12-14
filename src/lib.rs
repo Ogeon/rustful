@@ -300,6 +300,10 @@ pub struct Server<R, C> {
 	///The host address where the server will listen for requests.
 	pub host: IpAddr,
 
+	///The number of tasks to be used in the server task pool.
+	///The default (`None`) is based on recommendations from the system.
+	pub tasks: Option<uint>,
+
 	///The content of the server header.
 	pub server: String,
 
@@ -335,6 +339,7 @@ impl<R, C> Server<R, C> {
 			handlers: handlers,
 			port: self.port,
 			host: self.host,
+			tasks: self.tasks,
 			server: self.server,
 			content_type: self.content_type,
 			cache: self.cache,
@@ -356,12 +361,22 @@ impl<R, C> Server<R, C> {
 		self
 	}
 
+	///Set the number of tasks to be used in the server task pool.
+	///
+	///Passing `None` will set it to the default number of tasks,
+	///based on recommendations from the system.
+	pub fn tasks(mut self, tasks: Option<uint>) -> Server<R, C> {
+		self.tasks = tasks;
+		self
+	}
+
 	///Set resource cache.
 	pub fn cache<NewCache>(self, cache: NewCache) -> Server<R, NewCache> {
 		Server {
 			handlers: self.handlers,
 			port: self.port,
 			host: self.host,
+			tasks: self.tasks,
 			server: self.server,
 			content_type: self.content_type,
 			cache: cache,
@@ -414,8 +429,13 @@ impl<R, H, C> Server<R, C>
 {
 	///Start the server.
 	pub fn run(self) -> hyper::HttpResult<Listening> {
+		let tasks = self.tasks;
 		let server = self.build();
-		hyper::server::Server::http(server.host, server.port).listen(server)
+		let http = hyper::server::Server::http(server.host, server.port);
+		match tasks {
+			Some(tasks) => http.listen_threads(server, tasks),
+			None => http.listen(server)
+		}
 	}
 
 	///Build a runnable instance of the server.
