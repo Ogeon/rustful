@@ -3,15 +3,15 @@
 extern crate rustful_macros;
 
 extern crate rustful;
-extern crate http;
 
 use std::io::{File, IoResult};
 use std::sync::{Arc, RWLock};
 
 use rustful::{Server, Request, Response, Handler};
 use rustful::cache::{CachedValue, CachedProcessedFile};
-use http::method::Get;
-use http::status::InternalServerError;
+use rustful::Method::Get;
+use rustful::StatusCode::InternalServerError;
+use rustful::header::ContentType;
 
 fn main() {
 	println!("Visit http://localhost:8080 to try this example.");
@@ -40,7 +40,12 @@ fn main() {
 		}
 	};
 
-	Server::new().port(8080).handlers(router).run();
+	let server_result = Server::new().port(8080).handlers(router).run();
+
+	match server_result {
+		Ok(_server) => {},
+		Err(e) => println!("could not start server: {}", e)
+	}
 }
 
 
@@ -53,7 +58,7 @@ fn sub(value: int) -> int {
 }
 
 fn read_string(mut file: IoResult<File>) -> IoResult<Option<String>> {
-	//Make the file mutable and try to read it into a string
+	//Read file into a string
 	file.read_to_string().map(|s| Some(s))
 }
 
@@ -67,25 +72,25 @@ struct Counter {
 }
 
 impl Handler<()> for Counter {
-	fn handle_request(&self, _request: Request, _cache: &(), response: &mut Response) {
+	fn handle_request(&self, _request: Request, _cache: &(), mut response: Response) {
 		self.operation.map(|o| {
 			//Lock the value for writing and update it
 			let mut value = self.value.write();
 			*value = (o)(*value);
 		});
 
-		response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
+		response.set_header(ContentType(content_type!("text", "html", "charset": "UTF-8")));
 
 		//Insert the value into the page and write it to the response
 		match *self.page.borrow() {
 			Some(ref page) => {
 				let count = self.value.read().deref().to_string();
 
-				try_send!(response, page.replace("{}", count.as_slice()));
+				try_send!(response.into_writer(), page.replace("{}", count.as_slice()));
 			},
 			None => {
 				//Oh no! The page was not loaded!
-				response.status = InternalServerError;
+				response.set_status(InternalServerError);
 			}
 		}
 	}

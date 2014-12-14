@@ -40,10 +40,6 @@ git = "https://github.com/Ogeon/rustful"
 
 * `macros` - A collection of helpful macros.
 
-###Optional features
-
-* `ssl` - Enables SSL in rust-http.
-
 ##Write your server
 Here is a simple example of what a simple project could look like. Visit
 `http://localhost:8080` or `http://localhost:8080/Olivia` (if your name is
@@ -57,11 +53,10 @@ Olivia) to try it.
 extern crate rustful_macros;
 
 extern crate rustful;
-extern crate http;
 use rustful::{Server, Request, Response};
-use http::method::Get;
+use rustful::Method::Get;
 
-fn say_hello(request: Request, response: &mut Response) {
+fn say_hello(request: Request, response: Response) {
     //Get the value of the path variable `:person`, from below.
     let person = match request.variables.get(&"person".into_string()) {
         Some(name) => name.as_slice(),
@@ -69,7 +64,7 @@ fn say_hello(request: Request, response: &mut Response) {
     };
 
     //Use the value of the path variable to say hello.
-    try_send!(response, format!("Hello, {}!", person) while "saying hello");
+    try_send!(response.into_writer(), format!("Hello, {}!", person) while "saying hello");
 }
 
 fn main() {
@@ -82,8 +77,13 @@ fn main() {
         "/:person" => Get: say_hello
     };
 
-    //Build and run the server. Anything below this point is unreachable.
-    Server::new().port(8080).handlers(router).run();
+    //Build and run the server.
+    let server_result = Server::new().port(8080).handlers(router).run();
+
+    match server_result {
+        Ok(_server) => {},
+        Err(e) => println!("could not start server: {}", e)
+    }
 }
 ```
 

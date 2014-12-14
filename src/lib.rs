@@ -4,32 +4,39 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(associated_types)]
+#![feature(associated_types, default_type_params, unsafe_destructor)]
 
 #[cfg(test)]
 extern crate test;
 
 extern crate url;
 extern crate time;
-extern crate http;
+extern crate hyper;
 
 pub use router::TreeRouter;
 
-use http::server::Server as HttpServer;
-use http::server::{ResponseWriter, Config};
-use http::server::request::RequestUri::{AbsoluteUri, AbsolutePath};
-use http::method::Method;
-use http::status;
-use http::status::{NotFound, BadRequest, Status};
-use http::headers::content_type::MediaType;
-use http::headers;
+pub use hyper::mime;
+pub use hyper::method::Method;
+pub use hyper::status::StatusCode;
+pub use hyper::header;
+pub use hyper::HttpResult;
+pub use hyper::HttpError;
+pub use hyper::server::Listening;
 
-use std::io::{IoResult, IoError};
-use std::io::net::ip::{SocketAddr, IpAddr, Ipv4Addr, Port};
+use hyper::server::Handler as HyperHandler;
+use hyper::header::{Headers, Header, HeaderFormat, Date, ContentType, ContentLength};
+use hyper::mime::Mime;
+use hyper::net::Fresh;
+use hyper::uri::RequestUri;
+use hyper::http::HttpWriter;
+use hyper::version::HttpVersion;
+
+use std::io::{IoResult, IoError, Writer};
+use std::io::net::ip::{IpAddr, Ipv4Addr, Port};
 use std::collections::HashMap;
 use std::error::FromError;
 use std::default::Default;
-use std::sync::{Arc, RWLock};
+use std::sync::RWLock;
 
 use time::Timespec;
 
@@ -46,16 +53,18 @@ pub mod request_extensions;
 
 ///The result from a `RequestPlugin`.
 #[experimental]
+#[deriving(Copy)]
 pub enum RequestAction {
 	///Continue to the next plugin in the stack.
-	Continue(Request),
+	Continue,
 
 	///Abort and send HTTP status.
-	Abort(status::Status)
+	Abort(StatusCode)
 }
 
 ///The result of a response action.
 #[experimental]
+#[deriving(Clone)]
 pub enum ResponseError {
 	///A response plugin failed.
     PluginError(String),
@@ -201,21 +210,21 @@ pub trait Router<Handler> {
 
 ///A trait for request handlers.
 pub trait Handler<C> {
-	fn handle_request(&self, request: Request, cache: &C, response: &mut Response);
+	fn handle_request(&self, request: Request, cache: &C, response: Response);
 }
 
 impl<C> Handler<C> for () {
-	fn handle_request(&self, _request: Request, _cache: &C, _response: &mut Response) {}
+	fn handle_request(&self, _request: Request, _cache: &C, _response: Response) {}
 }
 
-impl<C> Handler<C> for fn(Request, &mut Response) {
-	fn handle_request(&self, request: Request, _cache: &C, response: &mut Response) {
+impl<C> Handler<C> for fn(Request, Response) {
+	fn handle_request(&self, request: Request, _cache: &C, response: Response) {
 		(*self)(request, response);
 	}
 }
 
-impl<C> Handler<C> for fn(Request, &C, &mut Response) {
-	fn handle_request(&self, request: Request, cache: &C, response: &mut Response) {
+impl<C> Handler<C> for fn(Request, &C, Response) {
+	fn handle_request(&self, request: Request, cache: &C, response: Response) {
 		(*self)(request, cache, response);
 	}
 }
@@ -246,7 +255,7 @@ impl Cache for () {
 #[experimental]
 pub trait RequestPlugin {
 	///Try to modify the `Request`.
-	fn modify(&self, request: Request) -> RequestAction;
+	fn modify(&self, request: &mut Request) -> RequestAction;
 }
 
 ///A trait for response plugins.
@@ -255,8 +264,8 @@ pub trait RequestPlugin {
 #[experimental]
 pub trait ResponsePlugin {
 	///Set or modify headers before they are sent to the client and maybe initiate the body.
-	fn begin(&self, status: Status, headers: headers::response::HeaderCollection) ->
-		(Status, headers::response::HeaderCollection, ResponseAction);
+	fn begin(&self, status: StatusCode, headers: Headers) ->
+		(StatusCode, Headers, ResponseAction);
 
 	///Handle content before writing it to the body.
 	fn write<'a>(&'a self, content: Option<ResponseData<'a>>) -> ResponseAction;
@@ -275,7 +284,12 @@ pub trait ResponsePlugin {
 ///```no_run
 ///# use rustful::Server;
 ///# let router = ();
-///Server::new().port(8080).handlers(router).run();
+///let server_result = Server::new().port(8080).handlers(router).run();
+///
+///match server_result {
+///    Ok(_server) => {},
+///    Err(e) => println!("could not start server: {}", e)
+///}
 ///```
 pub struct Server<R, C> {
 	///One or several response handlers.
@@ -287,11 +301,15 @@ pub struct Server<R, C> {
 	///The host address where the server will listen for requests.
 	pub host: IpAddr,
 
+	///The number of tasks to be used in the server task pool.
+	///The default (`None`) is based on recommendations from the system.
+	pub tasks: Option<uint>,
+
 	///The content of the server header.
 	pub server: String,
 
 	///The default media type.
-	pub content_type: MediaType,
+	pub content_type: Mime,
 
 	///A structure where resources are cached.
 	pub cache: C,
@@ -322,6 +340,7 @@ impl<R, C> Server<R, C> {
 			handlers: handlers,
 			port: self.port,
 			host: self.host,
+			tasks: self.tasks,
 			server: self.server,
 			content_type: self.content_type,
 			cache: self.cache,
@@ -343,12 +362,22 @@ impl<R, C> Server<R, C> {
 		self
 	}
 
+	///Set the number of tasks to be used in the server task pool.
+	///
+	///Passing `None` will set it to the default number of tasks,
+	///based on recommendations from the system.
+	pub fn tasks(mut self, tasks: Option<uint>) -> Server<R, C> {
+		self.tasks = tasks;
+		self
+	}
+
 	///Set resource cache.
 	pub fn cache<NewCache>(self, cache: NewCache) -> Server<R, NewCache> {
 		Server {
 			handlers: self.handlers,
 			port: self.port,
 			host: self.host,
+			tasks: self.tasks,
 			server: self.server,
 			content_type: self.content_type,
 			cache: cache,
@@ -373,7 +402,7 @@ impl<R, C> Server<R, C> {
 	}
 
 	///Change the default content type. Default is `text/plain`.
-	pub fn content_type(mut self, content_type: MediaType) -> Server<R, C> {
+	pub fn content_type(mut self, content_type: Mime) -> Server<R, C> {
 		self.content_type = content_type;
 		self
 	}
@@ -399,26 +428,30 @@ impl<R, H, C> Server<R, C>
 	H: Handler<C> + Send + Sync,
 	C: Cache + Send + Sync
 {
-	///Start the server and run forever.
-	///This will only return if the initial connection fails.
-	pub fn run(self) {
+	///Start the server.
+	pub fn run(self) -> hyper::HttpResult<Listening> {
+		let tasks = self.tasks;
 		let server = self.build();
-		server.serve_forever();
+		let http = hyper::server::Server::http(server.host, server.port);
+		match tasks {
+			Some(tasks) => http.listen_threads(server, tasks),
+			None => http.listen(server)
+		}
 	}
 
 	///Build a runnable instance of the server.
 	pub fn build(self) -> ServerInstance<R, C> {
 		ServerInstance {
-			handlers: Arc::new(self.handlers),
+			handlers: self.handlers,
 			port: self.port,
 			host: self.host,
 			server: self.server,
 			content_type: self.content_type,
-			cache: Arc::new(self.cache),
+			cache: self.cache,
 			cache_clean_interval: self.cache_clean_interval,
-			last_cache_clean: Arc::new(RWLock::new(Timespec::new(0, 0))),
-			request_plugins: Arc::new(self.request_plugins),
-			response_plugins: Arc::new(self.response_plugins),
+			last_cache_clean: RWLock::new(Timespec::new(0, 0)),
+			request_plugins: self.request_plugins,
+			response_plugins: self.response_plugins,
 		}
 	}
 }
@@ -426,17 +459,20 @@ impl<R, H, C> Server<R, C>
 impl<R, C> Default for Server<R, C> where R: Default, C: Default {
 	fn default() -> Server<R, C> {
 		Server {
+			handlers: Default::default(),
 			port: 80,
 			host: Ipv4Addr(0, 0, 0, 0),
+			tasks: None,
 			server: "rustful".into_string(),
-			content_type: MediaType {
-				type_: String::from_str("text"),
-				subtype: String::from_str("plain"),
-				parameters: vec![(String::from_str("charset"), String::from_str("UTF-8"))]
-			},
+			content_type: Mime(
+				hyper::mime::TopLevel::Text,
+				hyper::mime::SubLevel::Plain,
+				vec![(hyper::mime::Attr::Charset, hyper::mime::Value::Utf8)]
+			),
+			cache: Default::default(),
 			cache_clean_interval: None,
-
-			..Default::default()
+			request_plugins: Vec::new(),
+			response_plugins: Vec::new()
 		}
 	}
 }
@@ -452,30 +488,30 @@ impl<R, C> Default for Server<R, C> where R: Default, C: Default {
 ///let server_instance = Server::new().port(8080).handlers(router).build();
 ///```
 pub struct ServerInstance<R, C> {
-	handlers: Arc<R>,
+	handlers: R,
 
 	port: Port,
 	host: IpAddr,
 
 	server: String,
-	content_type: MediaType,
+	content_type: Mime,
 
-	cache: Arc<C>,
+	cache: C,
 	cache_clean_interval: Option<i64>,
-	last_cache_clean: Arc<RWLock<Timespec>>,
+	last_cache_clean: RWLock<Timespec>,
 
-	request_plugins: Arc<Vec<Box<RequestPlugin + Send + Sync>>>,
-	response_plugins: Arc<Vec<Box<ResponsePlugin + Send + Sync>>>
+	request_plugins: Vec<Box<RequestPlugin + Send + Sync>>,
+	response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
 }
 
 impl<R, C> ServerInstance<R, C> {
 
-	fn modify_request(&self, request: Request) -> RequestAction {
-		let mut result = RequestAction::Continue(request);
+	fn modify_request(&self, request: &mut Request) -> RequestAction {
+		let mut result = RequestAction::Continue;
 
 		for plugin in self.request_plugins.iter() {
 			result = match result {
-				RequestAction::Continue(request) => plugin.modify(request),
+				RequestAction::Continue => plugin.modify(request),
 				_ => return result
 			};
 		}
@@ -485,44 +521,32 @@ impl<R, C> ServerInstance<R, C> {
 
 }
 
-impl<R, H, C> http::server::Server for ServerInstance<R, C>
+impl<R, H, C> HyperHandler for ServerInstance<R, C>
 	where
 	R: Router<H> + Send + Sync,
 	H: Handler<C> + Send + Sync,
 	C: Cache + Send + Sync,
 {
-	fn get_config(&self) -> Config {
-		Config {
-			bind_address: SocketAddr {
-				ip: self.host,
-				port: self.port
-			}
-		}
-	}
+	fn handle(&self, mut request: hyper::server::request::Request, writer: hyper::server::response::Response) {
+		let request_uri = request.uri.clone();
+		let request_method = request.method.clone();
+		let mut request_headers = Headers::new();
+		std::mem::swap(&mut request_headers, &mut request.headers);
 
-	fn handle_request(&self, request: http::server::request::Request, writer: &mut ResponseWriter) {
-		let http::server::request::Request {
-			request_uri,
-			method: request_method,
-			headers: request_headers,
-			body: request_body,
-			..
-		} = request;
-
-		let mut response = Response::new(writer, self.response_plugins.deref());
-		response.headers.date = Some(time::now_utc());
-		response.headers.content_type = Some(self.content_type.clone());
-		response.headers.server = Some(self.server.clone());
+		let mut response = Response::new(writer, &self.response_plugins);
+		response.set_header(Date(time::now_utc()));
+		response.set_header(ContentType(self.content_type.clone()));
+		response.set_header(hyper::header::Server(self.server.clone()));
 
 		let path_components = match request_uri {
-			AbsoluteUri(url) => {
+			RequestUri::AbsoluteUri(url) => {
 				Some((
 					url.serialize_path().map(|p| p.into_bytes()).unwrap_or_else(|| vec!['/' as u8]),
 					url.query_pairs().unwrap_or_else(|| Vec::new()).into_iter().collect(),
 					url.fragment
 				))
 			},
-			AbsolutePath(path) => {
+			RequestUri::AbsolutePath(path) => {
 				let (path, query, fragment) = parse_path(path);
 				Some((path.into_bytes(), query, fragment))
 			},
@@ -532,44 +556,39 @@ impl<R, H, C> http::server::Server for ServerInstance<R, C>
 		match path_components {
 			Some((path, query, fragment)) => {
 
-				let request = Request {
+				let mut request = Request {
 					headers: request_headers,
 					method: request_method,
 					path: lossy_utf8_percent_decode(path.as_slice()),
 					variables: HashMap::new(),
 					query: query,
 					fragment: fragment,
-					body: request_body
+					inner: request
 				};
 
-				match self.modify_request(request) {
-					RequestAction::Continue(mut request) => {
+				match self.modify_request(&mut request) {
+					RequestAction::Continue => {
 						match self.handlers.find(&request.method, request.path.as_slice()) {
 							Some((handler, variables)) => {
 								request.variables = variables;
-								handler.handle_request(request, & *self.cache, &mut response);
+								handler.handle_request(request, &self.cache, response);
 							},
 							None => {
-								response.headers.content_length = Some(0);
-								response.status = NotFound;
+								response.set_header(ContentLength(0));
+								response.set_status(StatusCode::NotFound);
 							}
 						}
 					},
 					RequestAction::Abort(status) => {
-						response.headers.content_length = Some(0);
-						response.status = status;
+						response.set_header(ContentLength(0));
+						response.set_status(status);
 					}
 				}
 			},
 			None => {
-				response.headers.content_length = Some(0);
-				response.status = BadRequest;
+				response.set_header(ContentLength(0));
+				response.set_status(StatusCode::BadRequest);
 			}
-		}
-
-		//TODO: Maybe log errors here.
-		match response.end() {
-			_ => {}
 		}
 
 		self.cache_clean_interval.map(|t| {
@@ -583,27 +602,6 @@ impl<R, H, C> http::server::Server for ServerInstance<R, C>
 				self.cache.free_unused();
 			}
 		});
-	}
-}
-
-impl<R, C> Clone for ServerInstance<R, C>
-	where
-	R: Send + Sync,
-	C: Send + Sync
-{
-	fn clone(&self) -> ServerInstance<R, C> {
-		ServerInstance {
-			handlers: self.handlers.clone(),
-			port: self.port,
-			host: self.host.clone(),
-			server: self.server.clone(),
-			content_type: self.content_type.clone(),
-			cache: self.cache.clone(),
-			cache_clean_interval: self.cache_clean_interval.clone(),
-			last_cache_clean: self.last_cache_clean.clone(),
-			request_plugins: self.request_plugins.clone(),
-			response_plugins: self.response_plugins.clone()
-		}
 	}
 }
 
@@ -629,9 +627,9 @@ fn parse_fragment<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
 
 
 ///A container for all the request data, including get, set and path variables.
-pub struct Request {
+pub struct Request<'a> {
 	///Headers from the HTTP request
-	pub headers: headers::request::HeaderCollection,
+	pub headers: Headers,
 
 	///The HTTP method
 	pub method: Method,
@@ -648,38 +646,156 @@ pub struct Request {
 	///The fragment part of the URL (after #), if provided
 	pub fragment: Option<String>,
 
-	///The raw body part of the request
-	pub body: Vec<u8>
+	inner: hyper::server::request::Request<'a>
 }
 
-
-///An interface for sending HTTP response data to the client.
-pub struct Response<'a, 'b: 'a, 'c> {
-	///The HTTP response headers. Date, content type (text/plain) and server is automatically set.
-	pub headers: headers::response::HeaderCollection,
-
-	///The HTTP response status. Ok (200) is default.
-	pub status: Status,
-	writer: &'a mut ResponseWriter<'b>,
-	started_writing: bool,
-	plugins: &'c Vec<Box<ResponsePlugin + Send + Sync>>
+impl<'a> Reader for Request<'a> {
+	fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
+		self.inner.read(buf)
+	}
 }
 
-impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
-	fn new(writer: &'a mut ResponseWriter<'b>, plugins: &'c Vec<Box<ResponsePlugin + Send + Sync>>) -> Response<'a, 'b, 'c> {
+///An interface for setting HTTP status code and response headers, before data gets written to the client.
+pub struct Response<'a, 'b> {
+	headers: Option<Headers>,
+
+	status: Option<StatusCode>,
+
+	version: Option<HttpVersion>,
+	writer: Option<HttpWriter<&'a mut (Writer + 'a)>>,
+	plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>
+}
+
+impl<'a, 'b> Response<'a, 'b> {
+	fn new(response: hyper::server::response::Response<'a>, plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>) -> Response<'a, 'b> {
+		let (version, writer, status, headers) = response.deconstruct();
 		Response {
-			headers: writer.headers.clone(), //Can't be borrowed, because writer must be borrowed
-			status: status::Ok,
-			writer: writer,
-			started_writing: false,
+			headers: Some(headers),
+			status: Some(status),
+			version: Some(version),
+			writer: Some(writer),
 			plugins: plugins
 		}
 	}
 
-	///Writes a string or any other `BytesContainer` to the client.
-	///The headers will be written the first time `send()` is called.
+	///Set HTTP status code. Ok (200) is default.
+	pub fn set_status(&mut self, status: StatusCode) {
+		self.status = Some(status);
+	}
+
+	///Set a HTTP response header. Date, content type (text/plain) and server is automatically set.
+	pub fn set_header<H: Header + HeaderFormat>(&mut self, header: H) {
+		if let Some(ref mut headers) = self.headers {
+			headers.set(header);
+		}
+	}
+
+	///Get a HTTP response header if set.
+	pub fn get_header<H: Header + HeaderFormat>(&self) -> Option<&H> {
+		self.headers.as_ref().and_then(|h| h.get::<H>())
+	}
+
+	///Turn the `Response` into a `ResponseWriter` to allow the response body to be written.
+	///
+	///Status code and headers will be written to the client and `ResponsePlugin::begin()`
+	///will be called on the registered response plugins.
+	pub fn into_writer(mut self) -> ResponseWriter<'a, 'b> {
+		self.make_writer()
+	}
+
+	fn make_writer(&mut self) -> ResponseWriter<'a, 'b> {
+		let mut write_queue = Vec::new();
+		let mut header_result = (self.status.take().unwrap(), self.headers.take().unwrap(), Write(None));
+
+		for plugin in self.plugins.iter() {
+			header_result = match header_result {
+				(_, _, DoNothing) => break,
+				(_, _, Error(_)) => break,
+				(status, headers, r) => {
+					write_queue.push(r);
+
+					match plugin.begin(status, headers) {
+						(status, headers, Error(e)) => (status, headers, Error(e)),
+						(status, headers, result) => {
+							let mut error = None;
+							
+							write_queue = write_queue.into_iter().filter_map(|action| match action {
+								Write(content) => Some(plugin.write(content)),
+								DoNothing => None,
+								Error(e) => {
+									error = Some(e);
+									None
+								}
+							}).collect();
+
+							match error {
+								Some(e) => (status, headers, Error(e)),
+								None => (status, headers, result)
+							}
+						}
+					}
+				}
+			}
+		}
+
+		let writer = match header_result {
+			(_, _, Error(e)) => Err(ResponseError::PluginError(e)),
+			(status, headers, last_result) => {
+				write_queue.push(last_result);
+
+				let version = self.version.take().unwrap();
+				let writer = self.writer.take().unwrap();
+				let writer = hyper::server::response::Response::<Fresh>::construct(version, writer, status, headers).start();
+				let mut writer = match writer {
+					Ok(writer) => Ok(writer),
+					Err(e) => Err(ResponseError::IoError(e))
+				};
+
+				for action in write_queue.into_iter() {
+					writer = match (action, writer) {
+						(Write(Some(content)), Ok(mut writer)) => match writer.write(content.as_bytes()) {
+							Ok(_) => Ok(writer),
+							Err(e) => Err(ResponseError::IoError(e))
+						},
+						(Error(e), _) => Err(ResponseError::PluginError(e)),
+						(_, writer) => writer
+					};
+				}
+
+				writer
+			}
+		};
+
+		ResponseWriter {
+			writer: Some(writer),
+			plugins: self.plugins
+		}
+	}
+}
+
+#[unsafe_destructor]
+#[allow(unused_must_use)]
+impl<'a, 'b> Drop for Response<'a, 'b> {
+	///Writes status code and headers and closes the connection.
+	fn drop(&mut self) {
+		if self.writer.is_some() {
+			self.make_writer();
+		}
+	}
+}
+
+
+///An interface for writing to the response body.
+pub struct ResponseWriter<'a, 'b> {
+	writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, ResponseError>>,
+	plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>
+}
+
+impl<'a, 'b> ResponseWriter<'a, 'b> {
+
+	///Writes response body data to the client.
 	pub fn send<'a, Content: IntoResponseData<'a>>(&mut self, content: Content) -> Result<(), ResponseError> {
-		try!(self.begin());
+		let mut writer = try!(self.writer.as_mut().expect("write after close").as_mut().map_err(|e| e.clone()));
 		let mut plugin_result = ResponseAction::write(Some(content));
 
 		for plugin in self.plugins.iter() {
@@ -690,7 +806,7 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 		}
 
 		let write_result = match plugin_result {
-			Write(Some(ref s)) => Some(self.writer.write(s.as_bytes())),
+			Write(Some(ref s)) => Some(writer.write(s.as_bytes())),
 			_ => None
 		};
 
@@ -705,76 +821,15 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 		}
 	}
 
-	///Start writing the response. Headers and status can not be changed after it has been called.
+	///Finish writing the response and collect eventual errors.
 	///
-	///This method will be called automatically by `send()` and `end()`, if it hasn't been called before.
-	///It can only be called once.
-	pub fn begin(&mut self) -> Result<(), ResponseError> {
-		if !self.started_writing {
-			self.started_writing = true;
-
-			let mut write_queue = Vec::new();
-			let mut header_result = (self.status.clone(), self.headers.clone(), Write(None));
-
-			for plugin in self.plugins.iter() {
-				header_result = match header_result {
-					(_, _, DoNothing) => break,
-					(_, _, Error(_)) => break,
-					(status, headers, r) => {
-						write_queue.push(r);
-
-						match plugin.begin(status, headers) {
-							(status, headers, Error(e)) => (status, headers, Error(e)),
-							(status, headers, result) => {
-								let mut error = None;
-								
-								write_queue = write_queue.into_iter().filter_map(|action| match action {
-									Write(content) => Some(plugin.write(content)),
-									DoNothing => None,
-									Error(e) => {
-										error = Some(e);
-										None
-									}
-								}).collect();
-
-								match error {
-									Some(e) => (status, headers, Error(e)),
-									None => (status, headers, result)
-								}
-							}
-						}
-					}
-				}
-			}
-
-			match header_result {
-				(_, _, Error(e)) => Err(ResponseError::PluginError(e)),
-				(status, headers, last_result) => {
-					write_queue.push(last_result);
-
-					for action in write_queue.into_iter() {
-						try!{
-							match action {
-								Write(Some(content)) => self.writer.write(content.as_bytes()),
-								Error(e) => return Err(ResponseError::PluginError(e)),
-								_ => Ok(())
-							}
-						}
-					}
-
-					self.writer.status = status;
-					self.writer.headers = headers;
-					Ok(())
-				},
-			}
-		} else {
-			Ok(())
-		}
+	///This is optional and will happen when the writer drops out of scope.
+	pub fn end(mut self) -> Result<(), ResponseError> {
+		self.finish()
 	}
 
-	///Finish writing the response.
-	pub fn end(&mut self) -> Result<(), ResponseError> {
-		try!(self.begin());
+	fn finish(&mut self) -> Result<(), ResponseError> {
+		let mut writer = try!(self.writer.take().expect("can only finish once"));
 		let mut write_queue: Vec<ResponseAction> = Vec::new();
 
 		for plugin in self.plugins.iter() {
@@ -797,18 +852,18 @@ impl<'a, 'b, 'c> Response<'a, 'b, 'c> {
 		for action in write_queue.into_iter() {
 			try!{
 				match action {
-					Write(Some(content)) => self.writer.write(content.as_bytes()),
+					Write(Some(content)) => writer.write(content.as_bytes()),
 					Error(e) => return Err(ResponseError::PluginError(e)),
 					_ => Ok(())
 				}
 			}
 		}
 
-		Ok(())
+		writer.end().map_err(|e| ResponseError::IoError(e))
 	}
 }
 
-impl<'a, 'b, 'c> Writer for Response<'a, 'b, 'c> {
+impl<'a, 'b> Writer for ResponseWriter<'a, 'b> {
 	fn write(&mut self, content: &[u8]) -> IoResult<()> {
 		match self.send(content) {
 			Ok(()) => Ok(()),
@@ -818,6 +873,17 @@ impl<'a, 'b, 'c> Writer for Response<'a, 'b, 'c> {
 				desc: "response plugin error",
 				detail: Some(e)
 			})
+		}
+	}
+}
+
+#[unsafe_destructor]
+#[allow(unused_must_use)]
+impl<'a, 'b> Drop for ResponseWriter<'a, 'b> {
+	///Finishes writing and closes the connection.
+	fn drop(&mut self) {
+		if self.writer.is_some() {
+			self.finish();
 		}
 	}
 }
