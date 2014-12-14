@@ -315,39 +315,33 @@ macro_rules! content_type(
 /**
 A macro for callig `send` in response and aborting the handle function if it fails.
 
-This macro will print an error to `stdout` and set the response status to `500 Internal Server Error` if the send fails.
-The response status may or may not be written to the client, depending on if the connection is
-broken or not, or if the headers have already been written.
+This macro will print an error to `stdout`.
 **/
 #[macro_export]
 macro_rules! try_send(
-	($response:ident, $content:expr) => (
-		match $response.send($content) {
+	($writer:expr, $content:expr) => (
+		match $writer.send($content) {
 			Ok(v) => v,
 			Err(::rustful::ResponseError::IoError(e)) => {
 				println!("IO error: {}", e);
-				$response.status = ::rustful::StatusCode::InternalServerError;
 				return;
 			},
 			Err(::rustful::ResponseError::PluginError(e)) => {
 				println!("plugin error: {}", e);
-				$response.status = ::rustful::StatusCode::InternalServerError;
 				return;
 			}
 		}
 	);
 
-	($response:ident, $content:expr while $what:expr) => (
-		match $response.send($content) {
+	($writer:expr, $content:expr while $what:expr) => (
+		match $writer.send($content) {
 			Ok(v) => v,
 			Err(::rustful::ResponseError::IoError(e)) => {
 				println!("IO error while {}: {}", $what, e);
-				$response.status = ::rustful::StatusCode::InternalServerError;
 				return;
 			},
 			Err(::rustful::ResponseError::PluginError(e)) => {
 				println!("plugin error while {}: {}", $what, e);
-				$response.status = ::rustful::StatusCode::InternalServerError;
 				return;
 			}
 		}

@@ -11,14 +11,14 @@ use rustful::request_extensions::QueryBody;
 use rustful::header::ContentType;
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
-fn say_hello(mut request: Request, cache: &Files, response: &mut Response) {
-	response.headers.set(ContentType(content_type!("text", "html", "charset": "UTF-8")));
+fn say_hello(mut request: Request, cache: &Files, mut response: Response) {
+	response.set_header(ContentType(content_type!("text", "html", "charset": "UTF-8")));
 
 	let body = match request.read_query_body() {
 		Ok(body) => body,
 		Err(_) => {
 			//Oh no! Could not read the body
-			response.status = BadRequest;
+			response.set_status(BadRequest);
 			return;
 		}
 	};
@@ -35,7 +35,7 @@ fn say_hello(mut request: Request, cache: &Files, response: &mut Response) {
 				},
 				None => {
 					//Oh no! The form was not loaded! Let's print an error message on the page.
-					response.status = InternalServerError;
+					response.set_status(InternalServerError);
 					"Error: Failed to load form.html".into_string()
 				}
 			}
@@ -46,11 +46,11 @@ fn say_hello(mut request: Request, cache: &Files, response: &mut Response) {
 	match *cache.page.borrow() {
 		Some(ref page) => {
 			let complete_page = page.replace("{}", content.as_slice());
-			try_send!(response, complete_page);
+			try_send!(response.into_writer(), complete_page);
 		},
 		None => {
 			//Oh no! The page was not loaded!
-			response.status = InternalServerError;
+			response.set_status(InternalServerError);
 		}
 	}
 	

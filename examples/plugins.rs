@@ -14,13 +14,13 @@ use rustful::Method::Get;
 use rustful::StatusCode;
 use rustful::header::Headers;
 
-fn say_hello(request: Request, _cache: &(), response: &mut Response) {
+fn say_hello(request: Request, _cache: &(), response: Response) {
 	let person = match request.variables.get(&"person".into_string()) {
 		Some(name) => name.as_slice(),
 		None => "stranger"
 	};
 
-	try_send!(response, format!("{{\"message\": \"Hello, {}!\"}}", person));
+	try_send!(response.into_writer(), format!("{{\"message\": \"Hello, {}!\"}}", person));
 }
 
 fn main() {

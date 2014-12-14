@@ -72,25 +72,25 @@ struct Counter {
 }
 
 impl Handler<()> for Counter {
-	fn handle_request(&self, _request: Request, _cache: &(), response: &mut Response) {
+	fn handle_request(&self, _request: Request, _cache: &(), mut response: Response) {
 		self.operation.map(|o| {
 			//Lock the value for writing and update it
 			let mut value = self.value.write();
 			*value = (o)(*value);
 		});
 
-		response.headers.set(ContentType(content_type!("text", "html", "charset": "UTF-8")));
+		response.set_header(ContentType(content_type!("text", "html", "charset": "UTF-8")));
 
 		//Insert the value into the page and write it to the response
 		match *self.page.borrow() {
 			Some(ref page) => {
 				let count = self.value.read().deref().to_string();
 
-				try_send!(response, page.replace("{}", count.as_slice()));
+				try_send!(response.into_writer(), page.replace("{}", count.as_slice()));
 			},
 			None => {
 				//Oh no! The page was not loaded!
-				response.status = InternalServerError;
+				response.set_status(InternalServerError);
 			}
 		}
 	}

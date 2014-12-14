@@ -8,7 +8,7 @@ extern crate rustful;
 use rustful::{Server, Request, Response};
 use rustful::Method::Get;
 
-fn say_hello(request: Request, response: &mut Response) {
+fn say_hello(request: Request, response: Response) {
     //Get the value of the path variable `:person`, from below.
     let person = match request.variables.get(&"person".into_string()) {
         Some(name) => name.as_slice(),
@@ -16,7 +16,7 @@ fn say_hello(request: Request, response: &mut Response) {
     };
 
     //Use the value of the path variable to say hello.
-    try_send!(response, format!("Hello, {}!", person) while "saying hello");
+    try_send!(response.into_writer(), format!("Hello, {}!", person) while "saying hello");
 }
 
 fn main() {
