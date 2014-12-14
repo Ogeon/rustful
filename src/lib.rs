@@ -36,7 +36,7 @@ use std::io::net::ip::{IpAddr, Ipv4Addr, Port};
 use std::collections::HashMap;
 use std::error::FromError;
 use std::default::Default;
-use std::sync::{Arc, RWLock};
+use std::sync::RWLock;
 
 use time::Timespec;
 
@@ -421,16 +421,16 @@ impl<R, H, C> Server<R, C>
 	///Build a runnable instance of the server.
 	pub fn build(self) -> ServerInstance<R, C> {
 		ServerInstance {
-			handlers: Arc::new(self.handlers),
+			handlers: self.handlers,
 			port: self.port,
 			host: self.host,
 			server: self.server,
 			content_type: self.content_type,
-			cache: Arc::new(self.cache),
+			cache: self.cache,
 			cache_clean_interval: self.cache_clean_interval,
-			last_cache_clean: Arc::new(RWLock::new(Timespec::new(0, 0))),
-			request_plugins: Arc::new(self.request_plugins),
-			response_plugins: Arc::new(self.response_plugins),
+			last_cache_clean: RWLock::new(Timespec::new(0, 0)),
+			request_plugins: self.request_plugins,
+			response_plugins: self.response_plugins,
 		}
 	}
 }
@@ -464,7 +464,7 @@ impl<R, C> Default for Server<R, C> where R: Default, C: Default {
 ///let server_instance = Server::new().port(8080).handlers(router).build();
 ///```
 pub struct ServerInstance<R, C> {
-	handlers: Arc<R>,
+	handlers: R,
 
 	port: Port,
 	host: IpAddr,
@@ -472,12 +472,12 @@ pub struct ServerInstance<R, C> {
 	server: String,
 	content_type: Mime,
 
-	cache: Arc<C>,
+	cache: C,
 	cache_clean_interval: Option<i64>,
-	last_cache_clean: Arc<RWLock<Timespec>>,
+	last_cache_clean: RWLock<Timespec>,
 
-	request_plugins: Arc<Vec<Box<RequestPlugin + Send + Sync>>>,
-	response_plugins: Arc<Vec<Box<ResponsePlugin + Send + Sync>>>
+	request_plugins: Vec<Box<RequestPlugin + Send + Sync>>,
+	response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
 }
 
 impl<R, C> ServerInstance<R, C> {
@@ -509,7 +509,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 		let mut request_headers = Headers::new();
 		std::mem::swap(&mut request_headers, &mut request.headers);
 
-		let mut response = Response::new(writer, self.response_plugins.deref());
+		let mut response = Response::new(writer, &self.response_plugins);
 		response.headers.set(Date(time::now_utc()));
 		response.headers.set(ContentType(self.content_type.clone()));
 		response.headers.set(hyper::header::Server(self.server.clone()));
@@ -547,7 +547,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 						match self.handlers.find(&request.method, request.path.as_slice()) {
 							Some((handler, variables)) => {
 								request.variables = variables;
-								handler.handle_request(request, & *self.cache, &mut response);
+								handler.handle_request(request, &self.cache, &mut response);
 							},
 							None => {
 								response.headers.set(ContentLength(0));
@@ -583,27 +583,6 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 				self.cache.free_unused();
 			}
 		});
-	}
-}
-
-impl<R, C> Clone for ServerInstance<R, C>
-	where
-	R: Send + Sync,
-	C: Send + Sync
-{
-	fn clone(&self) -> ServerInstance<R, C> {
-		ServerInstance {
-			handlers: self.handlers.clone(),
-			port: self.port,
-			host: self.host.clone(),
-			server: self.server.clone(),
-			content_type: self.content_type.clone(),
-			cache: self.cache.clone(),
-			cache_clean_interval: self.cache_clean_interval.clone(),
-			last_cache_clean: self.last_cache_clean.clone(),
-			request_plugins: self.request_plugins.clone(),
-			response_plugins: self.response_plugins.clone()
-		}
 	}
 }
 
