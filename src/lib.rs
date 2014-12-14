@@ -458,17 +458,20 @@ impl<R, H, C> Server<R, C>
 impl<R, C> Default for Server<R, C> where R: Default, C: Default {
 	fn default() -> Server<R, C> {
 		Server {
+			handlers: Default::default(),
 			port: 80,
 			host: Ipv4Addr(0, 0, 0, 0),
+			tasks: None,
 			server: "rustful".into_string(),
 			content_type: Mime(
 				hyper::mime::TopLevel::Text,
 				hyper::mime::SubLevel::Plain,
 				vec![(hyper::mime::Attr::Charset, hyper::mime::Value::Utf8)]
 			),
+			cache: Default::default(),
 			cache_clean_interval: None,
-
-			..Default::default()
+			request_plugins: Vec::new(),
+			response_plugins: Vec::new()
 		}
 	}
 }
