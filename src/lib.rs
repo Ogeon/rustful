@@ -93,7 +93,7 @@ pub enum ResponseAction<'a> {
 }
 
 impl<'a> ResponseAction<'a> {
-	pub fn write<'a, T: IntoResponseData<'a>>(data: Option<T>) -> ResponseAction<'a> {
+	pub fn write<T: IntoResponseData<'a>>(data: Option<T>) -> ResponseAction<'a> {
 		ResponseAction::Write(data.map(|d| d.into_response_data()))
 	}
 
@@ -794,7 +794,7 @@ pub struct ResponseWriter<'a, 'b> {
 impl<'a, 'b> ResponseWriter<'a, 'b> {
 
 	///Writes response body data to the client.
-	pub fn send<'a, Content: IntoResponseData<'a>>(&mut self, content: Content) -> Result<(), ResponseError> {
+	pub fn send<'d, Content: IntoResponseData<'d>>(&mut self, content: Content) -> Result<(), ResponseError> {
 		let mut writer = try!(self.writer.as_mut().expect("write after close").as_mut().map_err(|e| e.clone()));
 		let mut plugin_result = ResponseAction::write(Some(content));
 
