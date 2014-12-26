@@ -66,7 +66,7 @@ fn main() {
 	};
 
 	//Handlers implements the Router trait, so it can be passed to the server as it is
-	let server_result = Server::new().cache(cache).handlers(say_hello).port(8080).run();
+	let server_result = Server::new().cache(cache).handlers(say_hello as fn(Request, &Files, Response)).port(8080).run();
 
 	//Check if the server started successfully
 	match server_result {

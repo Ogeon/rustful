@@ -24,11 +24,11 @@ fn main() {
 
     let router = router!{
         //Handle requests for root...
-        "/" => Get: say_hello,
+        "/" => Get: say_hello as fn(Request, Response),
 
         //...and one level below.
         //`:person` is a path variable and it will be accessible in the handler.
-        "/:person" => Get: say_hello
+        "/:person" => Get: say_hello as fn(Request, Response)
     };
 
     //Build and run the server.

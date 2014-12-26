@@ -28,8 +28,8 @@ fn main() {
 
 	let routes = routes!{
 		"print" => {
-			Get: say_hello,
-			":person" => Get: say_hello
+			Get: say_hello as fn(Request, Response),
+			":person" => Get: say_hello as fn(Request, Response)
 		}
 	};
 

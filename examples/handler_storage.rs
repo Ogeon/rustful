@@ -31,12 +31,12 @@ fn main() {
 		"/add" => Get: Counter{
 			page: page.clone(),
 			value: value.clone(),
-			operation: Some(add)
+			operation: Some(add as fn(int) -> int)
 		},
 		"/sub" => Get: Counter{
 			page: page.clone(),
 			value: value.clone(),
-			operation: Some(sub)
+			operation: Some(sub as fn(int) -> int)
 		}
 	};
 
