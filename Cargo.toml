@@ -13,12 +13,10 @@ path = "src/lib.rs"
 default = ["macros"]
 macros = ["rustful_macros"]
 
+[dependencies]
+hyper = "*"
+time = "*"
+
 [dependencies.rustful_macros]
 path = "macros"
 optional = true
-
-[dependencies.hyper]
-git = "https://github.com/hyperium/hyper"
-
-[dependencies.time]
-git = "https://github.com/rust-lang/time"
