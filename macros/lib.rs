@@ -309,7 +309,7 @@ macro_rules! content_type(
 			vec!( $( (std::str::FromStr::from_str($param).unwrap(), std::str::FromStr::from_str($value).unwrap()) ),+ )
 		)
 	});
-)
+);
 
 
 /**
@@ -346,4 +346,4 @@ macro_rules! try_send(
 			}
 		}
 	)
-)
+);
