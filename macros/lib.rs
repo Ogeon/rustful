@@ -293,7 +293,7 @@ response.headers.content_type = content_type!("image", "png");
 ```
 **/
 #[macro_export]
-macro_rules! content_type(
+macro_rules! content_type {
 	($main_type:expr, $sub_type:expr) => ({
 		::rustful::mime::Mime (
 			std::str::FromStr::from_str($main_type).unwrap(),
@@ -309,7 +309,7 @@ macro_rules! content_type(
 			vec!( $( (std::str::FromStr::from_str($param).unwrap(), std::str::FromStr::from_str($value).unwrap()) ),+ )
 		)
 	});
-);
+}
 
 
 /**
@@ -318,7 +318,7 @@ A macro for callig `send` in response and aborting the handle function if it fai
 This macro will print an error to `stdout`.
 **/
 #[macro_export]
-macro_rules! try_send(
+macro_rules! try_send {
 	($writer:expr, $content:expr) => (
 		match $writer.send($content) {
 			Ok(v) => v,
@@ -346,4 +346,4 @@ macro_rules! try_send(
 			}
 		}
 	)
-);
+}
