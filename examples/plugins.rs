@@ -5,6 +5,7 @@ extern crate rustful_macros;
 extern crate rustful;
 
 use std::sync::RWLock;
+use std::borrow::ToOwned;
 
 use rustful::{Server, TreeRouter, Request, Response, RequestPlugin, ResponsePlugin};
 use rustful::RequestAction;
@@ -14,8 +15,8 @@ use rustful::Method::Get;
 use rustful::StatusCode;
 use rustful::header::Headers;
 
-fn say_hello(request: Request, _cache: &(), response: Response) {
-	let person = match request.variables.get(&"person".into_string()) {
+fn say_hello(request: Request, response: Response) {
+	let person = match request.variables.get(&"person".to_owned()) {
 		Some(name) => name.as_slice(),
 		None => "stranger"
 	};
@@ -26,15 +27,16 @@ fn say_hello(request: Request, _cache: &(), response: Response) {
 fn main() {
 	println!("Visit http://localhost:8080 or http://localhost:8080/Peter (if your name is Peter) to try this example.");
 
-	let routes = routes!{
-		"print" => {
+	let mut router = TreeRouter::new();
+	insert_routes!{
+		&mut router: "print" => {
 			Get: say_hello as fn(Request, Response),
 			":person" => Get: say_hello as fn(Request, Response)
 		}
 	};
 
 	let server_result = Server::new()
-		   .handlers(TreeRouter::from_routes(&routes))
+		   .handlers(router)
 		   .port(8080)
 
 			//Log path, change path, log again

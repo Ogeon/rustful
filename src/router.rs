@@ -3,7 +3,7 @@
 //!The `TreeRouter` can be created from a vector of predefined paths, like this:
 //!
 //!```ignore
-//!let routes = [
+//!let routes = vec![
 //!	(Get, "/about", about_us),
 //!	(Get, "/user/:user", show_user),
 //!	(Get, "/product/:name", show_product),
@@ -11,7 +11,7 @@
 //!	(Get, "/", show_welcome)
 //!];
 //!
-//!let router = TreeRouter::from_routes(&routes);
+//!let router = TreeRouter::from_routes(routes);
 //!```
 //!
 //!Routes may also be added after the `TreeRouter` was created, like this:
@@ -19,14 +19,14 @@
 //!```ignore
 //!let mut router = TreeRouter::new();
 //!
-//!router.insert_item(Get, "/about", about_us);
-//!router.insert_item(Get, "/user/:user", show_user);
-//!router.insert_item(Get, "/product/:name", show_product);
-//!router.insert_item(Get, "/*", show_error);
-//!router.insert_item(Get, "/", show_welcome);
+//!router.insert(Get, "/about", about_us);
+//!router.insert(Get, "/user/:user", show_user);
+//!router.insert(Get, "/product/:name", show_product);
+//!router.insert(Get, "/*", show_error);
+//!router.insert(Get, "/", show_welcome);
 //!```
 //!
-//!There is also a special macro for creating routers, called `router!(...)`:
+//!TreeRouter can also be used with a special macro for creating routes, called `insert_routes!{...}`:
 //!
 //!```ignore
 //!#![feature(phase)]
@@ -38,12 +38,14 @@
 //!...
 //!
 //!
-//!let router = router!{
-//!	"/about" => Get: about_us,
-//!	"/user/:user" => Get: show_user,
-//!	"/product/:name" => Get: show_product,
-//!	"/*" => Get: show_error,
-//!	"/" => Get: show_welcome
+//!let router = insert_routes!{
+//!	TreeRouter::new(): {
+//!		"/about" => Get: about_us,
+//!		"/user/:user" => Get: show_user,
+//!		"/product/:name" => Get: show_product,
+//!		"/*" => Get: show_error,
+//!		"/" => Get: show_welcome
+//!	}
 //!};
 //!```
 //!
@@ -52,14 +54,14 @@
 //!the need to write the same paths multiple times. This can be
 //!useful to lower the risk of typing errors, among other things.
 //!
-//!There is also a macro for creating a route vector, like the one in the first example.
-//!These can be found in the crate `rustful_macros`.
+//!This can be found in the crate `rustful_macros`.
 
 use Router;
 
 use std::collections::HashMap;
-use std::collections::hash_map::{Occupied, Vacant};
+use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::vec::Vec;
+use std::borrow::ToOwned;
 use hyper::method::Method;
 
 use self::Branch::{Static, Variable, Wildcard};
@@ -118,29 +120,15 @@ impl<T> TreeRouter<T> {
 		}
 	}
 
-	///Inserts an item into the `TreeRouter` at a given path.
-	pub fn insert_item(&mut self, method: Method, path: &str, item: T) {
-		let path = path_to_vec(path.trim());
+	///Generates a `TreeRouter` tree from a set of items and paths.
+	pub fn from_routes(routes: Vec<(Method, &str, T)>) -> TreeRouter<T> {
+		let mut root = TreeRouter::new();
 
-		if path.len() == 0 {
-			self.items.insert(method.to_string().into_string(), (item, Vec::new()));
-		} else {
-			let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
-
-				|(current, mut variable_names), piece| {
-					let next = current.find_or_insert_router(piece.as_slice());
-					if piece.len() > 0 && piece.as_slice().char_at(0) == ':' {
-						//piece.shift_char();
-						variable_names.push(piece.slice_from(1).into_string());
-					}
-
-					(next, variable_names)
-				}
-
-			);
-
-			endpoint.items.insert(method.to_string().into_string(), (item, variable_names));
+		for (method, path, item) in routes.into_iter() {
+			root.insert(method, path, item);
 		}
+
+		root
 	}
 
 	//Tries to find a router matching the key or inserts a new one if none exists
@@ -238,20 +226,34 @@ impl<T> Router<T> for TreeRouter<T> {
 			None
 		}
 	}
+
+	///Inserts an item into the `TreeRouter` at a given path.
+	fn insert(&mut self, method: Method, path: &str, item: T) {
+		let path = path_to_vec(path.trim());
+
+		if path.len() == 0 {
+			self.items.insert(method.to_string().to_owned(), (item, Vec::new()));
+		} else {
+			let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
+
+				|(current, mut variable_names), piece| {
+					let next = current.find_or_insert_router(piece.as_slice());
+					if piece.len() > 0 && piece.as_slice().char_at(0) == ':' {
+						//piece.shift_char();
+						variable_names.push(piece.slice_from(1).to_owned());
+					}
+
+					(next, variable_names)
+				}
+
+			);
+
+			endpoint.items.insert(method.to_string().to_owned(), (item, variable_names));
+		}
+	}
 }
 
 impl<T: Clone> TreeRouter<T> {
-	///Generates a `TreeRouter` tree from a set of items and paths.
-	pub fn from_routes(routes: &[(Method, &str, T)]) -> TreeRouter<T> {
-		let mut root = TreeRouter::new();
-
-		for &(ref method, path, ref item) in routes.iter() {
-			root.insert_item(method.clone(), path, item.clone());
-		}
-
-		root
-	}
-
 	///Insert an other TreeRouter at a path. The content of the other TreeRouter will be merged with this one.
 	///Content with the same path and method will be overwritten.
 	pub fn insert_router(&mut self, path: &str, router: &TreeRouter<T>) {
@@ -266,7 +268,7 @@ impl<T: Clone> TreeRouter<T> {
 					let next = current.find_or_insert_router(piece.as_slice());
 					if piece.len() > 0 && piece.as_slice().char_at(0) == ':' {
 						//piece.shift_char();
-						variable_names.push(piece.slice_from(1).into_string());
+						variable_names.push(piece.slice_from(1).to_owned());
 					}
 
 					(next, variable_names)
@@ -351,7 +353,7 @@ mod test {
 				Some(expected) => {
 					let keys = vec!("a", "b", "c");
 					let result = keys.into_iter().filter_map(|key| {
-						match variables.remove(&key.into_string()) {
+						match variables.remove(key) {
 							Some(value) => Some(value),
 							None => None
 						}
@@ -377,9 +379,9 @@ mod test {
 
 	#[test]
 	fn one_static_route() {
-		let routes = [(Get, "path/to/test1", "test 1")];
+		let routes = vec![(Get, "path/to/test1", "test 1")];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 		check(router.find(&Get, "path/to/test1"), Some("test 1"));
 		check(router.find(&Get, "path/to"), None);
@@ -388,13 +390,13 @@ mod test {
 
 	#[test]
 	fn several_static_routes() {
-		let routes = [
+		let routes = vec![
 			(Get, "", "test 1"),
 			(Get, "path/to/test/no2", "test 2"),
 			(Get, "path/to/test1/no/test3", "test 3")
 		];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 		check(router.find(&Get, ""), Some("test 1"));
 		check(router.find(&Get, "path/to/test/no2"), Some("test 2"));
@@ -404,9 +406,9 @@ mod test {
 
 	#[test]
 	fn one_variable_route() {
-		let routes = [(Get, "path/:a/test1", "test_var")];
+		let routes = vec![(Get, "path/:a/test1", "test_var")];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 		check_variable(router.find(&Get, "path/to/test1"), Some("to"));
 		check_variable(router.find(&Get, "path/to"), None);
@@ -415,14 +417,14 @@ mod test {
 
 	#[test]
 	fn several_variable_routes() {
-		let routes = [
+		let routes = vec![
 			(Get, "path/to/test1", "test_var"),
 			(Get, "path/:a/test/no2", "test_var"),
 			(Get, "path/to/:b/:c/:a", "test_var"),
 			(Post, "path/to/:c/:a/:b", "test_var")
 		];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 		check_variable(router.find(&Get, "path/to/test1"), Some(""));
 		check_variable(router.find(&Get, "path/to/test/no2"), Some("to"));
@@ -433,9 +435,9 @@ mod test {
 
 	#[test]
 	fn one_wildcard_end_route() {
-		let routes = [(Get, "path/to/*", "test 1")];
+		let routes = vec![(Get, "path/to/*", "test 1")];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 		check(router.find(&Get, "path/to/test1"), Some("test 1"));
 		check(router.find(&Get, "path/to/same/test1"), Some("test 1"));
@@ -447,9 +449,9 @@ mod test {
 
 	#[test]
 	fn one_wildcard_middle_route() {
-		let routes = [(Get, "path/*/test1", "test 1")];
+		let routes = vec![(Get, "path/*/test1", "test 1")];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 		check(router.find(&Get, "path/to/test1"), Some("test 1"));
 		check(router.find(&Get, "path/to/same/test1"), Some("test 1"));
@@ -460,9 +462,9 @@ mod test {
 
 	#[test]
 	fn one_universal_wildcard_route() {
-		let routes = [(Get, "*", "test 1")];
+		let routes = vec![(Get, "*", "test 1")];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 		check(router.find(&Get, "path/to/test1"), Some("test 1"));
 		check(router.find(&Get, "path/to/same/test1"), Some("test 1"));
@@ -474,13 +476,13 @@ mod test {
 
 	#[test]
 	fn several_wildcards_routes() {
-		let routes = [
+		let routes = vec![
 			(Get, "path/to/*", "test 1"),
 			(Get, "path/*/test/no2", "test 2"),
 			(Get, "path/to/*/*/*", "test 3")
 		];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 		check(router.find(&Get, "path/to/test1"), Some("test 1"));
 		check(router.find(&Get, "path/for/test/no2"), Some("test 2"));
@@ -491,14 +493,14 @@ mod test {
 
 	#[test]
 	fn route_formats() {
-		let routes = [
+		let routes = vec![
 			(Get, "/", "test 1"),
 			(Get, "/path/to/test/no2", "test 2"),
 			(Get, "path/to/test3/", "test 3"),
 			(Get, "/path/to/test3/again/", "test 3")
 		];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 		check(router.find(&Get, ""), Some("test 1"));
 		check(router.find(&Get, "path/to/test/no2/"), Some("test 2"));
@@ -509,14 +511,14 @@ mod test {
 
 	#[test]
 	fn http_methods() {
-		let routes = [
+		let routes = vec![
 			(Get, "/", "get"),
 			(Post, "/", "post"),
 			(Delete, "/", "delete"),
 			(Put, "/", "put")
 		];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 
 
 		check(router.find(&Get, "/"), Some("get"));
@@ -528,20 +530,20 @@ mod test {
 
 	#[test]
 	fn merge_routers() {
-		let routes1 = [
+		let routes1 = vec![
 			(Get, "", "test 1"),
 			(Get, "path/to/test/no2", "test 2"),
 			(Get, "path/to/test1/no/test3", "test 3")
 		];
 
-		let routes2 = [
+		let routes2 = vec![
 			(Get, "", "test 1"),
 			(Get, "test/no5", "test 5"),
 			(Post, "test1/no/test3", "test 3 post")
 		];
 
-		let mut router1 = TreeRouter::from_routes(&routes1);
-		let router2 = TreeRouter::from_routes(&routes2);
+		let mut router1 = TreeRouter::from_routes(routes1);
+		let router2 = TreeRouter::from_routes(routes2);
 
 		router1.insert_router("path/to", &router2);
 
@@ -556,11 +558,11 @@ mod test {
 
 	#[test]
 	fn merge_routers_variables() {
-		let routes1 = [(Get, ":a/:b/:c", "test 2")];
-		let routes2 = [(Get, ":b/:c/test", "test 1")];
+		let routes1 = vec![(Get, ":a/:b/:c", "test 2")];
+		let routes2 = vec![(Get, ":b/:c/test", "test 1")];
 
-		let mut router1 = TreeRouter::from_routes(&routes1);
-		let router2 = TreeRouter::from_routes(&routes2);
+		let mut router1 = TreeRouter::from_routes(routes1);
+		let router2 = TreeRouter::from_routes(routes2);
 
 		router1.insert_router(":a", &router2);
 		
@@ -571,11 +573,11 @@ mod test {
 
 	#[test]
 	fn merge_routers_wildcard() {
-		let routes1 = [(Get, "path/to", "test 2")];
-		let routes2 = [(Get, "*/test1", "test 1")];
+		let routes1 = vec![(Get, "path/to", "test 2")];
+		let routes2 = vec![(Get, "*/test1", "test 1")];
 
-		let mut router1 = TreeRouter::from_routes(&routes1);
-		let router2 = TreeRouter::from_routes(&routes2);
+		let mut router1 = TreeRouter::from_routes(routes1);
+		let router2 = TreeRouter::from_routes(routes2);
 
 		router1.insert_router("path", &router2);
 
@@ -589,7 +591,7 @@ mod test {
 	
 	#[bench]
 	fn search_speed(b: &mut Bencher) {
-		let routes = [
+		let routes = vec![
 			(Get, "path/to/test1", "test 1"),
 			(Get, "path/to/test/no2", "test 1"),
 			(Get, "path/to/test1/no/test3", "test 1"),
@@ -618,7 +620,7 @@ mod test {
 			"path/to/test1/nothing/at/all"
 		];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 		let mut counter = 0;
 
 		b.iter(|| {
@@ -630,7 +632,7 @@ mod test {
 	
 	#[bench]
 	fn wildcard_speed(b: &mut Bencher) {
-		let routes = [
+		let routes = vec![
 			(Get, "*/to/*/*/a", "test 1")
 		];
 
@@ -649,7 +651,7 @@ mod test {
 			"path/to/test1/nothing/at/all/and/all/and/all/and/a"
 		];
 
-		let router = TreeRouter::from_routes(&routes);
+		let router = TreeRouter::from_routes(routes);
 		let mut counter = 0;
 
 		b.iter(|| {

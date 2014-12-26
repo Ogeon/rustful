@@ -6,10 +6,12 @@
 
 #![feature(macro_rules, plugin_registrar, quote, phase)]
 
-//!This crate provides some helpful macros for rustful, including `router!` and `routes!`.
+//!This crate provides some helpful macros for rustful, including `insert_routes!` and `content_type!`.
 //!
-//!#`router!`
-//!The `router!` macro generates a `TreeRouter` containing the provided handlers and routing tree.
+//!#`insert_routes!`
+//!The `insert_routes!` macro generates routes from the provided handlers and routing tree and
+//!adds them to the provided router. The router is then returned.
+//!
 //!This can be useful to lower the risk of typing errors, among other things.
 //!
 //!##Example 1
@@ -23,13 +25,14 @@
 //!
 //!...
 //!
-//!
-//!let router = router!{
-//!	"/about" => Get: about_us,
-//!	"/user/:user" => Get: show_user,
-//!	"/product/:name" => Get: show_product,
-//!	"/*" => Get: show_error,
-//!	"/" => Get: show_welcome
+//!let router = insert_routes!{
+//!	TreeRouter::new(): {
+//!		"/about" => Get: about_us,
+//!		"/user/:user" => Get: show_user,
+//!		"/product/:name" => Get: show_product,
+//!		"/*" => Get: show_error,
+//!		"/" => Get: show_welcome
+//!	}
 //!};
 //!```
 //!
@@ -44,58 +47,25 @@
 //!
 //!...
 //!
+//!let mut router = TreeRouter::new();
+//!insert_routes!{
+//!	&mut router: {
+//!		"/" => Get: show_home,
+//!		"home" => Get: show_home,
+//!		"user/:username" => {Get: show_user, Post: save_user},
+//!		"product" => {
+//!			Get: show_all_products,
 //!
-//!let router = router!{
-//!	"/" => Get: show_home,
-//!	"home" => Get: show_home,
-//!	"user/:username" => {Get: show_user, Post: save_user},
-//!	"product" => {
-//!		Get: show_all_products,
+//!			"json" => Get: send_all_product_data
+//!			":id" => {
+//!				Get: show_product,
+//!				Post | Delete: edit_product,
 //!
-//!		"json" => Get: send_all_product_data
-//!		":id" => {
-//!			Get: show_product,
-//!			Post | Delete: edit_product,
-//!
-//!			"json" => Get: send_product_data
+//!				"json" => Get: send_product_data
+//!			}
 //!		}
 //!	}
 //!};
-//!```
-//!
-//!#`routes!`
-//!
-//!The `routes!` macro generates a vector of routes, which can be used to create a `TreeRouter`.
-//!It has the same syntax as `routes!`.
-//!
-//!```rust ignore
-//!#![feature(phase)]
-//!#[phase(plugin)]
-//!extern crate rustful_macros;
-//!
-//!extern crate rustful;
-//!
-//!...
-//!
-//!
-//!let routes = routes!{
-//!	"/" => Get: show_home,
-//!	"home" => Get: show_home,
-//!	"user/:username" => {Get: show_user, Post: save_user},
-//!	"product" => {
-//!		Get: show_all_products,
-//!
-//!		"json" => Get: send_all_product_data
-//!		":id" => {
-//!			Get: show_product,
-//!			Post | Delete: edit_product,
-//!
-//!			"json" => Get: send_product_data
-//!		}
-//!	}
-//!};
-//!
-//!let router = TreeRouter::from_routes(&routes);
 //!```
 
 extern crate syntax;
@@ -122,55 +92,43 @@ use rustc::plugin::Registry;
 #[plugin_registrar]
 #[doc(hidden)]
 pub fn macro_registrar(reg: &mut Registry) {
-	let expander = box expand_router as Box<TTMacroExpander>;
-	reg.register_syntax_extension(token::intern("router"), NormalTT(expander, None));
-
 	let expander = box expand_routes as Box<TTMacroExpander>;
-	reg.register_syntax_extension(token::intern("routes"), NormalTT(expander, None));
-}
-
-fn expand_router<'cx>(cx: &'cx mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult + 'cx> {
-	let router_ident = cx.ident_of("router");
-	let insert_method = cx.ident_of("insert_item");
-
-	let mut calls: Vec<P<ast::Stmt>> = vec!(
-		cx.stmt_let(sp, true, router_ident, quote_expr!(&cx, ::rustful::TreeRouter::new()))
-	);
-
-	for (path, method, handler) in parse_routes(cx, tts).into_iter() {
-		let path_expr = cx.parse_expr(format!("\"{}\"", path));
-		let method_expr = cx.expr_path(method);
-		calls.push(cx.stmt_expr(
-			cx.expr_method_call(sp, cx.expr_ident(sp, router_ident), insert_method, vec!(method_expr, path_expr, handler))
-		));
-	}
-
-	let block = cx.expr_block(cx.block(sp, calls, Some(cx.expr_ident(sp, router_ident))));
-	
-	MacExpr::new(block)
+	reg.register_syntax_extension(token::intern("insert_routes"), NormalTT(expander, None));
 }
 
 fn expand_routes<'cx>(cx: &'cx mut ExtCtxt, sp: codemap::Span, tts: &[ast::TokenTree]) -> Box<MacResult + 'cx> {
-	let routes = parse_routes(cx, tts).into_iter().map(|(path, method, handler)| {
-		let path_expr = cx.parse_expr(format!("\"{}\"", path));
-		let method_expr = cx.expr_path(method);
-		mk_tup(sp, vec!(method_expr, path_expr, handler))
-	}).collect();
-
-	MacExpr::new(cx.expr_vec(sp, routes))
-}
-
-fn parse_routes(cx: &mut ExtCtxt, tts: &[ast::TokenTree]) -> Vec<(String, ast::Path, P<ast::Expr>)> {
+	let insert_method = cx.ident_of("insert");
+	let router_ident = cx.ident_of("router");
+	let router_var = cx.expr_ident(sp, router_ident);
+	let router_trait_path = cx.path_global(sp, vec![cx.ident_of("rustful"), cx.ident_of("Router")]);
+	let router_trait_use = cx.view_use_simple(sp, ast::Inherited, router_trait_path);
 
 	let mut parser = parse::new_parser_from_tts(
 		cx.parse_sess(), cx.cfg(), tts.to_vec()
 	);
 
-	parse_subroutes("", cx, &mut parser)
+	let mut calls = vec![cx.stmt_let(sp, true, router_ident, parser.parse_expr())];
+	parser.expect(&token::Colon);
+
+	for (path, method, handler) in parse_routes(cx, &mut parser).into_iter() {
+		let path_expr = cx.parse_expr(format!("\"{}\"", path));
+		let method_expr = cx.expr_path(method);
+		calls.push(cx.stmt_expr(cx.expr_method_call(sp, router_var.clone(), insert_method, vec![method_expr, path_expr, handler])));
+	}
+
+	let block = cx.expr_block(cx.block_all(sp, vec![router_trait_use], calls, Some(router_var)));
+
+	MacExpr::new(block)
+}
+
+fn parse_routes(cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(String, ast::Path, P<ast::Expr>)> {
+	parse_subroutes("", cx, parser)
 }
 
 fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(String, ast::Path, P<ast::Expr>)> {
 	let mut routes = Vec::new();
+
+	parser.eat(&token::OpenDelim(token::Brace));
 
 	while !parser.eat(&token::Eof) {
 		match parser.parse_optional_str() {
@@ -247,18 +205,6 @@ fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, P<ast::Expr>)> {
 	let handler = parser.parse_expr();
 
 	methods.into_iter().map(|m| (m, handler.clone())).collect()
-}
-
-fn mk_tup(sp: codemap::Span, content: Vec<P<ast::Expr>>) -> P<ast::Expr> {
-	dummy_expr(sp, ast::ExprTup(content))
-}
-
-fn dummy_expr(sp: codemap::Span, e: ast::Expr_) -> P<ast::Expr> {
-	P(ast::Expr {
-		id: ast::DUMMY_NODE_ID,
-		node: e,
-		span: sp,
-	})
 }
 
 

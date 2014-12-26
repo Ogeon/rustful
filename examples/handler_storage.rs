@@ -7,7 +7,7 @@ extern crate rustful;
 use std::io::{File, IoResult};
 use std::sync::{Arc, RWLock};
 
-use rustful::{Server, Request, Response, Handler};
+use rustful::{Server, Request, Response, Handler, TreeRouter};
 use rustful::cache::{CachedValue, CachedProcessedFile};
 use rustful::Method::Get;
 use rustful::StatusCode::InternalServerError;
@@ -22,21 +22,23 @@ fn main() {
 	//The shared counter state
 	let value = Arc::new(RWLock::new(0));
 
-	let router = router!{
-		"/" => Get: Counter{
-			page: page.clone(),
-			value: value.clone(),
-			operation: None
-		},
-		"/add" => Get: Counter{
-			page: page.clone(),
-			value: value.clone(),
-			operation: Some(add as fn(int) -> int)
-		},
-		"/sub" => Get: Counter{
-			page: page.clone(),
-			value: value.clone(),
-			operation: Some(sub as fn(int) -> int)
+	let router = insert_routes!{
+		TreeRouter::new(): {
+			"/" => Get: Counter{
+				page: page.clone(),
+				value: value.clone(),
+				operation: None
+			},
+			"/add" => Get: Counter{
+				page: page.clone(),
+				value: value.clone(),
+				operation: Some(add as fn(int) -> int)
+			},
+			"/sub" => Get: Counter{
+				page: page.clone(),
+				value: value.clone(),
+				operation: Some(sub as fn(int) -> int)
+			}
 		}
 	};
 

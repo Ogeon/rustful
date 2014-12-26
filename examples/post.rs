@@ -4,6 +4,7 @@ extern crate rustful_macros;
 
 extern crate rustful;
 use std::io::{File, IoResult};
+use std::borrow::ToOwned;
 
 use rustful::{Server, Request, Response, Cache};
 use rustful::cache::{CachedValue, CachedProcessedFile};
@@ -24,7 +25,7 @@ fn say_hello(mut request: Request, cache: &Files, mut response: Response) {
 	};
 
 	//Format the name or clone the cached form
-	let content = match body.get(&"name".into_string()) {
+	let content = match body.get("name") {
 		Some(name) => {
 			format!("<p>Hello, {}!</p>", name)
 		},
@@ -36,7 +37,7 @@ fn say_hello(mut request: Request, cache: &Files, mut response: Response) {
 				None => {
 					//Oh no! The form was not loaded! Let's print an error message on the page.
 					response.set_status(InternalServerError);
-					"Error: Failed to load form.html".into_string()
+					"Error: Failed to load form.html".to_owned()
 				}
 			}
 		}

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::borrow::ToOwned;
 use url::percent_encoding::lossy_utf8_percent_decode;
 
 pub fn parse_parameters(source: &[u8]) -> HashMap<String, String> {
@@ -18,7 +19,7 @@ pub fn parse_parameters(source: &[u8]) -> HashMap<String, String> {
             },
             (Some(name), None) => {
                 let name = lossy_utf8_percent_decode(name);
-                parameters.insert(name, "".into_string());
+                parameters.insert(name, "".to_owned());
             },
             _ => {}
         }
@@ -32,32 +33,32 @@ pub fn parse_parameters(source: &[u8]) -> HashMap<String, String> {
 #[test]
 fn parsing_parameters() {
     let parameters = parse_parameters(b"a=1&aa=2&ab=202");
-    let a = "1".into_string();
-    let aa = "2".into_string();
-    let ab = "202".into_string();
-    assert_eq!(parameters.get(&"a".into_string()), Some(&a));
-    assert_eq!(parameters.get(&"aa".into_string()), Some(&aa));
-    assert_eq!(parameters.get(&"ab".into_string()), Some(&ab));
+    let a = "1".to_owned();
+    let aa = "2".to_owned();
+    let ab = "202".to_owned();
+    assert_eq!(parameters.get("a"), Some(&a));
+    assert_eq!(parameters.get("aa"), Some(&aa));
+    assert_eq!(parameters.get("ab"), Some(&ab));
 }
 
 #[test]
 fn parsing_parameters_with_plus() {
     let parameters = parse_parameters(b"a=1&aa=2+%2B+extra+meat&ab=202+fifth+avenue");
-    let a = "1".into_string();
-    let aa = "2 + extra meat".into_string();
-    let ab = "202 fifth avenue".into_string();
-    assert_eq!(parameters.get(&"a".into_string()), Some(&a));
-    assert_eq!(parameters.get(&"aa".into_string()), Some(&aa));
-    assert_eq!(parameters.get(&"ab".into_string()), Some(&ab));
+    let a = "1".to_owned();
+    let aa = "2 + extra meat".to_owned();
+    let ab = "202 fifth avenue".to_owned();
+    assert_eq!(parameters.get("a"), Some(&a));
+    assert_eq!(parameters.get("aa"), Some(&aa));
+    assert_eq!(parameters.get("ab"), Some(&ab));
 }
 
 #[test]
 fn parsing_strange_parameters() {
     let parameters = parse_parameters(b"a=1=2&=2&ab=");
-    let a = "1".into_string();
-    let aa = "2".into_string();
-    let ab = "".into_string();
-    assert_eq!(parameters.get(&"a".into_string()), Some(&a));
-    assert_eq!(parameters.get(&"".into_string()), Some(&aa));
-    assert_eq!(parameters.get(&"ab".into_string()), Some(&ab));
+    let a = "1".to_owned();
+    let aa = "2".to_owned();
+    let ab = "".to_owned();
+    assert_eq!(parameters.get("a"), Some(&a));
+    assert_eq!(parameters.get(""), Some(&aa));
+    assert_eq!(parameters.get("ab"), Some(&ab));
 }

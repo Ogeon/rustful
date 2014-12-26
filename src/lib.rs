@@ -37,6 +37,7 @@ use std::collections::HashMap;
 use std::error::FromError;
 use std::default::Default;
 use std::sync::RWLock;
+use std::borrow::ToOwned;
 
 use time::Timespec;
 
@@ -158,7 +159,7 @@ impl<'a> ResponseData<'a> {
 	pub fn into_string(self) -> Option<String> {
 		match self {
 			ResponseData::String(string) => Some(string),
-			ResponseData::StringSlice(string) => Some(string.into_string()),
+			ResponseData::StringSlice(string) => Some(string.to_owned()),
 			_ => None
 		}
 	}
@@ -205,6 +206,7 @@ impl<'a> IntoResponseData<'a> for ResponseData<'a> {
 pub trait Router<Handler> {
 	///Find and return the matching handler and variable values.
 	fn find(&self, method: &Method, path: &str) -> Option<(&Handler, HashMap<String, String>)>;
+	fn insert(&mut self, method: Method, path: &str, handler: Handler);
 }
 
 
@@ -233,6 +235,8 @@ impl<C: Cache, H: Handler<C>> Router<H> for H {
 	fn find(&self, _method: &Method, _path: &str) -> Option<(&H, HashMap<String, String>)> {
 		Some((self, HashMap::new()))
 	}
+
+	fn insert(&mut self, _method: Method, _path: &str, _handler: H) {}
 }
 
 
@@ -463,7 +467,7 @@ impl<R, C> Default for Server<R, C> where R: Default, C: Default {
 			port: 80,
 			host: Ipv4Addr(0, 0, 0, 0),
 			tasks: None,
-			server: "rustful".into_string(),
+			server: "rustful".to_owned(),
 			content_type: Mime(
 				hyper::mime::TopLevel::Text,
 				hyper::mime::SubLevel::Plain,
@@ -609,11 +613,11 @@ fn parse_path(path: String) -> (String, HashMap<String, String>, Option<String>)
 	match path.as_slice().find('?') {
 		Some(index) => {
 			let (query, fragment) = parse_fragment(path.as_slice().slice(index+1, path.len()));
-			(path.as_slice().slice(0, index).into_string(), utils::parse_parameters(query.as_bytes()), fragment.map(|f| f.into_string()))
+			(path.as_slice().slice(0, index).to_owned(), utils::parse_parameters(query.as_bytes()), fragment.map(|f| f.to_owned()))
 		},
 		None => {
 			let (path, fragment) = parse_fragment(path.as_slice());
-			(path.into_string(), HashMap::new(), fragment.map(|f| f.into_string()))
+			(path.to_owned(), HashMap::new(), fragment.map(|f| f.to_owned()))
 		}
 	}
 }
@@ -893,34 +897,34 @@ impl<'a, 'b> Drop for ResponseWriter<'a, 'b> {
 
 #[test]
 fn parse_path_parts() {
-	let with = "this".into_string();
-	let and = "that".into_string();
+	let with = "this".to_owned();
+	let and = "that".to_owned();
 	let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=that#lol"));
 	assert_eq!(path, String::from_str("/path/to/something"));
-	assert_eq!(query.get(&"with".into_string()), Some(&with));
-	assert_eq!(query.get(&"and".into_string()), Some(&and));
+	assert_eq!(query.get("with"), Some(&with));
+	assert_eq!(query.get("and"), Some(&and));
 	assert_eq!(fragment, Some(String::from_str("lol")));
 }
 
 #[test]
 fn parse_strange_path() {
-	let with = "this".into_string();
-	let and = "what?".into_string();
+	let with = "this".to_owned();
+	let and = "what?".to_owned();
 	let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=what?#"));
 	assert_eq!(path, String::from_str("/path/to/something"));
-	assert_eq!(query.get(&"with".into_string()), Some(&with));
-	assert_eq!(query.get(&"and".into_string()), Some(&and));
+	assert_eq!(query.get("with"), Some(&with));
+	assert_eq!(query.get("and"), Some(&and));
 	assert_eq!(fragment, Some(String::from_str("")));
 }
 
 #[test]
 fn parse_missing_path_parts() {
-	let with = "this".into_string();
-	let and = "that".into_string();
+	let with = "this".to_owned();
+	let and = "that".to_owned();
 	let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=that"));
 	assert_eq!(path, String::from_str("/path/to/something"));
-	assert_eq!(query.get(&"with".into_string()), Some(&with));
-	assert_eq!(query.get(&"and".into_string()), Some(&and));
+	assert_eq!(query.get("with"), Some(&with));
+	assert_eq!(query.get("and"), Some(&and));
 	assert_eq!(fragment, None);
 
 
@@ -932,7 +936,7 @@ fn parse_missing_path_parts() {
 
 	let (path, query, fragment) = parse_path(String::from_str("?with=this&and=that#lol"));
 	assert_eq!(path, String::from_str(""));
-	assert_eq!(query.get(&"with".into_string()), Some(&with));
-	assert_eq!(query.get(&"and".into_string()), Some(&and));
+	assert_eq!(query.get("with"), Some(&with));
+	assert_eq!(query.get("and"), Some(&and));
 	assert_eq!(fragment, Some(String::from_str("lol")));
 }
