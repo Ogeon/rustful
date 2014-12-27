@@ -2,7 +2,7 @@ if [ "$TRAVIS_PULL_REQUEST" == "false" ] && [ "$TRAVIS_BRANCH" == "master" ] && 
 echo Starting gh-pages upload...
 
 # Edit docs to only keep rustful related documents
-grep -v "'rustful" target/doc/search-index.js | sed -ne "s/^searchIndex\['\([a-z_\-]*\).*/doc\/\1 doc\/src\/\1/p" | xargs rm -r
+grep -v "'rustful" doc/search-index.js | sed -ne "s/^searchIndex\['\([a-z_\-]*\).*/doc\/\1 doc\/src\/\1/p" | xargs rm -r
 sed -ni "/'rustful\|^var\|^init/p" doc/search-index.js
 
 cp -r doc $HOME/doc
