@@ -597,12 +597,12 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 
 		self.cache_clean_interval.map(|t| {
 			let clean_time = {
-				let last_cache_clean = self.last_cache_clean.read();
+				let last_cache_clean = self.last_cache_clean.read().unwrap();
 				Timespec::new(last_cache_clean.sec + t, last_cache_clean.nsec)
 			};
 
 			if time::get_time() > clean_time {
-				*self.last_cache_clean.write() = time::get_time();
+				*self.last_cache_clean.write().unwrap() = time::get_time();
 				self.cache.free_unused();
 			}
 		});
