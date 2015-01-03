@@ -69,8 +69,8 @@ impl RequestLogger {
 impl RequestPlugin for RequestLogger {
 	///Count requests and log the path.
 	fn modify(&self, request: &mut Request) -> RequestAction {
-		*self.counter.write() += 1;
-		println!("Request #{} is to '{}'", *self.counter.read(), request.path);
+		*self.counter.write().unwrap() += 1;
+		println!("Request #{} is to '{}'", *self.counter.read().unwrap(), request.path);
 		Continue
 	}
 }

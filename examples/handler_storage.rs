@@ -77,7 +77,7 @@ impl Handler<()> for Counter {
 	fn handle_request(&self, _request: Request, _cache: &(), mut response: Response) {
 		self.operation.map(|o| {
 			//Lock the value for writing and update it
-			let mut value = self.value.write();
+			let mut value = self.value.write().unwrap();
 			*value = (o)(*value);
 		});
 
@@ -86,7 +86,7 @@ impl Handler<()> for Counter {
 		//Insert the value into the page and write it to the response
 		match *self.page.borrow() {
 			Some(ref page) => {
-				let count = self.value.read().deref().to_string();
+				let count = self.value.read().unwrap().deref().to_string();
 
 				try_send!(response.into_writer(), page.replace("{}", count.as_slice()));
 			},
