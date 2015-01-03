@@ -286,8 +286,12 @@ pub trait ResponsePlugin {
 ///calls to these methods can be chained for quick setup.
 ///
 ///```no_run
-///# use rustful::Server;
-///# let router = ();
+///# use rustful::{Server, Handler, Request, Response};
+///# struct R;
+///# impl Handler<()> for R {
+///#     fn handle_request(&self, _request: Request, _cache: &(), _response: Response) {}
+///# }
+///# let router = R;
 ///let server_result = Server::new().port(8080).handlers(router).run();
 ///
 ///match server_result {
@@ -487,8 +491,12 @@ impl<R, C> Default for Server<R, C> where R: Default, C: Default {
 ///unless additional control is required.
 ///
 ///```no_run
-///# use rustful::Server;
-///# let router = ();
+///# use rustful::{Server, Handler, Request, Response};
+///# struct R;
+///# impl Handler<()> for R {
+///#     fn handle_request(&self, _request: Request, _cache: &(), _response: Response) {}
+///# }
+///# let router = R;
 ///let server_instance = Server::new().port(8080).handlers(router).build();
 ///```
 pub struct ServerInstance<R, C> {
