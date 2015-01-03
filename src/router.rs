@@ -163,7 +163,7 @@ impl<T> Router<T> for TreeRouter<T> {
 				None => None
 			}
 		} else {
-			let mut variables = Vec::from_elem(path.len(), false);
+			let mut variables: Vec<_> = ::std::iter::repeat(false).take(path.len()).collect();
 
 			let mut stack = vec![(self, Wildcard, 0), (self, Variable, 0), (self, Static, 0)];
 

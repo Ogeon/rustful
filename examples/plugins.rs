@@ -91,7 +91,7 @@ impl PathPrefix {
 impl RequestPlugin for PathPrefix {
 	///Append the prefix to the path
 	fn modify(&self, request: &mut Request) -> RequestAction {
-		request.path = format!("/{}{}", self.prefix.trim_chars('/'), request.path);
+		request.path = format!("/{}{}", self.prefix.trim_matches('/'), request.path);
 		Continue
 	}
 }
