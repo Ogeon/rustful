@@ -10,7 +10,7 @@ script:
   - cargo build -v
   - cargo test -v
   - cargo doc
-after_script:
+after_success:
   - mv target/doc doc
   - curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
   - bash upload_doc.sh
