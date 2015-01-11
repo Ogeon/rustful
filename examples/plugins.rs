@@ -11,16 +11,16 @@ use std::sync::RwLock;
 use std::borrow::ToOwned;
 use std::error::Error;
 
-use rustful::{Server, TreeRouter, Request, Response, RequestPlugin, ResponsePlugin};
-use rustful::RequestAction;
-use rustful::RequestAction::Continue;
+use rustful::{Server, TreeRouter, Context, Response, ContextPlugin, ResponsePlugin};
+use rustful::ContextAction;
+use rustful::ContextAction::Continue;
 use rustful::{ResponseAction, ResponseData};
 use rustful::Method::Get;
 use rustful::StatusCode;
 use rustful::header::Headers;
 
-fn say_hello(request: Request, cache: &(), response: Response) {
-	let person = match request.variables.get(&"person".to_owned()) {
+fn say_hello(context: Context, response: Response) {
+	let person = match context.variables.get(&"person".to_owned()) {
 		Some(name) => name.as_slice(),
 		None => "stranger"
 	};
@@ -44,9 +44,9 @@ fn main() {
 		   .port(8080)
 
 			//Log path, change path, log again
-		   .with_request_plugin(RequestLogger::new())
-		   .with_request_plugin(PathPrefix::new("print"))
-		   .with_request_plugin(RequestLogger::new())
+		   .with_context_plugin(RequestLogger::new())
+		   .with_context_plugin(PathPrefix::new("print"))
+		   .with_context_plugin(RequestLogger::new())
 
 		   .with_response_plugin(Jsonp::new("setMessage"))
 
@@ -70,11 +70,13 @@ impl RequestLogger {
 	}
 }
 
-impl RequestPlugin for RequestLogger {
+impl ContextPlugin for RequestLogger {
+	type Cache = ();
+
 	///Count requests and log the path.
-	fn modify(&self, request: &mut Request) -> RequestAction {
+	fn modify(&self, context: &mut Context) -> ContextAction {
 		*self.counter.write().unwrap() += 1;
-		println!("Request #{} is to '{}'", *self.counter.read().unwrap(), request.path);
+		println!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path);
 		Continue
 	}
 }
@@ -92,10 +94,12 @@ impl PathPrefix {
 	}
 }
 
-impl RequestPlugin for PathPrefix {
+impl ContextPlugin for PathPrefix {
+	type Cache = ();
+
 	///Append the prefix to the path
-	fn modify(&self, request: &mut Request) -> RequestAction {
-		request.path = format!("/{}{}", self.prefix.trim_matches('/'), request.path);
+	fn modify(&self, context: &mut Context) -> ContextAction {
+		context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);
 		Continue
 	}
 }

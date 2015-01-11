@@ -37,7 +37,6 @@ use std::io::{IoResult, IoError, Writer};
 use std::io::net::ip::{IpAddr, Ipv4Addr, Port};
 use std::collections::HashMap;
 use std::error::FromError;
-use std::default::Default;
 use std::sync::RwLock;
 use std::borrow::ToOwned;
 
@@ -51,13 +50,13 @@ mod utils;
 
 pub mod router;
 pub mod cache;
-pub mod request_extensions;
+pub mod context_extensions;
 
 
-///The result from a `RequestPlugin`.
+///The result from a `ContextPlugin`.
 #[experimental]
 #[derive(Copy)]
-pub enum RequestAction {
+pub enum ContextAction {
 	///Continue to the next plugin in the stack.
 	Continue,
 
@@ -217,15 +216,15 @@ pub trait Router {
 pub trait Handler {
 	type Cache;
 
-	fn handle_request(&self, request: Request, cache: &Self::Cache, response: Response);
+	fn handle_request(&self, context: Context<Self::Cache>, response: Response);
 }
 
 #[old_impl_check]
-impl<C, F: Fn(Request, &C, Response)> Handler for F {
+impl<C: Cache, F: Fn(Context<C>, Response)> Handler for F {
 	type Cache = C;
 
-	fn handle_request(&self, request: Request, cache: &C, response: Response) {
-		(*self)(request, cache, response);
+	fn handle_request(&self, context: Context<C>, response: Response) {
+		(*self)(context, response);
 	}
 }
 
@@ -253,13 +252,15 @@ impl Cache for () {
 
 
 
-///A trait for request plugins.
+///A trait for context plugins.
 ///
-///They are able to modify and react to a `Request` before it's sent to the handler.
+///They are able to modify and react to a `Context` before it's sent to the handler.
 #[experimental]
-pub trait RequestPlugin {
-	///Try to modify the `Request`.
-	fn modify(&self, request: &mut Request) -> RequestAction;
+pub trait ContextPlugin {
+	type Cache;
+
+	///Try to modify the `Context`.
+	fn modify(&self, context: &mut Context<Self::Cache>) -> ContextAction;
 }
 
 ///A trait for response plugins.
@@ -287,11 +288,11 @@ pub trait ResponsePlugin {
 ///
 ///```no_run
 ///# use std::error::Error;
-///# use rustful::{Server, Handler, Request, Response};
+///# use rustful::{Server, Handler, Context, Response};
 ///# struct R;
 ///# impl Handler for R {
 ///#     type Cache = ();
-///#     fn handle_request(&self, _request: Request, _cache: &(), _response: Response) {}
+///#     fn handle_request(&self, _context: Context, _response: Response) {}
 ///# }
 ///# let router = R;
 ///let server_result = Server::new().port(8080).handlers(router).run();
@@ -327,9 +328,9 @@ pub struct Server<R, C> {
 	///How often the cache should be cleaned. Measured in seconds.
 	pub cache_clean_interval: Option<i64>,
 
-	///The request plugin stack.
+	///The context plugin stack.
 	#[experimental]
-	pub request_plugins: Vec<Box<RequestPlugin + Send + Sync>>,
+	pub context_plugins: Vec<Box<ContextPlugin<Cache=C> + Send + Sync>>,
 
 	///The response plugin stack.
 	#[experimental]
@@ -339,7 +340,29 @@ pub struct Server<R, C> {
 impl Server<(), ()> {
 	///Create a new empty server which will listen on host address `0.0.0.0` and port `80`.
 	pub fn new() -> Server<(), ()> {
-		Default::default()
+		Server::with_cache(())
+	}
+}
+
+impl<C: Cache> Server<(), C> {
+	///Create a new empty server with a cache.
+	pub fn with_cache(cache: C) -> Server<(), C> {
+		Server {
+			handlers: (),
+			port: 80,
+			host: Ipv4Addr(0, 0, 0, 0),
+			threads: None,
+			server: "rustful".to_owned(),
+			content_type: Mime(
+				hyper::mime::TopLevel::Text,
+				hyper::mime::SubLevel::Plain,
+				vec![(hyper::mime::Attr::Charset, hyper::mime::Value::Utf8)]
+			),
+			cache: cache,
+			cache_clean_interval: None,
+			context_plugins: Vec::new(),
+			response_plugins: Vec::new()
+		}
 	}
 }
 
@@ -355,7 +378,7 @@ impl<R, C> Server<R, C> {
 			content_type: self.content_type,
 			cache: self.cache,
 			cache_clean_interval: self.cache_clean_interval,
-			request_plugins: self.request_plugins,
+			context_plugins: self.context_plugins,
 			response_plugins: self.response_plugins,
 		}
 	}
@@ -381,22 +404,6 @@ impl<R, C> Server<R, C> {
 		self
 	}
 
-	///Set resource cache.
-	pub fn cache<NewCache>(self, cache: NewCache) -> Server<R, NewCache> {
-		Server {
-			handlers: self.handlers,
-			port: self.port,
-			host: self.host,
-			threads: self.threads,
-			server: self.server,
-			content_type: self.content_type,
-			cache: cache,
-			cache_clean_interval: self.cache_clean_interval,
-			request_plugins: self.request_plugins,
-			response_plugins: self.response_plugins,
-		}
-	}
-
 	///Set the minimal number of seconds between each cache clean.
 	///
 	///Passing `None` disables cache cleaning.
@@ -417,10 +424,10 @@ impl<R, C> Server<R, C> {
 		self
 	}
 
-	///Add a request plugin to the plugin stack.
+	///Add a context plugin to the plugin stack.
 	#[experimental]
-	pub fn with_request_plugin<P: RequestPlugin + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
-		self.request_plugins.push(Box::new(plugin) as Box<RequestPlugin + Send + Sync>);
+	pub fn with_context_plugin<P: ContextPlugin<Cache=C> + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
+		self.context_plugins.push(Box::new(plugin) as Box<ContextPlugin<Cache=C> + Send + Sync>);
 		self
 	}
 
@@ -460,29 +467,8 @@ impl<R, H, C> Server<R, C>
 			cache: self.cache,
 			cache_clean_interval: self.cache_clean_interval,
 			last_cache_clean: RwLock::new(Timespec::new(0, 0)),
-			request_plugins: self.request_plugins,
+			context_plugins: self.context_plugins,
 			response_plugins: self.response_plugins,
-		}
-	}
-}
-
-impl<R, C> Default for Server<R, C> where R: Default, C: Default {
-	fn default() -> Server<R, C> {
-		Server {
-			handlers: Default::default(),
-			port: 80,
-			host: Ipv4Addr(0, 0, 0, 0),
-			threads: None,
-			server: "rustful".to_owned(),
-			content_type: Mime(
-				hyper::mime::TopLevel::Text,
-				hyper::mime::SubLevel::Plain,
-				vec![(hyper::mime::Attr::Charset, hyper::mime::Value::Utf8)]
-			),
-			cache: Default::default(),
-			cache_clean_interval: None,
-			request_plugins: Vec::new(),
-			response_plugins: Vec::new()
 		}
 	}
 }
@@ -493,11 +479,11 @@ impl<R, C> Default for Server<R, C> where R: Default, C: Default {
 ///unless additional control is required.
 ///
 ///```no_run
-///# use rustful::{Server, Handler, Request, Response};
+///# use rustful::{Server, Handler, Context, Response};
 ///# struct R;
 ///# impl Handler for R {
 ///#     type Cache = ();
-///#     fn handle_request(&self, _request: Request, _cache: &(), _response: Response) {}
+///#     fn handle_request(&self, _context: Context, _response: Response) {}
 ///# }
 ///# let router = R;
 ///let server_instance = Server::new().port(8080).handlers(router).build();
@@ -515,18 +501,18 @@ pub struct ServerInstance<R, C> {
 	cache_clean_interval: Option<i64>,
 	last_cache_clean: RwLock<Timespec>,
 
-	request_plugins: Vec<Box<RequestPlugin + Send + Sync>>,
+	context_plugins: Vec<Box<ContextPlugin<Cache=C> + Send + Sync>>,
 	response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
 }
 
-impl<R, C> ServerInstance<R, C> {
+impl<R, C: Cache> ServerInstance<R, C> {
 
-	fn modify_request(&self, request: &mut Request) -> RequestAction {
-		let mut result = RequestAction::Continue;
+	fn modify_context(&self, context: &mut Context<C>) -> ContextAction {
+		let mut result = ContextAction::Continue;
 
-		for plugin in self.request_plugins.iter() {
+		for plugin in self.context_plugins.iter() {
 			result = match result {
-				RequestAction::Continue => plugin.modify(request),
+				ContextAction::Continue => plugin.modify(context),
 				_ => return result
 			};
 		}
@@ -571,22 +557,23 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 		match path_components {
 			Some((path, query, fragment)) => {
 
-				let mut request = Request {
+				let mut context = Context {
 					headers: request_headers,
 					method: request_method,
 					path: lossy_utf8_percent_decode(path.as_slice()),
 					variables: HashMap::new(),
 					query: query,
 					fragment: fragment,
-					inner: request
+					inner: request,
+					cache: &self.cache
 				};
 
-				match self.modify_request(&mut request) {
-					RequestAction::Continue => {
-						match self.handlers.find(&request.method, request.path.as_slice()) {
+				match self.modify_context(&mut context) {
+					ContextAction::Continue => {
+						match self.handlers.find(&context.method, context.path.as_slice()) {
 							Some((handler, variables)) => {
-								request.variables = variables;
-								handler.handle_request(request, &self.cache, response);
+								context.variables = variables;
+								handler.handle_request(context, response);
 							},
 							None => {
 								response.set_header(ContentLength(0));
@@ -594,7 +581,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 							}
 						}
 					},
-					RequestAction::Abort(status) => {
+					ContextAction::Abort(status) => {
 						response.set_header(ContentLength(0));
 						response.set_status(status);
 					}
@@ -641,8 +628,8 @@ fn parse_fragment<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
 }
 
 
-///A container for all the request data, including get, set and path variables.
-pub struct Request<'a> {
+///A container for things like request data and cache.
+pub struct Context<'a, 'c, Cache: 'c =()> {
 	///Headers from the HTTP request
 	pub headers: Headers,
 
@@ -661,10 +648,13 @@ pub struct Request<'a> {
 	///The fragment part of the URL (after #), if provided
 	pub fragment: Option<String>,
 
+	pub cache: &'c Cache,
+
 	inner: hyper::server::request::Request<'a>
 }
 
-impl<'a> Reader for Request<'a> {
+impl<'a, 'c, C> Reader for Context<'a, 'c, C> {
+	///Read the request body.
 	fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
 		self.inner.read(buf)
 	}

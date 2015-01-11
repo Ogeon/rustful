@@ -11,7 +11,7 @@ use std::io::{File, IoResult};
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
-use rustful::{Server, Request, Response, Handler, TreeRouter};
+use rustful::{Server, Context, Response, Handler, TreeRouter};
 use rustful::cache::{CachedValue, CachedProcessedFile};
 use rustful::Method::Get;
 use rustful::StatusCode::InternalServerError;
@@ -80,7 +80,7 @@ struct Counter {
 impl Handler for Counter {
 	type Cache = ();
 
-	fn handle_request(&self, _request: Request, _cache: &(), mut response: Response) {
+	fn handle_request(&self, _context: Context, mut response: Response) {
 		self.operation.map(|o| {
 			//Lock the value for writing and update it
 			let mut value = self.value.write().unwrap();

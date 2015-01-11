@@ -10,16 +10,16 @@ use std::io::{File, IoResult};
 use std::borrow::ToOwned;
 use std::error::Error;
 
-use rustful::{Server, Request, Response, Cache};
+use rustful::{Server, Context, Response, Cache};
 use rustful::cache::{CachedValue, CachedProcessedFile};
-use rustful::request_extensions::QueryBody;
+use rustful::context_extensions::QueryBody;
 use rustful::header::ContentType;
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
-fn say_hello(mut request: Request, cache: &Files, mut response: Response) {
+fn say_hello(mut context: Context<Files>, mut response: Response) {
 	response.set_header(ContentType(content_type!("text", "html", ("charset", "UTF-8"))));
 
-	let body = match request.read_query_body() {
+	let body = match context.read_query_body() {
 		Ok(body) => body,
 		Err(_) => {
 			//Oh no! Could not read the body
@@ -34,7 +34,7 @@ fn say_hello(mut request: Request, cache: &Files, mut response: Response) {
 			format!("<p>Hello, {}!</p>", name)
 		},
 		None => {
-			match *cache.form.borrow() {
+			match *context.cache.form.borrow() {
 				Some(ref form) => {
 					form.clone()
 				},
@@ -48,7 +48,7 @@ fn say_hello(mut request: Request, cache: &Files, mut response: Response) {
 	};
 
 	//Insert the content into the page and write it to the response
-	match *cache.page.borrow() {
+	match *context.cache.page.borrow() {
 		Some(ref page) => {
 			let complete_page = page.replace("{}", content.as_slice());
 			try_send!(response.into_writer(), complete_page);
@@ -71,7 +71,7 @@ fn main() {
 	};
 
 	//Handlers implements the Router trait, so it can be passed to the server as it is
-	let server_result = Server::new().cache(cache).handlers(say_hello as fn(Request, &Files, Response)).port(8080).run();
+	let server_result = Server::with_cache(cache).handlers(say_hello).port(8080).run();
 
 	//Check if the server started successfully
 	match server_result {

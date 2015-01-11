@@ -11,12 +11,12 @@ extern crate rustful;
 
 use std::error::Error;
 
-use rustful::{Server, Request, Response, TreeRouter};
+use rustful::{Server, Context, Response, TreeRouter};
 use rustful::Method::Get;
 
-fn say_hello(request: Request, _cache: &(), response: Response) {
+fn say_hello(context: Context, response: Response) {
     //Get the value of the path variable `:person`, from below.
-    let person = match request.variables.get("person") {
+    let person = match context.variables.get("person") {
         Some(name) => name.as_slice(),
         None => "stranger"
     };
