@@ -1,11 +1,15 @@
-#![feature(phase)]
-#[phase(plugin)]
+#![feature(plugin)]
+
+#[plugin]
+#[macro_use]
+#[no_link]
 extern crate rustful_macros;
 
 extern crate rustful;
 
-use std::sync::RWLock;
+use std::sync::RwLock;
 use std::borrow::ToOwned;
+use std::error::Error;
 
 use rustful::{Server, TreeRouter, Request, Response, RequestPlugin, ResponsePlugin};
 use rustful::RequestAction;
@@ -15,7 +19,7 @@ use rustful::Method::Get;
 use rustful::StatusCode;
 use rustful::header::Headers;
 
-fn say_hello(request: Request, response: Response) {
+fn say_hello(request: Request, cache: &(), response: Response) {
 	let person = match request.variables.get(&"person".to_owned()) {
 		Some(name) => name.as_slice(),
 		None => "stranger"
@@ -30,8 +34,8 @@ fn main() {
 	let mut router = TreeRouter::new();
 	insert_routes!{
 		&mut router: "print" => {
-			Get: say_hello as fn(Request, Response),
-			":person" => Get: say_hello as fn(Request, Response)
+			Get: say_hello,
+			":person" => Get: say_hello
 		}
 	};
 
@@ -50,18 +54,18 @@ fn main() {
 
 	match server_result {
 		Ok(_server) => {},
-		Err(e) => println!("could not start server: {}", e)
+		Err(e) => println!("could not start server: {}", e.description())
 	}
 }
 
 struct RequestLogger {
-	counter: RWLock<uint>
+	counter: RwLock<u32>
 }
 
 impl RequestLogger {
 	pub fn new() -> RequestLogger {
 		RequestLogger {
-			counter: RWLock::new(0)
+			counter: RwLock::new(0)
 		}
 	}
 }

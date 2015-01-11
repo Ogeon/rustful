@@ -48,15 +48,21 @@ Olivia) to try it.
 ```rust
 //Include `rustful_macros` during the plugin phase
 //to be able to use `router!` and `try_send!`.
-#![feature(phase)]
-#[phase(plugin)]
+#![feature(plugin)]
+
+#[plugin]
+#[macro_use]
+#[no_link]
 extern crate rustful_macros;
 
 extern crate rustful;
+
+use std::error::Error;
+
 use rustful::{Server, Request, Response, TreeRouter};
 use rustful::Method::Get;
 
-fn say_hello(request: Request, response: Response) {
+fn say_hello(request: Request, _cache: &(), response: Response) {
     //Get the value of the path variable `:person`, from below.
     let person = match request.variables.get("person") {
         Some(name) => name.as_slice(),
@@ -64,18 +70,18 @@ fn say_hello(request: Request, response: Response) {
     };
 
     //Use the value of the path variable to say hello.
-    try_send!(response.into_writer(), format!("Hello, {}!", person) while "saying hello");
+    try_send!(response.into_writer(), format!("Hello, {}!", person), "saying hello");
 }
 
 fn main() {
     let router = insert_routes!{
         TreeRouter::new(): {
             //Handle requests for root...
-            "/" => Get: say_hello as fn(Request, Response),
+            "/" => Get: say_hello,
 
             //...and one level below.
             //`:person` is a path variable and it will be accessible in the handler.
-            "/:person" => Get: say_hello as fn(Request, Response)
+            "/:person" => Get: say_hello
         }
     };
 
@@ -84,7 +90,7 @@ fn main() {
 
     match server_result {
         Ok(_server) => {},
-        Err(e) => println!("could not start server: {}", e)
+        Err(e) => println!("could not start server: {}", e.description())
     }
 }
 ```

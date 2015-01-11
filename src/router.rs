@@ -101,7 +101,7 @@ enum Branch {
 ///"a/b/c/d" -> match
 ///"a/b" -> no match
 ///```
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct TreeRouter<T> {
 	items: HashMap<String, (T, Vec<String>)>,
 	static_routes: HashMap<String, TreeRouter<T>>,
@@ -135,24 +135,26 @@ impl<T> TreeRouter<T> {
 	fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut TreeRouter<T> {
 		if key == "*" {
 			if self.wildcard_route.is_none() {
-				self.wildcard_route = Some(box TreeRouter::new());
+				self.wildcard_route = Some(Box::new(TreeRouter::new()));
 			}
 			&mut **self.wildcard_route.as_mut::<'a>().unwrap()
 		} else if key.len() > 0 && key.char_at(0) == ':' {
 			if self.variable_route.is_none() {
-				self.variable_route = Some(box TreeRouter::new());
+				self.variable_route = Some(Box::new(TreeRouter::new()));
 			}
 			&mut **self.variable_route.as_mut::<'a>().unwrap()
 		} else {
 			match self.static_routes.entry(key.to_string()) {
 				Occupied(entry) => entry.into_mut(),
-				Vacant(entry) => entry.set(TreeRouter::new())
+				Vacant(entry) => entry.insert(TreeRouter::new())
 			}
 		}
 	}
 }
 
-impl<T> Router<T> for TreeRouter<T> {
+impl<T> Router for TreeRouter<T> {
+	type Handler = T;
+
 	fn find<'a>(&'a self, method: &Method, path: &str) -> RouterResult<'a, T> {
 		let path = path_to_vec(path);
 		let method_str = method.to_string();
@@ -291,14 +293,14 @@ impl<T: Clone> TreeRouter<T> {
 		for (key, router) in router.static_routes.iter() {
 			let next = match self.static_routes.entry(key.clone()) {
 				Occupied(entry) => entry.into_mut(),
-				Vacant(entry) => entry.set(TreeRouter::new())
+				Vacant(entry) => entry.insert(TreeRouter::new())
 			};
 			next.merge_router(variable_names.clone(), router);
 		}
 
 		if router.variable_route.is_some() {
 			if self.variable_route.is_none() {
-				self.variable_route = Some(box TreeRouter::new());
+				self.variable_route = Some(Box::new(TreeRouter::new()));
 			}
 
 			match self.variable_route.as_mut() {
@@ -309,7 +311,7 @@ impl<T: Clone> TreeRouter<T> {
 
 		if router.wildcard_route.is_some() {
 			if self.wildcard_route.is_none() {
-				self.wildcard_route = Some(box TreeRouter::new());
+				self.wildcard_route = Some(Box::new(TreeRouter::new()));
 			}
 
 			match self.wildcard_route.as_mut() {

@@ -2,7 +2,7 @@
 
 use std::io::{File, IoResult};
 use std::io::fs::PathExtensions;
-use std::sync::{RWLock, RWLockReadGuard};
+use std::sync::{RwLock, RwLockReadGuard};
 
 use time;
 use time::Timespec;
@@ -48,6 +48,7 @@ pub trait CachedValue<'a, Value> {
 ///The whole file will be loaded when accessed.
 ///
 ///```rust
+///# #![allow(unstable)]
 ///use rustful::cache::{CachedValue, CachedFile};
 ///
 ///let file = CachedFile::new(Path::new("/some/file/path.txt"), None);
@@ -59,9 +60,9 @@ pub trait CachedValue<'a, Value> {
 ///```
 pub struct CachedFile {
 	path: Path,
-	file: RWLock<Option<Vec<u8>>>,
-	modified: RWLock<u64>,
-	last_accessed: RWLock<Timespec>,
+	file: RwLock<Option<Vec<u8>>>,
+	modified: RwLock<u64>,
+	last_accessed: RwLock<Timespec>,
 	unused_after: Option<i64>
 }
 
@@ -70,16 +71,16 @@ impl CachedFile {
 	pub fn new(path: Path, unused_after: Option<u32>) -> CachedFile {
 		CachedFile {
 			path: path,
-			file: RWLock::new(None),
-			modified: RWLock::new(0),
-			last_accessed: RWLock::new(Timespec::new(0, 0)),
+			file: RwLock::new(None),
+			modified: RwLock::new(0),
+			last_accessed: RwLock::new(Timespec::new(0, 0)),
 			unused_after: unused_after.map(|i| i as i64),
 		}
 	}
 }
 
-impl<'a> CachedValue<'a, RWLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
-	fn borrow_current(&'a self) -> RWLockReadGuard<'a, Option<Vec<u8>>> {
+impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
+	fn borrow_current(&'a self) -> RwLockReadGuard<'a, Option<Vec<u8>>> {
 		if self.unused_after.is_some() {
 			*self.last_accessed.write().unwrap() = time::get_time();
 		}
@@ -128,6 +129,7 @@ impl<'a> CachedValue<'a, RWLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
 ///each time it is loaded and the result will be stored.
 ///
 ///```rust
+///# #![allow(unstable)]
 ///use std::io::{File, IoResult};
 ///use rustful::cache::{CachedValue, CachedProcessedFile};
 ///
@@ -144,9 +146,9 @@ impl<'a> CachedValue<'a, RWLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
 ///```
 pub struct CachedProcessedFile<T> {
 	path: Path,
-	file: RWLock<Option<T>>,
-	modified: RWLock<u64>,
-	last_accessed: RWLock<Timespec>,
+	file: RwLock<Option<T>>,
+	modified: RwLock<u64>,
+	last_accessed: RwLock<Timespec>,
 	unused_after: Option<i64>,
 	processor: fn(IoResult<File>) -> IoResult<Option<T>>
 }
@@ -157,17 +159,17 @@ impl<T: Send+Sync> CachedProcessedFile<T> {
 	pub fn new(path: Path, unused_after: Option<u32>, processor: fn(IoResult<File>) -> IoResult<Option<T>>) -> CachedProcessedFile<T> {
 		CachedProcessedFile {
 			path: path,
-			file: RWLock::new(None),
-			modified: RWLock::new(0),
-			last_accessed: RWLock::new(Timespec::new(0, 0)),
+			file: RwLock::new(None),
+			modified: RwLock::new(0),
+			last_accessed: RwLock::new(Timespec::new(0, 0)),
 			unused_after: unused_after.map(|i| i as i64),
 			processor: processor
 		}
 	}
 }
 
-impl<'a, T: Send+Sync> CachedValue<'a, RWLockReadGuard<'a, Option<T>>> for CachedProcessedFile<T> {
-	fn borrow_current(&'a self) -> RWLockReadGuard<'a, Option<T>> {
+impl<'a, T: Send+Sync> CachedValue<'a, RwLockReadGuard<'a, Option<T>>> for CachedProcessedFile<T> {
+	fn borrow_current(&'a self) -> RwLockReadGuard<'a, Option<T>> {
 		if self.unused_after.is_some() {
 			*self.last_accessed.write().unwrap() = time::get_time();
 		}

@@ -4,7 +4,9 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(macro_rules, plugin_registrar, quote, phase)]
+#![feature(plugin_registrar, quote)]
+
+#![allow(unstable)]
 
 //!This crate provides some helpful macros for rustful, including `insert_routes!` and `content_type!`.
 //!
@@ -17,8 +19,9 @@
 //!##Example 1
 //!
 //!```rust ignore
-//!#![feature(phase)]
-//!#[phase(plugin)]
+//!#![feature(plugin)]
+//!#[plugin]
+//!#[no_link]
 //!extern crate rustful_macros;
 //!
 //!extern crate rustful;
@@ -39,8 +42,9 @@
 //!##Example 2
 //!
 //!```rust ignore
-//!#![feature(phase)]
-//!#[phase(plugin)]
+//!#![feature(plugin)]
+//!#[plugin]
+//!#[no_link]
 //!extern crate rustful_macros;
 //!
 //!extern crate rustful;
@@ -92,7 +96,7 @@ use rustc::plugin::Registry;
 #[plugin_registrar]
 #[doc(hidden)]
 pub fn macro_registrar(reg: &mut Registry) {
-	let expander = box expand_routes as Box<TTMacroExpander>;
+	let expander = Box::new(expand_routes) as Box<TTMacroExpander>;
 	reg.register_syntax_extension(token::intern("insert_routes"), NormalTT(expander, None));
 }
 
@@ -141,7 +145,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
 				let mut new_base = base.to_string();
 				match s.container_as_str() {
 					Some(s) => {
-						new_base.push_str(s.trim_chars('/'));
+						new_base.push_str(s.trim_matches('/'));
 						new_base.push_str("/");
 					},
 					None => cx.span_err(parser.span, "invalid path")
@@ -248,7 +252,7 @@ macro_rules! content_type {
 		)
 	});
 
-	($main_type:expr, $sub_type:expr, $($param:expr: $value:expr),+) => ({
+	($main_type:expr, $sub_type:expr, $(($param:expr, $value:expr)),+) => ({
 		::rustful::mime::Mime (
 			std::str::FromStr::from_str($main_type).unwrap(),
 			std::str::FromStr::from_str($sub_type).unwrap(),
@@ -279,7 +283,7 @@ macro_rules! try_send {
 		}
 	);
 
-	($writer:expr, $content:expr while $what:expr) => (
+	($writer:expr, $content:expr, $what:expr) => (
 		match $writer.send($content) {
 			Ok(v) => v,
 			Err(::rustful::ResponseError::IoError(e)) => {

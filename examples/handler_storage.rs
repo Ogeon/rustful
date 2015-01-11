@@ -1,11 +1,15 @@
-#![feature(phase)]
-#[phase(plugin)]
+#![feature(plugin)]
+
+#[plugin]
+#[macro_use]
+#[no_link]
 extern crate rustful_macros;
 
 extern crate rustful;
 
 use std::io::{File, IoResult};
-use std::sync::{Arc, RWLock};
+use std::sync::{Arc, RwLock};
+use std::error::Error;
 
 use rustful::{Server, Request, Response, Handler, TreeRouter};
 use rustful::cache::{CachedValue, CachedProcessedFile};
@@ -20,7 +24,7 @@ fn main() {
 	let page = Arc::new(CachedProcessedFile::new(Path::new("examples/handler_storage/page.html"), None, read_string));
 
 	//The shared counter state
-	let value = Arc::new(RWLock::new(0));
+	let value = Arc::new(RwLock::new(0));
 
 	let router = insert_routes!{
 		TreeRouter::new(): {
@@ -32,12 +36,12 @@ fn main() {
 			"/add" => Get: Counter{
 				page: page.clone(),
 				value: value.clone(),
-				operation: Some(add as fn(int) -> int)
+				operation: Some(add as fn(i32) -> i32)
 			},
 			"/sub" => Get: Counter{
 				page: page.clone(),
 				value: value.clone(),
-				operation: Some(sub as fn(int) -> int)
+				operation: Some(sub as fn(i32) -> i32)
 			}
 		}
 	};
@@ -46,16 +50,16 @@ fn main() {
 
 	match server_result {
 		Ok(_server) => {},
-		Err(e) => println!("could not start server: {}", e)
+		Err(e) => println!("could not start server: {}", e.description())
 	}
 }
 
 
-fn add(value: int) -> int {
+fn add(value: i32) -> i32 {
 	value + 1
 }
 
-fn sub(value: int) -> int {
+fn sub(value: i32) -> i32 {
 	value - 1
 }
 
@@ -69,11 +73,13 @@ struct Counter {
 	//We are using the handler to cache the page in this exmaple
 	page: Arc<CachedProcessedFile<String>>,
 
-	value: Arc<RWLock<int>>,
-	operation: Option<fn(int) -> int>
+	value: Arc<RwLock<i32>>,
+	operation: Option<fn(i32) -> i32>
 }
 
-impl Handler<()> for Counter {
+impl Handler for Counter {
+	type Cache = ();
+
 	fn handle_request(&self, _request: Request, _cache: &(), mut response: Response) {
 		self.operation.map(|o| {
 			//Lock the value for writing and update it
@@ -81,12 +87,12 @@ impl Handler<()> for Counter {
 			*value = (o)(*value);
 		});
 
-		response.set_header(ContentType(content_type!("text", "html", "charset": "UTF-8")));
+		response.set_header(ContentType(content_type!("text", "html", ("charset", "UTF-8"))));
 
 		//Insert the value into the page and write it to the response
 		match *self.page.borrow() {
 			Some(ref page) => {
-				let count = self.value.read().unwrap().deref().to_string();
+				let count = self.value.read().unwrap().to_string();
 
 				try_send!(response.into_writer(), page.replace("{}", count.as_slice()));
 			},

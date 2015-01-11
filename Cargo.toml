@@ -16,6 +16,7 @@ macros = ["rustful_macros"]
 [dependencies]
 hyper = "*"
 time = "*"
+url = "*"
 
 [dependencies.rustful_macros]
 path = "macros"

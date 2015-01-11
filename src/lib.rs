@@ -4,7 +4,9 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(associated_types, default_type_params, unsafe_destructor)]
+#![feature(unsafe_destructor, old_impl_check)]
+
+#![allow(unstable)]
 
 #[cfg(test)]
 extern crate test;
@@ -36,7 +38,7 @@ use std::io::net::ip::{IpAddr, Ipv4Addr, Port};
 use std::collections::HashMap;
 use std::error::FromError;
 use std::default::Default;
-use std::sync::RWLock;
+use std::sync::RwLock;
 use std::borrow::ToOwned;
 
 use time::Timespec;
@@ -54,7 +56,7 @@ pub mod request_extensions;
 
 ///The result from a `RequestPlugin`.
 #[experimental]
-#[deriving(Copy)]
+#[derive(Copy)]
 pub enum RequestAction {
 	///Continue to the next plugin in the stack.
 	Continue,
@@ -65,7 +67,7 @@ pub enum RequestAction {
 
 ///The result of a response action.
 #[experimental]
-#[deriving(Clone)]
+#[derive(Clone)]
 pub enum ResponseError {
 	///A response plugin failed.
     PluginError(String),
@@ -203,35 +205,33 @@ impl<'a> IntoResponseData<'a> for ResponseData<'a> {
 
 
 ///Routers are used to store request handlers.
-pub trait Router<Handler> {
+pub trait Router {
+	type Handler;
 	///Find and return the matching handler and variable values.
-	fn find(&self, method: &Method, path: &str) -> Option<(&Handler, HashMap<String, String>)>;
-	fn insert(&mut self, method: Method, path: &str, handler: Handler);
+	fn find(&self, method: &Method, path: &str) -> Option<(&Self::Handler, HashMap<String, String>)>;
+	fn insert(&mut self, method: Method, path: &str, handler: Self::Handler);
 }
 
 
 ///A trait for request handlers.
-pub trait Handler<C> {
-	fn handle_request(&self, request: Request, cache: &C, response: Response);
+pub trait Handler {
+	type Cache;
+
+	fn handle_request(&self, request: Request, cache: &Self::Cache, response: Response);
 }
 
-impl<C> Handler<C> for () {
-	fn handle_request(&self, _request: Request, _cache: &C, _response: Response) {}
-}
+#[old_impl_check]
+impl<C, F: Fn(Request, &C, Response)> Handler for F {
+	type Cache = C;
 
-impl<C> Handler<C> for fn(Request, Response) {
-	fn handle_request(&self, request: Request, _cache: &C, response: Response) {
-		(*self)(request, response);
-	}
-}
-
-impl<C> Handler<C> for fn(Request, &C, Response) {
 	fn handle_request(&self, request: Request, cache: &C, response: Response) {
 		(*self)(request, cache, response);
 	}
 }
 
-impl<C: Cache, H: Handler<C>> Router<H> for H {
+impl<H: Handler> Router for H {
+	type Handler = H;
+
 	fn find(&self, _method: &Method, _path: &str) -> Option<(&H, HashMap<String, String>)> {
 		Some((self, HashMap::new()))
 	}
@@ -286,9 +286,11 @@ pub trait ResponsePlugin {
 ///calls to these methods can be chained for quick setup.
 ///
 ///```no_run
+///# use std::error::Error;
 ///# use rustful::{Server, Handler, Request, Response};
 ///# struct R;
-///# impl Handler<()> for R {
+///# impl Handler for R {
+///#     type Cache = ();
 ///#     fn handle_request(&self, _request: Request, _cache: &(), _response: Response) {}
 ///# }
 ///# let router = R;
@@ -296,7 +298,7 @@ pub trait ResponsePlugin {
 ///
 ///match server_result {
 ///    Ok(_server) => {},
-///    Err(e) => println!("could not start server: {}", e)
+///    Err(e) => println!("could not start server: {}", e.description())
 ///}
 ///```
 pub struct Server<R, C> {
@@ -309,9 +311,9 @@ pub struct Server<R, C> {
 	///The host address where the server will listen for requests.
 	pub host: IpAddr,
 
-	///The number of tasks to be used in the server task pool.
+	///The number of threads to be used in the server task pool.
 	///The default (`None`) is based on recommendations from the system.
-	pub tasks: Option<uint>,
+	pub threads: Option<usize>,
 
 	///The content of the server header.
 	pub server: String,
@@ -343,12 +345,12 @@ impl Server<(), ()> {
 
 impl<R, C> Server<R, C> {
 	///Set request handlers.
-	pub fn handlers<NewRouter: Router<H>, H: Handler<C>>(self, handlers: NewRouter) -> Server<NewRouter, C> {
+	pub fn handlers<NewRouter: Router<Handler=H>, H: Handler<Cache=C>>(self, handlers: NewRouter) -> Server<NewRouter, C> {
 		Server {
 			handlers: handlers,
 			port: self.port,
 			host: self.host,
-			tasks: self.tasks,
+			threads: self.threads,
 			server: self.server,
 			content_type: self.content_type,
 			cache: self.cache,
@@ -370,12 +372,12 @@ impl<R, C> Server<R, C> {
 		self
 	}
 
-	///Set the number of tasks to be used in the server task pool.
+	///Set the number of threads to be used in the server task pool.
 	///
-	///Passing `None` will set it to the default number of tasks,
+	///Passing `None` will set it to the default number of threads,
 	///based on recommendations from the system.
-	pub fn tasks(mut self, tasks: Option<uint>) -> Server<R, C> {
-		self.tasks = tasks;
+	pub fn threads(mut self, threads: Option<usize>) -> Server<R, C> {
+		self.threads = threads;
 		self
 	}
 
@@ -385,7 +387,7 @@ impl<R, C> Server<R, C> {
 			handlers: self.handlers,
 			port: self.port,
 			host: self.host,
-			tasks: self.tasks,
+			threads: self.threads,
 			server: self.server,
 			content_type: self.content_type,
 			cache: cache,
@@ -418,31 +420,31 @@ impl<R, C> Server<R, C> {
 	///Add a request plugin to the plugin stack.
 	#[experimental]
 	pub fn with_request_plugin<P: RequestPlugin + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
-		self.request_plugins.push(box plugin as Box<RequestPlugin + Send + Sync>);
+		self.request_plugins.push(Box::new(plugin) as Box<RequestPlugin + Send + Sync>);
 		self
 	}
 
 	///Add a response plugin to the plugin stack.
 	#[experimental]
 	pub fn with_response_plugin<P: ResponsePlugin + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
-		self.response_plugins.push(box plugin as Box<ResponsePlugin + Send + Sync>);
+		self.response_plugins.push(Box::new(plugin) as Box<ResponsePlugin + Send + Sync>);
 		self
 	}
 }
 
 impl<R, H, C> Server<R, C>
 	where
-	R: Router<H> + Send + Sync,
-	H: Handler<C> + Send + Sync,
+	R: Router<Handler=H> + Send + Sync,
+	H: Handler<Cache=C> + Send + Sync,
 	C: Cache + Send + Sync
 {
 	///Start the server.
 	pub fn run(self) -> hyper::HttpResult<Listening> {
-		let tasks = self.tasks;
+		let threads = self.threads;
 		let server = self.build();
 		let http = hyper::server::Server::http(server.host, server.port);
-		match tasks {
-			Some(tasks) => http.listen_threads(server, tasks),
+		match threads {
+			Some(threads) => http.listen_threads(server, threads),
 			None => http.listen(server)
 		}
 	}
@@ -457,7 +459,7 @@ impl<R, H, C> Server<R, C>
 			content_type: self.content_type,
 			cache: self.cache,
 			cache_clean_interval: self.cache_clean_interval,
-			last_cache_clean: RWLock::new(Timespec::new(0, 0)),
+			last_cache_clean: RwLock::new(Timespec::new(0, 0)),
 			request_plugins: self.request_plugins,
 			response_plugins: self.response_plugins,
 		}
@@ -470,7 +472,7 @@ impl<R, C> Default for Server<R, C> where R: Default, C: Default {
 			handlers: Default::default(),
 			port: 80,
 			host: Ipv4Addr(0, 0, 0, 0),
-			tasks: None,
+			threads: None,
 			server: "rustful".to_owned(),
 			content_type: Mime(
 				hyper::mime::TopLevel::Text,
@@ -493,7 +495,8 @@ impl<R, C> Default for Server<R, C> where R: Default, C: Default {
 ///```no_run
 ///# use rustful::{Server, Handler, Request, Response};
 ///# struct R;
-///# impl Handler<()> for R {
+///# impl Handler for R {
+///#     type Cache = ();
 ///#     fn handle_request(&self, _request: Request, _cache: &(), _response: Response) {}
 ///# }
 ///# let router = R;
@@ -510,7 +513,7 @@ pub struct ServerInstance<R, C> {
 
 	cache: C,
 	cache_clean_interval: Option<i64>,
-	last_cache_clean: RWLock<Timespec>,
+	last_cache_clean: RwLock<Timespec>,
 
 	request_plugins: Vec<Box<RequestPlugin + Send + Sync>>,
 	response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
@@ -535,8 +538,8 @@ impl<R, C> ServerInstance<R, C> {
 
 impl<R, H, C> HyperHandler for ServerInstance<R, C>
 	where
-	R: Router<H> + Send + Sync,
-	H: Handler<C> + Send + Sync,
+	R: Router<Handler=H> + Send + Sync,
+	H: Handler<Cache=C> + Send + Sync,
 	C: Cache + Send + Sync,
 {
 	fn handle(&self, mut request: hyper::server::request::Request, writer: hyper::server::response::Response) {
@@ -662,7 +665,7 @@ pub struct Request<'a> {
 }
 
 impl<'a> Reader for Request<'a> {
-	fn read(&mut self, buf: &mut [u8]) -> IoResult<uint> {
+	fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
 		self.inner.read(buf)
 	}
 }

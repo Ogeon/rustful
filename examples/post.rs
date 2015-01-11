@@ -1,10 +1,14 @@
-#![feature(phase)]
-#[phase(plugin)]
+#![feature(plugin)]
+
+#[plugin]
+#[macro_use]
+#[no_link]
 extern crate rustful_macros;
 
 extern crate rustful;
 use std::io::{File, IoResult};
 use std::borrow::ToOwned;
+use std::error::Error;
 
 use rustful::{Server, Request, Response, Cache};
 use rustful::cache::{CachedValue, CachedProcessedFile};
@@ -13,7 +17,7 @@ use rustful::header::ContentType;
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
 fn say_hello(mut request: Request, cache: &Files, mut response: Response) {
-	response.set_header(ContentType(content_type!("text", "html", "charset": "UTF-8")));
+	response.set_header(ContentType(content_type!("text", "html", ("charset", "UTF-8"))));
 
 	let body = match request.read_query_body() {
 		Ok(body) => body,
@@ -72,7 +76,7 @@ fn main() {
 	//Check if the server started successfully
 	match server_result {
 		Ok(_server) => {},
-		Err(e) => println!("could not start server: {}", e)
+		Err(e) => println!("could not start server: {}", e.description())
 	}
 }
 
