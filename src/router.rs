@@ -239,10 +239,10 @@ impl<T> Router for TreeRouter<T> {
 			let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
 
 				|(current, mut variable_names), piece| {
-					let next = current.find_or_insert_router(piece.as_slice());
-					if piece.len() > 0 && piece.as_slice().char_at(0) == ':' {
+					let next = current.find_or_insert_router(&piece[]);
+					if piece.len() > 0 && piece[].char_at(0) == ':' {
 						//piece.shift_char();
-						variable_names.push(piece.slice_from(1).to_owned());
+						variable_names.push(piece[1..].to_owned());
 					}
 
 					(next, variable_names)
@@ -267,10 +267,10 @@ impl<T: Clone> TreeRouter<T> {
 			let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
 
 				|(current, mut variable_names), piece| {
-					let next = current.find_or_insert_router(piece.as_slice());
-					if piece.len() > 0 && piece.as_slice().char_at(0) == ':' {
+					let next = current.find_or_insert_router(&piece[]);
+					if piece.len() > 0 && piece[].char_at(0) == ':' {
 						//piece.shift_char();
-						variable_names.push(piece.slice_from(1).to_owned());
+						variable_names.push(piece[1..].to_owned());
 					}
 
 					(next, variable_names)
@@ -286,7 +286,7 @@ impl<T: Clone> TreeRouter<T> {
 	fn merge_router(&mut self, variable_names: Vec<String>, router: &TreeRouter<T>) {
 		for (key, &(ref item, ref var_names)) in router.items.iter() {
 			let mut new_var_names = variable_names.clone();
-			new_var_names.push_all(var_names.as_slice());
+			new_var_names.push_all(&var_names[]);
 			self.items.insert(key.clone(), (item.clone(), new_var_names));
 		}
 
@@ -335,7 +335,7 @@ fn path_to_vec(path: &str) -> Vec<String> {
 	} else {
 		let start = if path.char_at(0) == '/' { 1 } else { 0 };
 		let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
-		path.slice(start, path.len() - end).split('/').map(|s| s.to_string()).collect()
+		path[start..path.len() - end].split('/').map(|s| s.to_string()).collect()
 	}
 }
 

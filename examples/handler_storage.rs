@@ -94,7 +94,7 @@ impl Handler for Counter {
 			Some(ref page) => {
 				let count = self.value.read().unwrap().to_string();
 
-				try_send!(response.into_writer(), page.replace("{}", count.as_slice()));
+				try_send!(response.into_writer(), page.replace("{}", &count[]));
 			},
 			None => {
 				//Oh no! The page was not loaded!

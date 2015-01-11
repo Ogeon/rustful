@@ -50,7 +50,7 @@ fn say_hello(mut context: Context<Files>, mut response: Response) {
 	//Insert the content into the page and write it to the response
 	match *context.cache.page.borrow() {
 		Some(ref page) => {
-			let complete_page = page.replace("{}", content.as_slice());
+			let complete_page = page.replace("{}", &content[]);
 			try_send!(response.into_writer(), complete_page);
 		},
 		None => {

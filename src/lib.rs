@@ -127,7 +127,7 @@ impl<'a> ResponseData<'a> {
 	///Borrow the content as a byte slice.
 	pub fn as_bytes(&self) -> &[u8] {
 		match self {
-			&ResponseData::Bytes(ref bytes) => bytes.as_slice(),
+			&ResponseData::Bytes(ref bytes) => &bytes[],
 			&ResponseData::ByteSlice(ref bytes) => *bytes,
 			&ResponseData::String(ref string) => string.as_bytes(),
 			&ResponseData::StringSlice(ref string) => string.as_bytes()
@@ -148,8 +148,8 @@ impl<'a> ResponseData<'a> {
 	///Returns an `None` if the content is a byte vector, a byte slice or if the action is `Error`.
 	pub fn as_string(&self) -> Option<&str> {
 		match self {
-			&ResponseData::String(ref string) => Some(string.as_slice()),
-			&ResponseData::StringSlice(ref string) => Some(string.as_slice()),
+			&ResponseData::String(ref string) => Some(&string[]),
+			&ResponseData::StringSlice(ref string) => Some(&string[]),
 			_ => None
 		}
 	}
@@ -560,7 +560,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 				let mut context = Context {
 					headers: request_headers,
 					method: request_method,
-					path: lossy_utf8_percent_decode(path.as_slice()),
+					path: lossy_utf8_percent_decode(&path[]),
 					variables: HashMap::new(),
 					query: query,
 					fragment: fragment,
@@ -570,7 +570,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 
 				match self.modify_context(&mut context) {
 					ContextAction::Continue => {
-						match self.handlers.find(&context.method, context.path.as_slice()) {
+						match self.handlers.find(&context.method, &context.path[]) {
 							Some((handler, variables)) => {
 								context.variables = variables;
 								handler.handle_request(context, response);
@@ -608,13 +608,13 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 }
 
 fn parse_path(path: String) -> (String, HashMap<String, String>, Option<String>) {
-	match path.as_slice().find('?') {
+	match path.find('?') {
 		Some(index) => {
-			let (query, fragment) = parse_fragment(path.as_slice().slice(index+1, path.len()));
-			(path.as_slice().slice(0, index).to_owned(), utils::parse_parameters(query.as_bytes()), fragment.map(|f| f.to_owned()))
+			let (query, fragment) = parse_fragment(&path[index+1..]);
+			(path[..index].to_owned(), utils::parse_parameters(query.as_bytes()), fragment.map(|f| f.to_owned()))
 		},
 		None => {
-			let (path, fragment) = parse_fragment(path.as_slice());
+			let (path, fragment) = parse_fragment(&path[]);
 			(path.to_owned(), HashMap::new(), fragment.map(|f| f.to_owned()))
 		}
 	}
@@ -622,7 +622,7 @@ fn parse_path(path: String) -> (String, HashMap<String, String>, Option<String>)
 
 fn parse_fragment<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
 	match path.find('#') {
-		Some(index) => (path.slice(0, index), Some(path.slice(index+1, path.len()))),
+		Some(index) => (&path[..index], Some(&path[index+1..])),
 		None => (path, None)
 	}
 }

@@ -65,7 +65,7 @@ use rustful::Method::Get;
 fn say_hello(context: Context, response: Response) {
     //Get the value of the path variable `:person`, from below.
     let person = match context.variables.get("person") {
-        Some(name) => name.as_slice(),
+        Some(name) => &name[],
         None => "stranger"
     };
 
