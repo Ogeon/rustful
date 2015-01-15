@@ -281,6 +281,16 @@ pub trait ResponsePlugin {
 
 
 
+pub enum Protocol {
+	Http,
+	Https {
+		cert: Path,
+		key: Path
+	}
+}
+
+
+
 ///Used to build and run a server.
 ///
 ///Each field has a corresponding modifier method and
@@ -311,6 +321,9 @@ pub struct Server<R, C> {
 
 	///The host address where the server will listen for requests.
 	pub host: IpAddr,
+
+	///The type of HTTP protocol.
+	pub protocol: Protocol,
 
 	///The number of threads to be used in the server task pool.
 	///The default (`None`) is based on recommendations from the system.
@@ -351,6 +364,7 @@ impl<C: Cache> Server<(), C> {
 			handlers: (),
 			port: 80,
 			host: Ipv4Addr(0, 0, 0, 0),
+			protocol: Protocol::Http,
 			threads: None,
 			server: "rustful".to_owned(),
 			content_type: Mime(
@@ -373,6 +387,7 @@ impl<R, C> Server<R, C> {
 			handlers: handlers,
 			port: self.port,
 			host: self.host,
+			protocol: self.protocol,
 			threads: self.threads,
 			server: self.server,
 			content_type: self.content_type,
@@ -392,6 +407,15 @@ impl<R, C> Server<R, C> {
 	///Change the host address. Default is `0.0.0.0`.
 	pub fn host(mut self, host: IpAddr) -> Server<R, C> {
 		self.host = host;
+		self
+	}
+
+	///Change the protocol to HTTPS.
+	pub fn https(mut self, cert: Path, key: Path) -> Server<R, C> {
+		self.protocol = Protocol::Https {
+			cert: cert,
+			key: key
+		};
 		self
 	}
 
@@ -448,8 +472,12 @@ impl<R, H, C> Server<R, C>
 	///Start the server.
 	pub fn run(self) -> hyper::HttpResult<Listening> {
 		let threads = self.threads;
-		let server = self.build();
-		let http = hyper::server::Server::http(server.host, server.port);
+		let (server, protocol) = self.build();
+		let http = match protocol {
+			Protocol::Http => hyper::server::Server::http(server.host, server.port),
+			Protocol::Https {cert, key} => hyper::server::Server::https(server.host, server.port, cert, key)
+		};
+
 		match threads {
 			Some(threads) => http.listen_threads(server, threads),
 			None => http.listen(server)
@@ -457,8 +485,8 @@ impl<R, H, C> Server<R, C>
 	}
 
 	///Build a runnable instance of the server.
-	pub fn build(self) -> ServerInstance<R, C> {
-		ServerInstance {
+	pub fn build(self) -> (ServerInstance<R, C>, Protocol) {
+		(ServerInstance {
 			handlers: self.handlers,
 			port: self.port,
 			host: self.host,
@@ -469,7 +497,8 @@ impl<R, H, C> Server<R, C>
 			last_cache_clean: RwLock::new(Timespec::new(0, 0)),
 			context_plugins: self.context_plugins,
 			response_plugins: self.response_plugins,
-		}
+		},
+		self.protocol)
 	}
 }
 
@@ -486,7 +515,7 @@ impl<R, H, C> Server<R, C>
 ///#     fn handle_request(&self, _context: Context, _response: Response) {}
 ///# }
 ///# let router = R;
-///let server_instance = Server::new().port(8080).handlers(router).build();
+///let (server_instance, protocol) = Server::new().port(8080).handlers(router).build();
 ///```
 pub struct ServerInstance<R, C> {
 	handlers: R,
