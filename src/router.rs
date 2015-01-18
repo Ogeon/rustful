@@ -70,6 +70,8 @@
 //!
 //!This can be found in the crate `rustful_macros`.
 
+#![stable]
+
 use std::collections::HashMap;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::vec::Vec;
@@ -136,6 +138,7 @@ enum Branch {
 ///"a/b/c/d" -> match
 ///"a/b" -> no match
 ///```
+#[stable]
 #[derive(Clone)]
 pub struct TreeRouter<T> {
     items: HashMap<String, (T, Vec<String>)>,

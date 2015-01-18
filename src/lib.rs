@@ -8,6 +8,8 @@
 
 #![allow(unstable)]
 
+#![stable]
+
 #[cfg(test)]
 extern crate test;
 
@@ -42,11 +44,14 @@ pub mod response;
 pub mod plugin;
 
 ///HTTP or HTTPS
+#[stable]
 pub enum Protocol {
     ///Standard HTTP.
+    #[stable]
     Http,
 
     ///HTTP with SSL encryption.
+    #[stable]
     Https {
         ///Path to SSL certificate.
         cert: Path,

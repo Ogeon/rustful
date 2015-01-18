@@ -1,5 +1,7 @@
 //!Server configuration and instance.
 
+#![stable]
+
 use std;
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -81,11 +83,11 @@ pub struct Server<R, C> {
     pub cache_clean_interval: Option<i64>,
 
     ///The context plugin stack.
-    #[experimental]
+    #[unstable]
     pub context_plugins: Vec<Box<ContextPlugin<Cache=C> + Send + Sync>>,
 
     ///The response plugin stack.
-    #[experimental]
+    #[unstable]
     pub response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
 }
 
@@ -188,14 +190,14 @@ impl<R, C> Server<R, C> {
     }
 
     ///Add a context plugin to the plugin stack.
-    #[experimental]
+    #[unstable]
     pub fn with_context_plugin<P: ContextPlugin<Cache=C> + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
         self.context_plugins.push(Box::new(plugin) as Box<ContextPlugin<Cache=C> + Send + Sync>);
         self
     }
 
     ///Add a response plugin to the plugin stack.
-    #[experimental]
+    #[unstable]
     pub fn with_response_plugin<P: ResponsePlugin + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
         self.response_plugins.push(Box::new(plugin) as Box<ResponsePlugin + Send + Sync>);
         self

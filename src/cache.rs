@@ -1,5 +1,7 @@
 //!Traits and implementations for cached resources.
 
+#![stable]
+
 use std::io::{File, IoResult};
 use std::io::fs::PathExtensions;
 use std::sync::{RwLock, RwLockReadGuard};
@@ -8,6 +10,7 @@ use time;
 use time::Timespec;
 
 ///A trait for cache storage.
+#[unstable]
 pub trait Cache {
     ///Free all the unused cached resources.
     fn free_unused(&self);
@@ -19,6 +22,7 @@ impl Cache for () {
 
 
 ///This trait provides functions for handling cached resources.
+#[unstable]
 pub trait CachedValue<'a, Value> {
 
     ///Borrow the cached value, without loading or reloading it.
@@ -68,6 +72,7 @@ pub trait CachedValue<'a, Value> {
 ///    None => println!("the file was not loaded")
 ///}
 ///```
+#[unstable]
 pub struct CachedFile {
     path: Path,
     file: RwLock<Option<Vec<u8>>>,
@@ -76,6 +81,7 @@ pub struct CachedFile {
     unused_after: Option<i64>
 }
 
+#[unstable]
 impl CachedFile {
     ///Creates a new `CachedFile` which will be freed `unused_after` seconds after the latest access.
     pub fn new(path: Path, unused_after: Option<u32>) -> CachedFile {
@@ -154,6 +160,7 @@ impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
 ///    None => println!("the file was not loaded")
 ///}
 ///```
+#[unstable]
 pub struct CachedProcessedFile<T> {
     path: Path,
     file: RwLock<Option<T>>,
@@ -163,6 +170,7 @@ pub struct CachedProcessedFile<T> {
     processor: fn(IoResult<File>) -> IoResult<Option<T>>
 }
 
+#[unstable]
 impl<T: Send+Sync> CachedProcessedFile<T> {
     ///Creates a new `CachedProcessedFile` which will be freed `unused_after` seconds after the latest access.
     ///The file will be processed by the provided `processor` function each time it's loaded.

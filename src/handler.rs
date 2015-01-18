@@ -1,5 +1,7 @@
 //!Request handlers.
 
+#![stable]
+
 use cache::Cache;
 use context::Context;
 use response::Response;

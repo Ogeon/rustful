@@ -1,5 +1,7 @@
 //!Response writers.
 
+#![stable]
+
 use std::io::{IoResult, IoError, Writer, OtherIoError};
 use std::error::FromError;
 use std::borrow::ToOwned;
@@ -16,7 +18,7 @@ use plugin::ResponsePlugin;
 use plugin::ResponseAction::{self, Write, DoNothing, Error};
 
 ///The result of a response action.
-#[experimental]
+#[unstable]
 #[derive(Clone)]
 pub enum ResponseError {
     ///A response plugin failed.
@@ -32,23 +34,29 @@ impl FromError<IoError> for ResponseError {
     }
 }
 
-#[experimental]
+#[stable]
 pub enum ResponseData<'a> {
     ///Data in byte form.
+    #[stable]
     Bytes(Vec<u8>),
 
     ///Data in byte form.
+    #[stable]
     ByteSlice(&'a [u8]),
 
     ///Data in string form.
+    #[stable]
     String(String),
 
     ///Data in string form.
+    #[stable]
     StringSlice(&'a str)
 }
 
+#[stable]
 impl<'a> ResponseData<'a> {
     ///Borrow the content as a byte slice.
+    #[stable]
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             &ResponseData::Bytes(ref bytes) => &bytes[],
@@ -59,6 +67,7 @@ impl<'a> ResponseData<'a> {
     }
 
     ///Turns the content into a byte vector. Slices are copied.
+    #[stable]
     pub fn into_bytes(self) -> Vec<u8> {
         match self {
             ResponseData::Bytes(bytes) => bytes,
@@ -70,6 +79,7 @@ impl<'a> ResponseData<'a> {
 
     ///Borrow the content as a string slice if the content is a string.
     ///Returns an `None` if the content is a byte vector, a byte slice or if the action is `Error`.
+    #[stable]
     pub fn as_string(&self) -> Option<&str> {
         match self {
             &ResponseData::String(ref string) => Some(&string[]),
@@ -81,6 +91,7 @@ impl<'a> ResponseData<'a> {
     ///Extract the contained string or string slice if there is any.
     ///Returns an `None` if the content is a byte vector, a byte slice or if the action is `Error`.
     ///Slices are copied.
+    #[unstable = "may change to use Cow"]
     pub fn into_string(self) -> Option<String> {
         match self {
             ResponseData::String(string) => Some(string),
@@ -92,7 +103,9 @@ impl<'a> ResponseData<'a> {
 
 
 ///Represents anything that can be turned into `ResponseData`.
+#[stable]
 pub trait IntoResponseData<'a> {
+    #[stable]
     fn into_response_data(self) -> ResponseData<'a>;
 }
 
