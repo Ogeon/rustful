@@ -7,40 +7,50 @@ use std::sync::{RwLock, RwLockReadGuard};
 use time;
 use time::Timespec;
 
+///A trait for cache storage.
+pub trait Cache {
+    ///Free all the unused cached resources.
+    fn free_unused(&self);
+}
+
+impl Cache for () {
+    fn free_unused(&self) {}
+}
+
 
 ///This trait provides functions for handling cached resources.
 pub trait CachedValue<'a, Value> {
 
-	///Borrow the cached value, without loading or reloading it.
-	fn borrow_current(&'a self) -> Value;
+    ///Borrow the cached value, without loading or reloading it.
+    fn borrow_current(&'a self) -> Value;
 
-	///Load the cached value.
-	fn load(&self);
+    ///Load the cached value.
+    fn load(&self);
 
-	///Free the cached value.
-	fn free(&self);
+    ///Free the cached value.
+    fn free(&self);
 
-	///Check if the cached value has expired.
-	fn expired(&self) -> bool;
+    ///Check if the cached value has expired.
+    fn expired(&self) -> bool;
 
-	///Check if the cached value is unused and should be removed.
-	fn unused(&self) -> bool;
+    ///Check if the cached value is unused and should be removed.
+    fn unused(&self) -> bool;
 
-	///Reload the cached value if it has expired and borrow it.
-	fn borrow(&'a self) -> Value {
-		if self.expired() {
-			self.load();
-		}
+    ///Reload the cached value if it has expired and borrow it.
+    fn borrow(&'a self) -> Value {
+        if self.expired() {
+            self.load();
+        }
 
-		self.borrow_current()
-	}
+        self.borrow_current()
+    }
 
-	///Free the cached value if it's unused.
-	fn clean(&self) {
-		if self.unused() {
-			self.free();
-		}
-	}
+    ///Free the cached value if it's unused.
+    fn clean(&self) {
+        if self.unused() {
+            self.free();
+        }
+    }
 }
 
 ///Cached raw file content.
@@ -59,67 +69,67 @@ pub trait CachedValue<'a, Value> {
 ///}
 ///```
 pub struct CachedFile {
-	path: Path,
-	file: RwLock<Option<Vec<u8>>>,
-	modified: RwLock<u64>,
-	last_accessed: RwLock<Timespec>,
-	unused_after: Option<i64>
+    path: Path,
+    file: RwLock<Option<Vec<u8>>>,
+    modified: RwLock<u64>,
+    last_accessed: RwLock<Timespec>,
+    unused_after: Option<i64>
 }
 
 impl CachedFile {
-	///Creates a new `CachedFile` which will be freed `unused_after` seconds after the latest access.
-	pub fn new(path: Path, unused_after: Option<u32>) -> CachedFile {
-		CachedFile {
-			path: path,
-			file: RwLock::new(None),
-			modified: RwLock::new(0),
-			last_accessed: RwLock::new(Timespec::new(0, 0)),
-			unused_after: unused_after.map(|i| i as i64),
-		}
-	}
+    ///Creates a new `CachedFile` which will be freed `unused_after` seconds after the latest access.
+    pub fn new(path: Path, unused_after: Option<u32>) -> CachedFile {
+        CachedFile {
+            path: path,
+            file: RwLock::new(None),
+            modified: RwLock::new(0),
+            last_accessed: RwLock::new(Timespec::new(0, 0)),
+            unused_after: unused_after.map(|i| i as i64),
+        }
+    }
 }
 
 impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
-	fn borrow_current(&'a self) -> RwLockReadGuard<'a, Option<Vec<u8>>> {
-		if self.unused_after.is_some() {
-			*self.last_accessed.write().unwrap() = time::get_time();
-		}
-		
-		self.file.read().unwrap()
-	}
+    fn borrow_current(&'a self) -> RwLockReadGuard<'a, Option<Vec<u8>>> {
+        if self.unused_after.is_some() {
+            *self.last_accessed.write().unwrap() = time::get_time();
+        }
+        
+        self.file.read().unwrap()
+    }
 
-	fn load(&self) {
-		*self.modified.write().unwrap() = self.path.stat().map(|s| s.modified).unwrap_or(0);
-		*self.file.write().unwrap() = File::open(&self.path).read_to_end().ok();
+    fn load(&self) {
+        *self.modified.write().unwrap() = self.path.stat().map(|s| s.modified).unwrap_or(0);
+        *self.file.write().unwrap() = File::open(&self.path).read_to_end().ok();
 
-		if self.unused_after.is_some() {
-			*self.last_accessed.write().unwrap() = time::get_time();
-		}
-	}
+        if self.unused_after.is_some() {
+            *self.last_accessed.write().unwrap() = time::get_time();
+        }
+    }
 
-	fn free(&self) {
-		*self.file.write().unwrap() = None;
-	}
+    fn free(&self) {
+        *self.file.write().unwrap() = None;
+    }
 
-	fn expired(&self) -> bool {
-		if self.file.read().unwrap().is_some() {
-			self.path.stat().map(|s| s.modified > *self.modified.read().unwrap()).unwrap_or(false)
-		} else {
-			true
-		}
-	}
+    fn expired(&self) -> bool {
+        if self.file.read().unwrap().is_some() {
+            self.path.stat().map(|s| s.modified > *self.modified.read().unwrap()).unwrap_or(false)
+        } else {
+            true
+        }
+    }
 
-	fn unused(&self) -> bool {
-		if self.file.read().unwrap().is_some() {
-			self.unused_after.map(|t| {
-				let last_accessed = self.last_accessed.read().unwrap();
-				let unused_time = Timespec::new(last_accessed.sec + t, last_accessed.nsec);
-				time::get_time() > unused_time
-			}).unwrap_or(false)
-		} else {
-			false
-		}
-	}
+    fn unused(&self) -> bool {
+        if self.file.read().unwrap().is_some() {
+            self.unused_after.map(|t| {
+                let last_accessed = self.last_accessed.read().unwrap();
+                let unused_time = Timespec::new(last_accessed.sec + t, last_accessed.nsec);
+                time::get_time() > unused_time
+            }).unwrap_or(false)
+        } else {
+            false
+        }
+    }
 }
 
 
@@ -145,94 +155,94 @@ impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
 ///}
 ///```
 pub struct CachedProcessedFile<T> {
-	path: Path,
-	file: RwLock<Option<T>>,
-	modified: RwLock<u64>,
-	last_accessed: RwLock<Timespec>,
-	unused_after: Option<i64>,
-	processor: fn(IoResult<File>) -> IoResult<Option<T>>
+    path: Path,
+    file: RwLock<Option<T>>,
+    modified: RwLock<u64>,
+    last_accessed: RwLock<Timespec>,
+    unused_after: Option<i64>,
+    processor: fn(IoResult<File>) -> IoResult<Option<T>>
 }
 
 impl<T: Send+Sync> CachedProcessedFile<T> {
-	///Creates a new `CachedProcessedFile` which will be freed `unused_after` seconds after the latest access.
-	///The file will be processed by the provided `processor` function each time it's loaded.
-	pub fn new(path: Path, unused_after: Option<u32>, processor: fn(IoResult<File>) -> IoResult<Option<T>>) -> CachedProcessedFile<T> {
-		CachedProcessedFile {
-			path: path,
-			file: RwLock::new(None),
-			modified: RwLock::new(0),
-			last_accessed: RwLock::new(Timespec::new(0, 0)),
-			unused_after: unused_after.map(|i| i as i64),
-			processor: processor
-		}
-	}
+    ///Creates a new `CachedProcessedFile` which will be freed `unused_after` seconds after the latest access.
+    ///The file will be processed by the provided `processor` function each time it's loaded.
+    pub fn new(path: Path, unused_after: Option<u32>, processor: fn(IoResult<File>) -> IoResult<Option<T>>) -> CachedProcessedFile<T> {
+        CachedProcessedFile {
+            path: path,
+            file: RwLock::new(None),
+            modified: RwLock::new(0),
+            last_accessed: RwLock::new(Timespec::new(0, 0)),
+            unused_after: unused_after.map(|i| i as i64),
+            processor: processor
+        }
+    }
 }
 
 impl<'a, T: Send+Sync> CachedValue<'a, RwLockReadGuard<'a, Option<T>>> for CachedProcessedFile<T> {
-	fn borrow_current(&'a self) -> RwLockReadGuard<'a, Option<T>> {
-		if self.unused_after.is_some() {
-			*self.last_accessed.write().unwrap() = time::get_time();
-		}
+    fn borrow_current(&'a self) -> RwLockReadGuard<'a, Option<T>> {
+        if self.unused_after.is_some() {
+            *self.last_accessed.write().unwrap() = time::get_time();
+        }
 
-		self.file.read().unwrap()
-	}
+        self.file.read().unwrap()
+    }
 
-	fn load(&self) {
-		*self.modified.write().unwrap() = self.path.stat().map(|s| s.modified).unwrap_or(0);
-		*self.file.write().unwrap() = (self.processor)(File::open(&self.path)).ok().and_then(|result| result);
+    fn load(&self) {
+        *self.modified.write().unwrap() = self.path.stat().map(|s| s.modified).unwrap_or(0);
+        *self.file.write().unwrap() = (self.processor)(File::open(&self.path)).ok().and_then(|result| result);
 
-		if self.unused_after.is_some() {
-			*self.last_accessed.write().unwrap() = time::get_time();
-		}
-	}
+        if self.unused_after.is_some() {
+            *self.last_accessed.write().unwrap() = time::get_time();
+        }
+    }
 
-	fn free(&self) {
-		*self.file.write().unwrap() = None;
-	}
+    fn free(&self) {
+        *self.file.write().unwrap() = None;
+    }
 
-	fn expired(&self) -> bool {
-		if self.file.read().unwrap().is_some() {
-			self.path.stat().map(|s| s.modified > *self.modified.read().unwrap()).unwrap_or(true)
-		} else {
-			true
-		}
-	}
+    fn expired(&self) -> bool {
+        if self.file.read().unwrap().is_some() {
+            self.path.stat().map(|s| s.modified > *self.modified.read().unwrap()).unwrap_or(true)
+        } else {
+            true
+        }
+    }
 
-	fn unused(&self) -> bool {
-		if self.file.read().unwrap().is_some() {
-			self.unused_after.map(|t| {
-				let last_accessed = self.last_accessed.read().unwrap();
-				let unused_time = Timespec::new(last_accessed.sec + t, last_accessed.nsec);
-				time::get_time() > unused_time
-			}).unwrap_or(false)
-		} else {
-			false
-		}
-	}
+    fn unused(&self) -> bool {
+        if self.file.read().unwrap().is_some() {
+            self.unused_after.map(|t| {
+                let last_accessed = self.last_accessed.read().unwrap();
+                let unused_time = Timespec::new(last_accessed.sec + t, last_accessed.nsec);
+                time::get_time() > unused_time
+            }).unwrap_or(false)
+        } else {
+            false
+        }
+    }
 }
 
 
 
 #[test]
 fn file() {
-	let file = CachedFile::new(Path::new("LICENSE"), None);
-	assert_eq!(file.expired(), true);
-	assert!(file.borrow().as_ref().map(|v| v.len()).unwrap_or(0) > 0);
-	assert_eq!(file.expired(), false);
-	file.free();
-	assert_eq!(file.expired(), true);
+    let file = CachedFile::new(Path::new("LICENSE"), None);
+    assert_eq!(file.expired(), true);
+    assert!(file.borrow().as_ref().map(|v| v.len()).unwrap_or(0) > 0);
+    assert_eq!(file.expired(), false);
+    file.free();
+    assert_eq!(file.expired(), true);
 }
 
 #[test]
 fn modified_file() {
-	fn just_read(mut file: IoResult<File>) -> IoResult<Option<Vec<u8>>> {
-		file.read_to_end().map(|v| Some(v))
-	}
+    fn just_read(mut file: IoResult<File>) -> IoResult<Option<Vec<u8>>> {
+        file.read_to_end().map(|v| Some(v))
+    }
 
-	let file = CachedProcessedFile::new(Path::new("LICENSE"), None, just_read);
-	assert_eq!(file.expired(), true);
-	assert!(file.borrow().as_ref().map(|v| v.len()).unwrap_or(0) > 0);
-	assert_eq!(file.expired(), false);
-	file.free();
-	assert_eq!(file.expired(), true);
+    let file = CachedProcessedFile::new(Path::new("LICENSE"), None, just_read);
+    assert_eq!(file.expired(), true);
+    assert!(file.borrow().as_ref().map(|v| v.len()).unwrap_or(0) > 0);
+    assert_eq!(file.expired(), false);
+    file.free();
+    assert_eq!(file.expired(), true);
 }

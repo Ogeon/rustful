@@ -11,122 +11,122 @@ use std::sync::RwLock;
 use std::borrow::ToOwned;
 use std::error::Error;
 
-use rustful::{Server, TreeRouter, Context, Response, ContextPlugin, ResponsePlugin};
-use rustful::ContextAction;
-use rustful::ContextAction::Continue;
-use rustful::{ResponseAction, ResponseData};
+use rustful::{Server, TreeRouter, Context, Response};
+use rustful::plugin::{ResponseAction, ContextPlugin, ResponsePlugin};
+use rustful::plugin::ContextAction::{self, Continue};
+use rustful::response::ResponseData;
 use rustful::Method::Get;
 use rustful::StatusCode;
 use rustful::header::Headers;
 
 fn say_hello(context: Context, response: Response) {
-	let person = match context.variables.get(&"person".to_owned()) {
-		Some(name) => &name[],
-		None => "stranger"
-	};
+    let person = match context.variables.get(&"person".to_owned()) {
+        Some(name) => &name[],
+        None => "stranger"
+    };
 
-	try_send!(response.into_writer(), format!("{{\"message\": \"Hello, {}!\"}}", person));
+    try_send!(response.into_writer(), format!("{{\"message\": \"Hello, {}!\"}}", person));
 }
 
 fn main() {
-	println!("Visit http://localhost:8080 or http://localhost:8080/Peter (if your name is Peter) to try this example.");
+    println!("Visit http://localhost:8080 or http://localhost:8080/Peter (if your name is Peter) to try this example.");
 
-	let mut router = TreeRouter::new();
-	insert_routes!{
-		&mut router: "print" => {
-			Get: say_hello,
-			":person" => Get: say_hello
-		}
-	};
+    let mut router = TreeRouter::new();
+    insert_routes!{
+        &mut router: "print" => {
+            Get: say_hello,
+            ":person" => Get: say_hello
+        }
+    };
 
-	let server_result = Server::new()
-		   .handlers(router)
-		   .port(8080)
+    let server_result = Server::new()
+           .handlers(router)
+           .port(8080)
 
-			//Log path, change path, log again
-		   .with_context_plugin(RequestLogger::new())
-		   .with_context_plugin(PathPrefix::new("print"))
-		   .with_context_plugin(RequestLogger::new())
+            //Log path, change path, log again
+           .with_context_plugin(RequestLogger::new())
+           .with_context_plugin(PathPrefix::new("print"))
+           .with_context_plugin(RequestLogger::new())
 
-		   .with_response_plugin(Jsonp::new("setMessage"))
+           .with_response_plugin(Jsonp::new("setMessage"))
 
-		   .run();
+           .run();
 
-	match server_result {
-		Ok(_server) => {},
-		Err(e) => println!("could not start server: {}", e.description())
-	}
+    match server_result {
+        Ok(_server) => {},
+        Err(e) => println!("could not start server: {}", e.description())
+    }
 }
 
 struct RequestLogger {
-	counter: RwLock<u32>
+    counter: RwLock<u32>
 }
 
 impl RequestLogger {
-	pub fn new() -> RequestLogger {
-		RequestLogger {
-			counter: RwLock::new(0)
-		}
-	}
+    pub fn new() -> RequestLogger {
+        RequestLogger {
+            counter: RwLock::new(0)
+        }
+    }
 }
 
 impl ContextPlugin for RequestLogger {
-	type Cache = ();
+    type Cache = ();
 
-	///Count requests and log the path.
-	fn modify(&self, context: &mut Context) -> ContextAction {
-		*self.counter.write().unwrap() += 1;
-		println!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path);
-		Continue
-	}
+    ///Count requests and log the path.
+    fn modify(&self, context: &mut Context) -> ContextAction {
+        *self.counter.write().unwrap() += 1;
+        println!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path);
+        Continue
+    }
 }
 
 
 struct PathPrefix {
-	prefix: &'static str
+    prefix: &'static str
 }
 
 impl PathPrefix {
-	pub fn new(prefix: &'static str) -> PathPrefix {
-		PathPrefix {
-			prefix: prefix
-		}
-	}
+    pub fn new(prefix: &'static str) -> PathPrefix {
+        PathPrefix {
+            prefix: prefix
+        }
+    }
 }
 
 impl ContextPlugin for PathPrefix {
-	type Cache = ();
+    type Cache = ();
 
-	///Append the prefix to the path
-	fn modify(&self, context: &mut Context) -> ContextAction {
-		context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);
-		Continue
-	}
+    ///Append the prefix to the path
+    fn modify(&self, context: &mut Context) -> ContextAction {
+        context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);
+        Continue
+    }
 }
 
 struct Jsonp {
-	function: &'static str
+    function: &'static str
 }
 
 impl Jsonp {
-	pub fn new(function: &'static str) -> Jsonp {
-		Jsonp {
-			function: function
-		}
-	}
+    pub fn new(function: &'static str) -> Jsonp {
+        Jsonp {
+            function: function
+        }
+    }
 }
 
 impl ResponsePlugin for Jsonp {
-	fn begin(&self, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
-		let action = ResponseAction::write(Some(format!("{}(", self.function)));
-		(status, headers, action)
-	}
+    fn begin(&self, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
+        let action = ResponseAction::write(Some(format!("{}(", self.function)));
+        (status, headers, action)
+    }
 
-	fn write<'a>(&'a self, bytes: Option<ResponseData<'a>>) -> ResponseAction {
-		ResponseAction::write(bytes)
-	}
+    fn write<'a>(&'a self, bytes: Option<ResponseData<'a>>) -> ResponseAction {
+        ResponseAction::write(bytes)
+    }
 
-	fn end(&self) -> ResponseAction {
-		ResponseAction::write(Some(");"))
-	}
+    fn end(&self) -> ResponseAction {
+        ResponseAction::write(Some(");"))
+    }
 }
