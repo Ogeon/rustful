@@ -1,3 +1,5 @@
+//!Server configuration and instance.
+
 use std;
 use std::collections::HashMap;
 use std::sync::RwLock;

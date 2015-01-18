@@ -1,3 +1,5 @@
+//!Handler context and request body reading extensions.
+
 use std::collections::HashMap;
 use std::io::IoResult;
 use std::ops::{Deref, DerefMut};
@@ -10,27 +12,32 @@ use Method;
 use header::Headers;
 
 ///A container for things like request data and cache.
+///
+///A `Context` can be dereferenced to a `BodyReader`, allowing direct access to
+///the underlying read methods.
 pub struct Context<'r, 'c, Cache: 'c =()> {
-    ///Headers from the HTTP request
+    ///Headers from the HTTP request.
     pub headers: Headers,
 
-    ///The HTTP method
+    ///The HTTP method.
     pub method: Method,
 
-    ///The requested path
+    ///The requested path.
     pub path: String,
 
-    ///Route variables
+    ///Route variables.
     pub variables: HashMap<String, String>,
 
-    ///Query variables from the path
+    ///Query variables from the path.
     pub query: HashMap<String, String>,
 
-    ///The fragment part of the URL (after #), if provided
+    ///The fragment part of the URL (after #), if provided.
     pub fragment: Option<String>,
 
+    ///Resource cache.
     pub cache: &'c Cache,
 
+    ///A reader for the request body.
     pub body_reader: BodyReader<'r>
 }
 
@@ -48,6 +55,7 @@ impl<'r, 'c, C> DerefMut for Context<'r, 'c, C> {
     }
 }
 
+///A reader for a request body.
 pub struct BodyReader<'r> {
     request: Request<'r>
 }
@@ -67,12 +75,13 @@ impl<'r> Reader for BodyReader<'r> {
     }
 }
 
+///`BodyReader` extension for reading and parsing a query string.
 pub trait ExtQueryBody {
     fn read_query_body(&mut self) -> IoResult<HashMap<String, String>>;
 }
 
 impl<'r> ExtQueryBody for BodyReader<'r> {
-    ///Rad and parse the request body as a query string.
+    ///Read and parse the request body as a query string.
     ///The body will be decoded as UTF-8 and plain '+' characters will be replaced with spaces.
     #[inline]
     fn read_query_body(&mut self) -> IoResult<HashMap<String, String>> {

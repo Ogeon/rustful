@@ -1,3 +1,5 @@
+//!Response writers.
+
 use std::io::{IoResult, IoError, Writer, OtherIoError};
 use std::error::FromError;
 use std::borrow::ToOwned;
@@ -89,6 +91,7 @@ impl<'a> ResponseData<'a> {
 }
 
 
+///Represents anything that can be turned into `ResponseData`.
 pub trait IntoResponseData<'a> {
     fn into_response_data(self) -> ResponseData<'a>;
 }

@@ -1,4 +1,4 @@
-//!Utility traits and implementations for cached resources.
+//!Traits and implementations for cached resources.
 
 use std::io::{File, IoResult};
 use std::io::fs::PathExtensions;

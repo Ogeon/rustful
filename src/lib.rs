@@ -41,10 +41,17 @@ pub mod context;
 pub mod response;
 pub mod plugin;
 
+///HTTP or HTTPS
 pub enum Protocol {
+    ///Standard HTTP.
     Http,
+
+    ///HTTP with SSL encryption.
     Https {
+        ///Path to SSL certificate.
         cert: Path,
+
+        ///Path to key file.
         key: Path
     }
 }

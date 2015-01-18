@@ -1,32 +1,46 @@
-//!`TreeRouter` stores items, such as request handlers, using an HTTP method and a path as keys.
+//!Routers stores request handlers, using an HTTP method and a path as keys.
 //!
-//!The `TreeRouter` can be created from a vector of predefined paths, like this:
+//!The `TreeRouter`, for example, can be created from a vector of predefined paths, like this:
 //!
-//!```ignore
+//!```
+//!# use rustful::{TreeRouter, Context, Response};
+//!# use rustful::Method::Get;
+//!# fn about_us(_c: Context, _w: Response) {}
+//!# fn show_user(_c: Context, _w: Response) {}
+//!# fn show_product(_c: Context, _w: Response) {}
+//!# fn show_error(_c: Context, _w: Response) {}
+//!# fn show_welcome(_c: Context, _w: Response) {}
 //!let routes = vec![
-//!    (Get, "/about", about_us),
-//!    (Get, "/user/:user", show_user),
-//!    (Get, "/product/:name", show_product),
-//!    (Get, "/*", show_error),
-//!    (Get, "/", show_welcome)
+//!    (Get, "/about", about_us as fn(Context, Response)),
+//!    (Get, "/user/:user", show_user as fn(Context, Response)),
+//!    (Get, "/product/:name", show_product as fn(Context, Response)),
+//!    (Get, "/*", show_error as fn(Context, Response)),
+//!    (Get, "/", show_welcome as fn(Context, Response))
 //!];
 //!
 //!let router = TreeRouter::from_routes(routes);
 //!```
 //!
-//!Routes may also be added after the `TreeRouter` was created, like this:
+//!Routes may also be added after the router was created, like this:
 //!
-//!```ignore
+//!```
+//!# use rustful::{Router, TreeRouter, Context, Response};
+//!# use rustful::Method::Get;
+//!# fn about_us(_c: Context, _w: Response) {}
+//!# fn show_user(_c: Context, _w: Response) {}
+//!# fn show_product(_c: Context, _w: Response) {}
+//!# fn show_error(_c: Context, _w: Response) {}
+//!# fn show_welcome(_c: Context, _w: Response) {}
 //!let mut router = TreeRouter::new();
 //!
-//!router.insert(Get, "/about", about_us);
-//!router.insert(Get, "/user/:user", show_user);
-//!router.insert(Get, "/product/:name", show_product);
-//!router.insert(Get, "/*", show_error);
-//!router.insert(Get, "/", show_welcome);
+//!router.insert(Get, "/about", about_us as fn(Context, Response));
+//!router.insert(Get, "/user/:user", show_user as fn(Context, Response));
+//!router.insert(Get, "/product/:name", show_product as fn(Context, Response));
+//!router.insert(Get, "/*", show_error as fn(Context, Response));
+//!router.insert(Get, "/", show_welcome as fn(Context, Response));
 //!```
 //!
-//!TreeRouter can also be used with a special macro for creating routes, called `insert_routes!{...}`:
+//!Routers can also be used with a special macro for creating routes, called `insert_routes!`:
 //!
 //!```ignore
 //!#![feature(phase)]
@@ -40,11 +54,11 @@
 //!
 //!let router = insert_routes!{
 //!    TreeRouter::new(): {
-//!        "/about" => Get: about_us,
-//!        "/user/:user" => Get: show_user,
-//!        "/product/:name" => Get: show_product,
-//!        "/*" => Get: show_error,
-//!        "/" => Get: show_welcome
+//!        "/about" => Get: about_us as fn(Context, Response),
+//!        "/user/:user" => Get: show_user as fn(Context, Response),
+//!        "/product/:name" => Get: show_product as fn(Context, Response),
+//!        "/*" => Get: show_error as fn(Context, Response),
+//!        "/" => Get: show_welcome as fn(Context, Response)
 //!    }
 //!};
 //!```
@@ -69,10 +83,15 @@ use self::Branch::{Static, Variable, Wildcard};
 pub type RouterResult<'a, T> = Option<(&'a T, HashMap<String, String>)>;
 
 ///Routers are used to store request handlers.
+///
+///A router implementing the `Router` trait will always be compatible with
+///the `insert_routes!` macro.
 pub trait Router {
     type Handler;
     ///Find and return the matching handler and variable values.
     fn find(&self, method: &Method, path: &str) -> Option<(&Self::Handler, HashMap<String, String>)>;
+
+    ///Insert a new handler into the router.
     fn insert(&mut self, method: Method, path: &str, handler: Self::Handler);
 }
 
@@ -91,8 +110,6 @@ enum Branch {
     Variable,
     Wildcard
 }
-
-//impl_clonable_fn!(<>, <[A], [B]>, <[A], [B], [C]>)
 
 ///Stores items, such as request handlers, using an HTTP method and a path as keys.
 ///
@@ -149,7 +166,7 @@ impl<T> TreeRouter<T> {
         root
     }
 
-    //Tries to find a router matching the key or inserts a new one if none exists
+    //Tries to find a router matching the key or inserts a new one if none exists.
     fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut TreeRouter<T> {
         if key == "*" {
             if self.wildcard_route.is_none() {
