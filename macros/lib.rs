@@ -105,13 +105,13 @@ fn expand_routes<'cx>(cx: &'cx mut ExtCtxt, sp: codemap::Span, tts: &[ast::Token
     let router_ident = cx.ident_of("router");
     let router_var = cx.expr_ident(sp, router_ident);
     let router_trait_path = cx.path_global(sp, vec![cx.ident_of("rustful"), cx.ident_of("Router")]);
-    let router_trait_use = cx.view_use_simple(sp, ast::Inherited, router_trait_path);
+    let router_trait_use = cx.item_use_simple(sp, ast::Inherited, router_trait_path);
 
     let mut parser = parse::new_parser_from_tts(
         cx.parse_sess(), cx.cfg(), tts.to_vec()
     );
 
-    let mut calls = vec![cx.stmt_let(sp, true, router_ident, parser.parse_expr())];
+    let mut calls = vec![cx.stmt_item(sp, router_trait_use), cx.stmt_let(sp, true, router_ident, parser.parse_expr())];
     parser.expect(&token::Colon);
 
     for (path, method, handler) in parse_routes(cx, &mut parser).into_iter() {
@@ -120,7 +120,7 @@ fn expand_routes<'cx>(cx: &'cx mut ExtCtxt, sp: codemap::Span, tts: &[ast::Token
         calls.push(cx.stmt_expr(cx.expr_method_call(sp, router_var.clone(), insert_method, vec![method_expr, path_expr, handler])));
     }
 
-    let block = cx.expr_block(cx.block_all(sp, vec![router_trait_use], calls, Some(router_var)));
+    let block = cx.expr_block(cx.block_all(sp, calls, Some(router_var)));
 
     MacExpr::new(block)
 }
