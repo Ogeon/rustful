@@ -2,8 +2,8 @@
 
 #![stable]
 
-use std::io::{File, IoResult};
-use std::io::fs::PathExtensions;
+use std::old_io::{File, IoResult};
+use std::old_io::fs::PathExtensions;
 use std::sync::{RwLock, RwLockReadGuard};
 
 use time;
@@ -62,7 +62,6 @@ pub trait CachedValue<'a, Value> {
 ///The whole file will be loaded when accessed.
 ///
 ///```rust
-///# #![allow(unstable)]
 ///use rustful::cache::{CachedValue, CachedFile};
 ///
 ///let file = CachedFile::new(Path::new("/some/file/path.txt"), None);
@@ -145,8 +144,7 @@ impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
 ///each time it is loaded and the result will be stored.
 ///
 ///```rust
-///# #![allow(unstable)]
-///use std::io::{File, IoResult};
+///use std::old_io::{File, IoResult};
 ///use rustful::cache::{CachedValue, CachedProcessedFile};
 ///
 ///fn get_size(file: IoResult<File>) -> IoResult<Option<u64>> {

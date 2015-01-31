@@ -2,7 +2,7 @@
 
 #![stable]
 
-use std::io::{IoResult, IoError, Writer, OtherIoError};
+use std::old_io::{IoResult, IoError, Writer, OtherIoError};
 use std::error::FromError;
 use std::borrow::ToOwned;
 
@@ -238,7 +238,7 @@ impl<'a, 'b> Response<'a, 'b> {
 
                 for action in write_queue.into_iter() {
                     writer = match (action, writer) {
-                        (Write(Some(content)), Ok(mut writer)) => match writer.write(content.as_bytes()) {
+                        (Write(Some(content)), Ok(mut writer)) => match writer.write_all(content.as_bytes()) {
                             Ok(_) => Ok(writer),
                             Err(e) => Err(ResponseError::IoError(e))
                         },
@@ -291,7 +291,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         }
 
         let write_result = match plugin_result {
-            Write(Some(ref s)) => Some(writer.write(s.as_bytes())),
+            Write(Some(ref s)) => Some(writer.write_all(s.as_bytes())),
             _ => None
         };
 
@@ -337,7 +337,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         for action in write_queue.into_iter() {
             try!{
                 match action {
-                    Write(Some(content)) => writer.write(content.as_bytes()),
+                    Write(Some(content)) => writer.write_all(content.as_bytes()),
                     Error(e) => return Err(ResponseError::PluginError(e)),
                     _ => Ok(())
                 }
@@ -349,7 +349,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 }
 
 impl<'a, 'b> Writer for ResponseWriter<'a, 'b> {
-    fn write(&mut self, content: &[u8]) -> IoResult<()> {
+    fn write_all(&mut self, content: &[u8]) -> IoResult<()> {
         match self.send(content) {
             Ok(()) => Ok(()),
             Err(ResponseError::IoError(e)) => Err(e),

@@ -4,9 +4,7 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(plugin_registrar, quote)]
-
-#![allow(unstable)]
+#![feature(plugin_registrar, quote, rustc_private, collections, path)]
 
 //!This crate provides some helpful macros for rustful, including `insert_routes!` and `content_type!`.
 //!
@@ -156,8 +154,8 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
                 }
 
                 if parser.eat(&token::OpenDelim(token::Brace)) {
-                    let subroutes = parse_subroutes(new_base.as_slice(), cx, parser);
-                    routes.push_all(subroutes.as_slice());
+                    let subroutes = parse_subroutes(&*new_base, cx, parser);
+                    routes.push_all(&*subroutes);
 
                     if parser.eat(&token::CloseDelim(token::Brace)) {
                         if !parser.eat(&token::Comma) {

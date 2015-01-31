@@ -1,4 +1,4 @@
-#![feature(plugin)]
+#![feature(plugin, io, path, core)]
 
 #[plugin]
 #[macro_use]
@@ -6,7 +6,7 @@
 extern crate rustful_macros;
 
 extern crate rustful;
-use std::io::{File, IoResult};
+use std::old_io::{File, IoResult};
 use std::borrow::ToOwned;
 use std::error::Error;
 

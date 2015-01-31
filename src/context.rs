@@ -3,7 +3,7 @@
 #![stable]
 
 use std::collections::HashMap;
-use std::io::IoResult;
+use std::old_io::IoResult;
 use std::ops::{Deref, DerefMut};
 
 use hyper::server::request::Request;
@@ -87,6 +87,6 @@ impl<'r> ExtQueryBody for BodyReader<'r> {
     ///The body will be decoded as UTF-8 and plain '+' characters will be replaced with spaces.
     #[inline]
     fn read_query_body(&mut self) -> IoResult<HashMap<String, String>> {
-        Ok(utils::parse_parameters(try!(self.read_to_end()).as_slice()))
+        Ok(utils::parse_parameters(&*try!(self.read_to_end())))
     }
 }

@@ -5,7 +5,7 @@
 use std;
 use std::collections::HashMap;
 use std::sync::RwLock;
-use std::io::net::ip::{IpAddr, Ipv4Addr, Port};
+use std::old_io::net::ip::{IpAddr, Ipv4Addr, Port};
 use std::borrow::ToOwned;
 
 use time::{self, Timespec};

@@ -1,4 +1,4 @@
-#![feature(plugin)]
+#![feature(plugin, core)]
 
 #[plugin]
 #[macro_use]
