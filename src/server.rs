@@ -280,7 +280,7 @@ impl<R, C: Cache> ServerInstance<R, C> {
     fn modify_context(&self, context: &mut Context<C>) -> ContextAction {
         let mut result = ContextAction::Continue;
 
-        for plugin in self.context_plugins.iter() {
+        for plugin in &self.context_plugins {
             result = match result {
                 ContextAction::Continue => plugin.modify(context),
                 _ => return result

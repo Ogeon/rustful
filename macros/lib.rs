@@ -112,7 +112,7 @@ fn expand_routes<'cx>(cx: &'cx mut ExtCtxt, sp: codemap::Span, tts: &[ast::Token
     let mut calls = vec![cx.stmt_item(sp, router_trait_use), cx.stmt_let(sp, true, router_ident, parser.parse_expr())];
     parser.expect(&token::Colon);
 
-    for (path, method, handler) in parse_routes(cx, &mut parser).into_iter() {
+    for (path, method, handler) in parse_routes(cx, &mut parser) {
         let path_expr = cx.parse_expr(format!("\"{}\"", path));
         let method_expr = cx.expr_path(method);
         calls.push(cx.stmt_expr(cx.expr_method_call(sp, router_var.clone(), insert_method, vec![method_expr, path_expr, handler])));
@@ -165,7 +165,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
                         parser.expect_one_of(&[token::Comma, token::CloseDelim(token::Brace)], &[]);
                     }
                 } else {
-                    for (method, handler) in parse_handler(parser).into_iter() {
+                    for (method, handler) in parse_handler(parser) {
                         routes.push((new_base.clone(), method, handler))
                     }
 
@@ -175,7 +175,7 @@ fn parse_subroutes(base: &str, cx: &mut ExtCtxt, parser: &mut Parser) -> Vec<(St
                 }
             },
             None => {
-                for (method, handler) in parse_handler(parser).into_iter() {
+                for (method, handler) in parse_handler(parser) {
                     routes.push((base.to_string(), method, handler))
                 }
 

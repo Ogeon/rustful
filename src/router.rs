@@ -162,7 +162,7 @@ impl<T> TreeRouter<T> {
     pub fn from_routes(routes: Vec<(Method, &str, T)>) -> TreeRouter<T> {
         let mut root = TreeRouter::new();
 
-        for (method, path, item) in routes.into_iter() {
+        for (method, path, item) in routes {
             root.insert(method, path, item);
         }
 

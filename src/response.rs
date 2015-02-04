@@ -192,7 +192,7 @@ impl<'a, 'b> Response<'a, 'b> {
         let mut write_queue = Vec::new();
         let mut header_result = (self.status.take().unwrap(), self.headers.take().unwrap(), Write(None));
 
-        for plugin in self.plugins.iter() {
+        for plugin in self.plugins {
             header_result = match header_result {
                 (_, _, DoNothing) => break,
                 (_, _, Error(_)) => break,
@@ -236,7 +236,7 @@ impl<'a, 'b> Response<'a, 'b> {
                     Err(e) => Err(ResponseError::IoError(e))
                 };
 
-                for action in write_queue.into_iter() {
+                for action in write_queue {
                     writer = match (action, writer) {
                         (Write(Some(content)), Ok(mut writer)) => match writer.write_all(content.as_bytes()) {
                             Ok(_) => Ok(writer),
@@ -283,7 +283,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         let mut writer = try!(self.writer.as_mut().expect("write after close").as_mut().map_err(|e| e.clone()));
         let mut plugin_result = ResponseAction::write(Some(content));
 
-        for plugin in self.plugins.iter() {
+        for plugin in self.plugins {
             plugin_result = match plugin_result {
                 Write(content) => plugin.write(content),
                 _ => break
@@ -317,7 +317,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         let mut writer = try!(self.writer.take().expect("can only finish once"));
         let mut write_queue: Vec<ResponseAction> = Vec::new();
 
-        for plugin in self.plugins.iter() {
+        for plugin in self.plugins {
             let mut error = None;
             write_queue = write_queue.into_iter().filter_map(|action| match action {
                 Write(content) => Some(plugin.write(content)),
@@ -334,7 +334,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
             }
         }
 
-        for action in write_queue.into_iter() {
+        for action in write_queue {
             try!{
                 match action {
                     Write(Some(content)) => writer.write_all(content.as_bytes()),
