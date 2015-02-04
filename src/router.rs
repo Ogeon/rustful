@@ -236,18 +236,18 @@ impl<T> Router for TreeRouter<T> {
                         current.static_routes.get(&path[index]).map(|next| {
                             variables.get_mut(index).map(|v| *v = false);
                             
-                            stack.push((&*next, Wildcard, index+1));
-                            stack.push((&*next, Variable, index+1));
-                            stack.push((&*next, Static, index+1));
+                            stack.push((next, Wildcard, index+1));
+                            stack.push((next, Variable, index+1));
+                            stack.push((next, Static, index+1));
                         });
                     },
                     Variable => {
                         current.variable_route.as_ref().map(|next| {
                             variables.get_mut(index).map(|v| *v = true);
 
-                            stack.push((&**next, Wildcard, index+1));
-                            stack.push((&**next, Variable, index+1));
-                            stack.push((&**next, Static, index+1));
+                            stack.push((next, Wildcard, index+1));
+                            stack.push((next, Variable, index+1));
+                            stack.push((next, Static, index+1));
                         });
                     },
                     Wildcard => {
@@ -255,9 +255,9 @@ impl<T> Router for TreeRouter<T> {
                             variables.get_mut(index).map(|v| *v = false);
 
                             stack.push((current, Wildcard, index+1));
-                            stack.push((&**next, Wildcard, index+1));
-                            stack.push((&**next, Variable, index+1));
-                            stack.push((&**next, Static, index+1));
+                            stack.push((next, Wildcard, index+1));
+                            stack.push((next, Variable, index+1));
+                            stack.push((next, Static, index+1));
                         });
                     }
                 }
@@ -277,8 +277,8 @@ impl<T> Router for TreeRouter<T> {
             let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
 
                 |(current, mut variable_names), piece| {
-                    let next = current.find_or_insert_router(&piece[]);
-                    if piece.len() > 0 && piece[].char_at(0) == ':' {
+                    let next = current.find_or_insert_router(&piece);
+                    if piece.len() > 0 && piece.char_at(0) == ':' {
                         //piece.shift_char();
                         variable_names.push(piece[1..].to_owned());
                     }
@@ -305,8 +305,8 @@ impl<T: Clone> TreeRouter<T> {
             let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
 
                 |(current, mut variable_names), piece| {
-                    let next = current.find_or_insert_router(&piece[]);
-                    if piece.len() > 0 && piece[].char_at(0) == ':' {
+                    let next = current.find_or_insert_router(&piece);
+                    if piece.len() > 0 && piece.char_at(0) == ':' {
                         //piece.shift_char();
                         variable_names.push(piece[1..].to_owned());
                     }
@@ -324,7 +324,7 @@ impl<T: Clone> TreeRouter<T> {
     fn merge_router(&mut self, variable_names: Vec<String>, router: &TreeRouter<T>) {
         for (key, &(ref item, ref var_names)) in router.items.iter() {
             let mut new_var_names = variable_names.clone();
-            new_var_names.push_all(&var_names[]);
+            new_var_names.push_all(var_names);
             self.items.insert(key.clone(), (item.clone(), new_var_names));
         }
 
@@ -342,7 +342,7 @@ impl<T: Clone> TreeRouter<T> {
             }
 
             match self.variable_route.as_mut() {
-                Some(next) => next.merge_router(variable_names.clone(), &**router.variable_route.as_ref().unwrap()),
+                Some(next) => next.merge_router(variable_names.clone(), router.variable_route.as_ref().unwrap()),
                 None => {}
             }
         }
@@ -353,7 +353,7 @@ impl<T: Clone> TreeRouter<T> {
             }
 
             match self.wildcard_route.as_mut() {
-                Some(next) => next.merge_router(variable_names.clone(), &**router.wildcard_route.as_ref().unwrap()),
+                Some(next) => next.merge_router(variable_names.clone(), router.wildcard_route.as_ref().unwrap()),
                 None => {}
             }
         }

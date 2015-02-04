@@ -330,7 +330,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
                 let mut context = Context {
                     headers: request_headers,
                     method: request_method,
-                    path: lossy_utf8_percent_decode(&path[]),
+                    path: lossy_utf8_percent_decode(&path),
                     variables: HashMap::new(),
                     query: query,
                     fragment: fragment,
@@ -340,7 +340,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 
                 match self.modify_context(&mut context) {
                     ContextAction::Continue => {
-                        match self.handlers.find(&context.method, &context.path[]) {
+                        match self.handlers.find(&context.method, &context.path) {
                             Some((handler, variables)) => {
                                 context.variables = variables;
                                 handler.handle_request(context, response);
@@ -384,7 +384,7 @@ fn parse_path(path: String) -> (String, HashMap<String, String>, Option<String>)
             (path[..index].to_owned(), utils::parse_parameters(query.as_bytes()), fragment.map(|f| f.to_owned()))
         },
         None => {
-            let (path, fragment) = parse_fragment(&path[]);
+            let (path, fragment) = parse_fragment(&path);
             (path.to_owned(), HashMap::new(), fragment.map(|f| f.to_owned()))
         }
     }

@@ -81,10 +81,10 @@ impl Handler for Counter {
     type Cache = ();
 
     fn handle_request(&self, _context: Context, mut response: Response) {
-        self.operation.map(|o| {
+        self.operation.map(|op| {
             //Lock the value for writing and update it
             let mut value = self.value.write().unwrap();
-            *value = (o)(*value);
+            *value = op(*value);
         });
 
         response.set_header(ContentType(content_type!("text", "html", ("charset", "UTF-8"))));

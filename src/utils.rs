@@ -8,7 +8,7 @@ pub fn parse_parameters(source: &[u8]) -> HashMap<String, String> {
                                 .map(|&e| if e == '+' as u8 { ' ' as u8 } else { e })
                                 .collect();
 
-    for parameter in source[].split(|&e| e == '&' as u8) {
+    for parameter in source.split(|&e| e == '&' as u8) {
         let mut parts = parameter.split(|&e| e == '=' as u8);
 
         match (parts.next(), parts.next()) {

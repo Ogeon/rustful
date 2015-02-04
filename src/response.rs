@@ -59,8 +59,8 @@ impl<'a> ResponseData<'a> {
     #[stable]
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            &ResponseData::Bytes(ref bytes) => &bytes[],
-            &ResponseData::ByteSlice(ref bytes) => *bytes,
+            &ResponseData::Bytes(ref bytes) => bytes,
+            &ResponseData::ByteSlice(ref bytes) => bytes,
             &ResponseData::String(ref string) => string.as_bytes(),
             &ResponseData::StringSlice(ref string) => string.as_bytes()
         }
@@ -82,8 +82,8 @@ impl<'a> ResponseData<'a> {
     #[stable]
     pub fn as_string(&self) -> Option<&str> {
         match self {
-            &ResponseData::String(ref string) => Some(&string[]),
-            &ResponseData::StringSlice(ref string) => Some(&string[]),
+            &ResponseData::String(ref string) => Some(string),
+            &ResponseData::StringSlice(ref string) => Some(string),
             _ => None
         }
     }
