@@ -4,7 +4,7 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(plugin_registrar, quote, rustc_private, collections, path)]
+#![feature(plugin_registrar, quote, rustc_private, collections, path, core)]
 
 //!This crate provides some helpful macros for rustful, including `insert_routes!` and `content_type!`.
 //!
