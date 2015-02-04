@@ -1,4 +1,4 @@
-#![feature(plugin, io, path, collections)]
+#![feature(plugin, io, path)]
 
 #[plugin]
 #[macro_use]
