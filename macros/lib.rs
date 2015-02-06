@@ -73,7 +73,7 @@
 extern crate syntax;
 extern crate rustc;
 
-use std::path::BytesContainer;
+use std::old_path::BytesContainer;
 
 use syntax::{ast, codemap};
 use syntax::ext::base::{
