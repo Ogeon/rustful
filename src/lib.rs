@@ -40,6 +40,7 @@ pub mod cache;
 pub mod context;
 pub mod response;
 pub mod plugin;
+pub mod log;
 
 ///HTTP or HTTPS
 #[stable]

@@ -28,6 +28,7 @@ use router::Router;
 use cache::Cache;
 use handler::Handler;
 use response::Response;
+use log::{Log, StdOut};
 use Protocol;
 
 use utils;
@@ -82,6 +83,9 @@ pub struct Server<R, C> {
     ///How often the cache should be cleaned. Measured in seconds.
     pub cache_clean_interval: Option<i64>,
 
+    ///Tool for printing to a log.
+    pub log: Box<Log + Send + Sync>,
+
     ///The context plugin stack.
     #[unstable]
     pub context_plugins: Vec<Box<ContextPlugin<Cache=C> + Send + Sync>>,
@@ -115,6 +119,7 @@ impl<C: Cache> Server<(), C> {
             ),
             cache: cache,
             cache_clean_interval: None,
+            log: Box::new(StdOut) as Box<Log + Send + Sync>,
             context_plugins: Vec::new(),
             response_plugins: Vec::new()
         }
@@ -134,6 +139,7 @@ impl<R, C> Server<R, C> {
             content_type: self.content_type,
             cache: self.cache,
             cache_clean_interval: self.cache_clean_interval,
+            log: self.log,
             context_plugins: self.context_plugins,
             response_plugins: self.response_plugins,
         }
@@ -189,6 +195,12 @@ impl<R, C> Server<R, C> {
         self
     }
 
+    ///Change log tool. Default is to print to standard output.
+    pub fn log<L: Log + Send + Sync>(mut self, log: L) -> Server<R, C> {
+        self.log = Box::new(log) as Box<Log + Send + Sync>;
+        self
+    }
+
     ///Add a context plugin to the plugin stack.
     #[unstable]
     pub fn with_context_plugin<P: ContextPlugin<Cache=C> + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
@@ -236,6 +248,7 @@ impl<R, H, C> Server<R, C>
             cache: self.cache,
             cache_clean_interval: self.cache_clean_interval,
             last_cache_clean: RwLock::new(Timespec::new(0, 0)),
+            log: self.log,
             context_plugins: self.context_plugins,
             response_plugins: self.response_plugins,
         },
@@ -270,6 +283,8 @@ pub struct ServerInstance<R, C> {
     cache: C,
     cache_clean_interval: Option<i64>,
     last_cache_clean: RwLock<Timespec>,
+
+    log: Box<Log + Send + Sync>,
 
     context_plugins: Vec<Box<ContextPlugin<Cache=C> + Send + Sync>>,
     response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
@@ -335,6 +350,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
                     query: query,
                     fragment: fragment,
                     cache: &self.cache,
+                    log: &*self.log,
                     body_reader: context::BodyReader::from_request(request)
                 };
 

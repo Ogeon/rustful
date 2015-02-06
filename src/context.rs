@@ -12,6 +12,7 @@ use utils;
 
 use Method;
 use header::Headers;
+use log::Log;
 
 ///A container for things like request data and cache.
 ///
@@ -38,6 +39,9 @@ pub struct Context<'r, 'c, Cache: 'c =()> {
 
     ///Resource cache.
     pub cache: &'c Cache,
+
+    ///Log for notes, errors and warnings.
+    pub log: &'c (Log + 'c),
 
     ///A reader for the request body.
     pub body_reader: BodyReader<'r>
