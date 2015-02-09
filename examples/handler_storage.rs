@@ -80,7 +80,7 @@ struct Counter {
 impl Handler for Counter {
     type Cache = ();
 
-    fn handle_request(&self, _context: Context, mut response: Response) {
+    fn handle_request(&self, context: Context, mut response: Response) {
         self.operation.map(|op| {
             //Lock the value for writing and update it
             let mut value = self.value.write().unwrap();
@@ -94,7 +94,10 @@ impl Handler for Counter {
             Some(ref page) => {
                 let count = self.value.read().unwrap().to_string();
 
-                try_send!(response.into_writer(), page.replace("{}", &count[]));
+                if let Err(e) = response.into_writer().send(page.replace("{}", &count[])) {
+                    //There is not much we can do now
+                    context.log.note(&format!("could not send page: {}", e.description()));
+                }
             },
             None => {
                 //Oh no! The page was not loaded!

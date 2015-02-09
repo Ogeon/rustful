@@ -51,7 +51,10 @@ fn say_hello(mut context: Context<Files>, mut response: Response) {
     match *context.cache.page.borrow() {
         Some(ref page) => {
             let complete_page = page.replace("{}", &content[]);
-            try_send!(response.into_writer(), complete_page);
+            if let Err(e) = response.into_writer().send(complete_page) {
+	            //There is not much we can do now
+	            context.log.note(&format!("could not send page: {}", e.description()));
+	        }
         },
         None => {
             //Oh no! The page was not loaded!

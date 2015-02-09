@@ -1,5 +1,5 @@
 //Include `rustful_macros` during the plugin phase
-//to be able to use `router!` and `try_send!`.
+//to be able to use `router!`.
 #![feature(plugin)]
 
 #[plugin]
@@ -22,7 +22,10 @@ fn say_hello(context: Context, response: Response) {
     };
 
     //Use the value of the path variable to say hello.
-    try_send!(response.into_writer(), format!("Hello, {}!", person), "saying hello");
+    if let Err(e) = response.into_writer().send(format!("Hello, {}!", person))  {
+        //There is not much we can do now
+        context.log.note(&format!("could not send hello: {}", e.description()));
+    }
 }
 
 fn main() {

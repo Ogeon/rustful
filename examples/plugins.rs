@@ -25,7 +25,10 @@ fn say_hello(context: Context, response: Response) {
         None => "stranger"
     };
 
-    try_send!(response.into_writer(), format!("{{\"message\": \"Hello, {}!\"}}", person));
+    if let Err(e) = response.into_writer().send(format!("{{\"message\": \"Hello, {}!\"}}", person))  {
+        //There is not much we can do now
+        context.log.note(&format!("could not send hello: {}", e.description()));
+    }
 }
 
 fn main() {

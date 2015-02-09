@@ -2,6 +2,7 @@
 
 #![stable]
 
+use std;
 use std::old_io::{IoResult, IoError, Writer, OtherIoError};
 use std::error::FromError;
 use std::borrow::ToOwned;
@@ -32,6 +33,31 @@ pub enum ResponseError {
 impl FromError<IoError> for ResponseError {
     fn from_error(err: IoError) -> ResponseError {
         ResponseError::IoError(err)
+    }
+}
+
+impl std::fmt::Display for ResponseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            ResponseError::PluginError(ref desc) => write!(f, "plugin error: {}", desc),
+            ResponseError::IoError(ref e) => write!(f, "io error: {}", e)
+        }
+    }
+}
+
+impl std::error::Error for ResponseError {
+    fn description(&self) -> &str {
+        match *self {
+            ResponseError::PluginError(ref desc) => desc,
+            ResponseError::IoError(ref e) => e.description()
+        }
+    }
+
+    fn cause(&self) -> Option<&std::error::Error> {
+        match *self {
+            ResponseError::PluginError(_) => None,
+            ResponseError::IoError(ref e) => Some(e as &std::error::Error)
+        }
     }
 }
 
