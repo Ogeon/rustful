@@ -16,6 +16,7 @@ use StatusCode;
 
 use plugin::ResponsePlugin;
 use plugin::ResponseAction::{self, Write, DoNothing, Error};
+use log::Log;
 
 ///The result of a response action.
 #[unstable]
@@ -148,18 +149,20 @@ pub struct Response<'a, 'b> {
 
     version: Option<HttpVersion>,
     writer: Option<HttpWriter<&'a mut (Writer + 'a)>>,
-    plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>
+    plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>,
+    log: &'b (Log + 'b)
 }
 
 impl<'a, 'b> Response<'a, 'b> {
-    pub fn new(response: hyper::server::response::Response<'a>, plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>) -> Response<'a, 'b> {
+    pub fn new(response: hyper::server::response::Response<'a>, plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>, log: &'b Log) -> Response<'a, 'b> {
         let (version, writer, status, headers) = response.deconstruct();
         Response {
             headers: Some(headers),
             status: Some(status),
             version: Some(version),
             writer: Some(writer),
-            plugins: plugins
+            plugins: plugins,
+            log: log
         }
     }
 
@@ -199,13 +202,13 @@ impl<'a, 'b> Response<'a, 'b> {
                 (status, headers, r) => {
                     write_queue.push(r);
 
-                    match plugin.begin(status, headers) {
+                    match plugin.begin(self.log, status, headers) {
                         (status, headers, Error(e)) => (status, headers, Error(e)),
                         (status, headers, result) => {
                             let mut error = None;
                             
                             write_queue = write_queue.into_iter().filter_map(|action| match action {
-                                Write(content) => Some(plugin.write(content)),
+                                Write(content) => Some(plugin.write(self.log, content)),
                                 DoNothing => None,
                                 Error(e) => {
                                     error = Some(e);
@@ -253,7 +256,8 @@ impl<'a, 'b> Response<'a, 'b> {
 
         ResponseWriter {
             writer: Some(writer),
-            plugins: self.plugins
+            plugins: self.plugins,
+            log: self.log
         }
     }
 }
@@ -273,7 +277,8 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 ///An interface for writing to the response body.
 pub struct ResponseWriter<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, ResponseError>>,
-    plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>
+    plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>,
+    log: &'b (Log + 'b)
 }
 
 impl<'a, 'b> ResponseWriter<'a, 'b> {
@@ -285,7 +290,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
         for plugin in self.plugins {
             plugin_result = match plugin_result {
-                Write(content) => plugin.write(content),
+                Write(content) => plugin.write(self.log, content),
                 _ => break
             }
         }
@@ -320,7 +325,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         for plugin in self.plugins {
             let mut error = None;
             write_queue = write_queue.into_iter().filter_map(|action| match action {
-                Write(content) => Some(plugin.write(content)),
+                Write(content) => Some(plugin.write(self.log, content)),
                 DoNothing => None,
                 Error(e) => {
                     error = Some(e);
@@ -330,7 +335,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
             match error {
                 Some(e) => return Err(ResponseError::PluginError(e)),
-                None => write_queue.push(plugin.end())
+                None => write_queue.push(plugin.end(self.log))
             }
         }
 

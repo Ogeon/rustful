@@ -297,7 +297,7 @@ impl<R, C: Cache> ServerInstance<R, C> {
 
         for plugin in &self.context_plugins {
             result = match result {
-                ContextAction::Continue => plugin.modify(context),
+                ContextAction::Continue => plugin.modify(&*self.log, context),
                 _ => return result
             };
         }
@@ -319,7 +319,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
         let mut request_headers = Headers::new();
         std::mem::swap(&mut request_headers, &mut request.headers);
 
-        let mut response = Response::new(writer, &self.response_plugins);
+        let mut response = Response::new(writer, &self.response_plugins, &*self.log);
         response.set_header(Date(time::now_utc()));
         response.set_header(ContentType(self.content_type.clone()));
         response.set_header(hyper::header::Server(self.server.clone()));

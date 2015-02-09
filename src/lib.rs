@@ -29,6 +29,7 @@ pub use self::response::ResponseError;
 pub use self::handler::Handler;
 pub use self::router::Router;
 pub use self::cache::Cache;
+pub use self::log::Log;
 pub use self::router::TreeRouter;
 
 mod utils;

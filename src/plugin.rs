@@ -6,6 +6,7 @@ use StatusCode;
 use header::Headers;
 
 use context::Context;
+use log::Log;
 
 use response::{ResponseData, IntoResponseData};
 
@@ -18,7 +19,7 @@ pub trait ContextPlugin {
 
     ///Try to modify the `Context`.
     #[unstable = "plugin methods and parameters will change when a shared context is added"]
-    fn modify(&self, context: &mut Context<Self::Cache>) -> ContextAction;
+    fn modify(&self, log: &Log, context: &mut Context<Self::Cache>) -> ContextAction;
 }
 
 ///The result from a context plugin.
@@ -42,16 +43,16 @@ pub enum ContextAction {
 pub trait ResponsePlugin {
     ///Set or modify headers before they are sent to the client and maybe initiate the body.
     #[unstable = "plugin methods and parameters will change when a shared context is added"]
-    fn begin(&self, status: StatusCode, headers: Headers) ->
+    fn begin(&self, log: &Log, status: StatusCode, headers: Headers) ->
         (StatusCode, Headers, ResponseAction);
 
     ///Handle content before writing it to the body.
     #[unstable = "plugin methods and parameters will change when a shared context is added"]
-    fn write<'a>(&'a self, content: Option<ResponseData<'a>>) -> ResponseAction;
+    fn write<'a>(&'a self, log: &Log, content: Option<ResponseData<'a>>) -> ResponseAction;
 
     ///End of body writing. Last chance to add content.
     #[unstable = "plugin methods and parameters will change when a shared context is added"]
-    fn end(&self) -> ResponseAction;
+    fn end(&self, log: &Log) -> ResponseAction;
 }
 
 ///The result from a `ResponsePlugin`.
