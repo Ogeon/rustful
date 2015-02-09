@@ -1,32 +1,35 @@
 //!Log tools.
 
-use std::old_io::{self, Writer};
+use std::old_io::{self, Writer, IoResult};
 use std::sync::Mutex;
 
 ///Common trait for log tools.
 pub trait Log {
 	///Print a note to the log.
-	fn note(&self, message: &str);
+	fn note(&self, message: &str) -> IoResult<()>;
 	///Print a warning to the log.
-	fn warning(&self, message: &str);
+	fn warning(&self, message: &str) -> IoResult<()>;
 	///Print an error to the log.
-	fn error(&self, message: &str);
+	fn error(&self, message: &str) -> IoResult<()>;
 }
 
 ///Log tool for printing to standard output.
 pub struct StdOut;
 
 impl Log for StdOut {
-	fn note(&self, message: &str) {
+	fn note(&self, message: &str) -> IoResult<()> {
 		println!("note: {}", message);
+		Ok(())
 	}
 
-	fn warning(&self, message: &str) {
+	fn warning(&self, message: &str) -> IoResult<()> {
 		println!("warning: {}", message);
+		Ok(())
 	}
 
-	fn error(&self, message: &str) {
+	fn error(&self, message: &str) -> IoResult<()> {
 		println!("error: {}", message);
+		Ok(())
 	}
 }
 
@@ -44,28 +47,28 @@ impl File {
 }
 
 impl Log for File {
-	fn note(&self, message: &str) {
+	fn note(&self, message: &str) -> IoResult<()> {
 		let mut f = match self.file.lock() {
 			Ok(f) => f,
 			Err(e) => e.into_inner()
 		};
-		write!(f, "note: {}", message);
+		write!(f, "note: {}", message)
 	}
 
-	fn warning(&self, message: &str) {
+	fn warning(&self, message: &str) -> IoResult<()> {
 		let mut f = match self.file.lock() {
 			Ok(f) => f,
 			Err(e) => e.into_inner()
 		};
-		write!(f, "warning: {}", message);
+		write!(f, "warning: {}", message)
 	}
 
-	fn error(&self, message: &str) {
+	fn error(&self, message: &str) -> IoResult<()> {
 		let mut f = match self.file.lock() {
 			Ok(f) => f,
 			Err(e) => e.into_inner()
 		};
-		write!(f, "error: {}", message);
+		write!(f, "error: {}", message)
 	}
 }
 
