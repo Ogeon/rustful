@@ -79,11 +79,7 @@ impl ContextPlugin for RequestLogger {
     ///Count requests and log the path.
     fn modify(&self, log: &Log, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
-        if let Err(e) = log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path)) {
-        	//This may not be the best way to handle a failed log,
-        	//but it's fine in this example.
-        	println!("could not log: {}", e);
-        }
+        log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path));
         Continue
     }
 }
