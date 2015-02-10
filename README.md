@@ -3,20 +3,21 @@ rustful
 
 [![Build Status](https://travis-ci.org/Ogeon/rustful.png?branch=master)](https://travis-ci.org/Ogeon/rustful)
 
-A RESTful web framework for Rust. The main purpose of rustful is to create a simple,
-light and non-intrusive foundation for HTTP based applications. It is based on a stateless
-structure, where response handlers are assigned to paths and HTTP methods, which naturally
-allows it to run both as a single server or as multiple instances in a computer cluster.
+A light RESTful web micro-framework for Rust. The main purpose of rustful is
+to create a simple, modular and non-intrusive foundation for HTTP
+applications. It has a mainly stateless structure, which naturally allows it
+to run both as one single server and as multiple instances in a cluster.
 
 Some of the features are:
 
 * Generic response handlers. Just implement the Handler trait and you are done.
 * Optional resource cache with lazy loading and simple cleaning of unused data.
+* Unified log system to make sure everything is working together.
 * Some handy macros reduces risk for typos and makes life easier.
+* Plugin system for request and response filtering.
 * Variables and recursive wildcards in routes.
-* Minimal routing overhead.
 
-Online documentation can be found [here](http://ogeon.github.io/rustful/doc/rustful/).
+[Online documentation can be found here](http://ogeon.github.io/rustful/doc/rustful/).
 
 #Getting started
 
@@ -99,6 +100,9 @@ fn main() {
 ```
 
 ##Contributing
-Yes, please! This is currently a one man show, so any help is welcome. Just
-fork it, implement your idea or fix the bug you have found and send a pull
-request.
+Yes, please! You can always post an issue or (even better) fork the project,
+implement your idea or fix the bug you have found and send a pull request.
+Just remember to test it when you are done. Here is how:
+
+* Run `cargo test` to run unit, documentation and compile tests.
+* Run `cargo run --example example_name` to run an example and make sure it behaves as expected.
