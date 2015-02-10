@@ -10,7 +10,7 @@ use std::old_io::{File, IoResult};
 use std::borrow::ToOwned;
 use std::error::Error;
 
-use rustful::{Server, Context, Response, Cache};
+use rustful::{Server, Context, Response, Cache, Log};
 use rustful::cache::{CachedValue, CachedProcessedFile};
 use rustful::context::ExtQueryBody;
 use rustful::header::ContentType;
@@ -34,7 +34,7 @@ fn say_hello(mut context: Context<Files>, mut response: Response) {
             format!("<p>Hello, {}!</p>", name)
         },
         None => {
-            match *context.cache.form.borrow() {
+            match *context.cache.form.borrow(context.log) {
                 Some(ref form) => {
                     form.clone()
                 },
@@ -48,7 +48,7 @@ fn say_hello(mut context: Context<Files>, mut response: Response) {
     };
 
     //Insert the content into the page and write it to the response
-    match *context.cache.page.borrow() {
+    match *context.cache.page.borrow(context.log) {
         Some(ref page) => {
             let complete_page = page.replace("{}", &content[]);
             if let Err(e) = response.into_writer().send(complete_page) {
@@ -83,7 +83,7 @@ fn main() {
     }
 }
 
-fn read_string(mut file: IoResult<File>) -> IoResult<Option<String>> {
+fn read_string(_log: &Log, mut file: IoResult<File>) -> IoResult<Option<String>> {
     //Make the file mutable and try to read it into a string
     file.read_to_string().map(|s| Some(s))
 }
@@ -98,8 +98,8 @@ struct Files {
 impl Cache for Files {
 
     //Cache cleaning is not used in this example, but this is implemented anyway.
-    fn free_unused(&self) {
-        self.page.clean();
-        self.form.clean();
+    fn free_unused(&self, log: &Log) {
+        self.page.clean(log);
+        self.form.clean(log);
     }
 }

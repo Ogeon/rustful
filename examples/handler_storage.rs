@@ -11,7 +11,7 @@ use std::old_io::{File, IoResult};
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
-use rustful::{Server, Context, Response, Handler, TreeRouter};
+use rustful::{Server, Context, Response, Handler, TreeRouter, Log};
 use rustful::cache::{CachedValue, CachedProcessedFile};
 use rustful::Method::Get;
 use rustful::StatusCode::InternalServerError;
@@ -63,7 +63,7 @@ fn sub(value: i32) -> i32 {
     value - 1
 }
 
-fn read_string(mut file: IoResult<File>) -> IoResult<Option<String>> {
+fn read_string(_log: &Log, mut file: IoResult<File>) -> IoResult<Option<String>> {
     //Read file into a string
     file.read_to_string().map(|s| Some(s))
 }
@@ -90,7 +90,7 @@ impl Handler for Counter {
         response.set_header(ContentType(content_type!("text", "html", ("charset", "UTF-8"))));
 
         //Insert the value into the page and write it to the response
-        match *self.page.borrow() {
+        match *self.page.borrow(context.log) {
             Some(ref page) => {
                 let count = self.value.read().unwrap().to_string();
 

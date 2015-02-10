@@ -387,7 +387,7 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 
             if time::get_time() > clean_time {
                 *self.last_cache_clean.write().unwrap() = time::get_time();
-                self.cache.free_unused();
+                self.cache.free_unused(&*self.log);
             }
         });
     }
