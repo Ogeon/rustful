@@ -11,7 +11,7 @@ use std::sync::RwLock;
 use std::borrow::ToOwned;
 use std::error::Error;
 
-use rustful::{Server, TreeRouter, Context, Response};
+use rustful::{Server, TreeRouter, Context, Response, Log};
 use rustful::plugin::{ResponseAction, ContextPlugin, ResponsePlugin};
 use rustful::plugin::ContextAction::{self, Continue};
 use rustful::response::ResponseData;
@@ -25,7 +25,10 @@ fn say_hello(context: Context, response: Response) {
         None => "stranger"
     };
 
-    try_send!(response.into_writer(), format!("{{\"message\": \"Hello, {}!\"}}", person));
+    if let Err(e) = response.into_writer().send(format!("{{\"message\": \"Hello, {}!\"}}", person))  {
+        //There is not much we can do now
+        context.log.note(&format!("could not send hello: {}", e.description()));
+    }
 }
 
 fn main() {
@@ -74,9 +77,9 @@ impl ContextPlugin for RequestLogger {
     type Cache = ();
 
     ///Count requests and log the path.
-    fn modify(&self, context: &mut Context) -> ContextAction {
+    fn modify(&self, log: &Log, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
-        println!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path);
+        log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path));
         Continue
     }
 }
@@ -98,7 +101,7 @@ impl ContextPlugin for PathPrefix {
     type Cache = ();
 
     ///Append the prefix to the path
-    fn modify(&self, context: &mut Context) -> ContextAction {
+    fn modify(&self, _log: &Log, context: &mut Context) -> ContextAction {
         context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);
         Continue
     }
@@ -117,16 +120,16 @@ impl Jsonp {
 }
 
 impl ResponsePlugin for Jsonp {
-    fn begin(&self, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
+    fn begin(&self, _log: &Log, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
         let action = ResponseAction::write(Some(format!("{}(", self.function)));
         (status, headers, action)
     }
 
-    fn write<'a>(&'a self, bytes: Option<ResponseData<'a>>) -> ResponseAction {
+    fn write<'a>(&'a self, _log: &Log, bytes: Option<ResponseData<'a>>) -> ResponseAction {
         ResponseAction::write(bytes)
     }
 
-    fn end(&self) -> ResponseAction {
+    fn end(&self, _log: &Log) -> ResponseAction {
         ResponseAction::write(Some(");"))
     }
 }
