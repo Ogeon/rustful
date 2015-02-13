@@ -1,4 +1,4 @@
-#![feature(plugin, io, path)]
+#![feature(plugin, io, path, core)]
 #![plugin(rustful_macros)]
 
 #[macro_use]
