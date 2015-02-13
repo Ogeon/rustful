@@ -50,11 +50,7 @@ Olivia) to try it.
 //Include `rustful_macros` during the plugin phase
 //to be able to use `router!`.
 #![feature(plugin)]
-
-#[plugin]
-#[macro_use]
-#[no_link]
-extern crate rustful_macros;
+#![plugin(rustful_macros)]
 
 extern crate rustful;
 

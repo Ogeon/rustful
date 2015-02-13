@@ -1,9 +1,5 @@
 #![feature(plugin, core)]
-
-#[plugin]
-#[macro_use]
-#[no_link]
-extern crate rustful_macros;
+#![plugin(rustful_macros)]
 
 extern crate rustful;
 

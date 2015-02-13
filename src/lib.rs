@@ -42,6 +42,7 @@ pub mod context;
 pub mod response;
 pub mod plugin;
 pub mod log;
+pub mod macros;
 
 ///HTTP or HTTPS
 #[stable]

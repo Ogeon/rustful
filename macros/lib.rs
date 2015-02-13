@@ -4,7 +4,7 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(plugin_registrar, quote, rustc_private, collections, path, core)]
+#![feature(plugin_registrar, quote, rustc_private, collections, path)]
 
 //!This crate provides some helpful macros for rustful, including `insert_routes!` and `content_type!`.
 //!
@@ -207,54 +207,4 @@ fn parse_handler(parser: &mut Parser) -> Vec<(ast::Path, P<ast::Expr>)> {
     let handler = parser.parse_expr();
 
     methods.into_iter().map(|m| (m, handler.clone())).collect()
-}
-
-
-/**
-A macro for assigning content types.
-
-It takes a main type, a sub type and a parameter list. Instead of this:
-
-```
-response.headers.content_type = Some(MediaType {
-    type_: String::from_str("text"),
-    subtype: String::from_str("html"),
-    parameters: vec!((String::from_str("charset"), String::from_str("UTF-8")))
-});
-```
-
-it can be written like this:
-
-```
-response.headers.content_type = content_type!("text", "html", "charset": "UTF-8");
-```
-
-The `"charset": "UTF-8"` part defines the parameter list for the content type.
-It may contain more than one parameter, or be omitted:
-
-```
-response.headers.content_type = content_type!("application", "octet-stream", "type": "image/gif", "padding": "4");
-```
-
-```
-response.headers.content_type = content_type!("image", "png");
-```
-**/
-#[macro_export]
-macro_rules! content_type {
-    ($main_type:expr, $sub_type:expr) => ({
-        ::rustful::mime::Mime (
-            std::str::FromStr::from_str($main_type).unwrap(),
-            std::str::FromStr::from_str($sub_type).unwrap(),
-            Vec::new()
-        )
-    });
-
-    ($main_type:expr, $sub_type:expr, $(($param:expr, $value:expr)),+) => ({
-        ::rustful::mime::Mime (
-            std::str::FromStr::from_str($main_type).unwrap(),
-            std::str::FromStr::from_str($sub_type).unwrap(),
-            vec!( $( (std::str::FromStr::from_str($param).unwrap(), std::str::FromStr::from_str($value).unwrap()) ),+ )
-        )
-    });
 }

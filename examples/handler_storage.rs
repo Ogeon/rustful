@@ -1,10 +1,7 @@
 #![feature(plugin, io, path)]
+#![plugin(rustful_macros)]
 
-#[plugin]
 #[macro_use]
-#[no_link]
-extern crate rustful_macros;
-
 extern crate rustful;
 
 use std::old_io::{File, IoResult};
