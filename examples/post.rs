@@ -48,7 +48,7 @@ fn say_hello(mut context: Context<Files>, mut response: Response) {
     //Insert the content into the page and write it to the response
     match *context.cache.page.borrow(context.log) {
         Some(ref page) => {
-            let complete_page = page.replace("{}", &content[]);
+            let complete_page = page.replace("{}", &content[..]);
             if let Err(e) = response.into_writer().send(complete_page) {
 	            //There is not much we can do now
 	            context.log.note(&format!("could not send page: {}", e.description()));

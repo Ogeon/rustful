@@ -91,7 +91,7 @@ impl Handler for Counter {
             Some(ref page) => {
                 let count = self.value.read().unwrap().to_string();
 
-                if let Err(e) = response.into_writer().send(page.replace("{}", &count[])) {
+                if let Err(e) = response.into_writer().send(page.replace("{}", &count[..])) {
                     //There is not much we can do now
                     context.log.note(&format!("could not send page: {}", e.description()));
                 }

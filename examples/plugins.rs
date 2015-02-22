@@ -17,7 +17,7 @@ use rustful::header::Headers;
 
 fn say_hello(context: Context, response: Response) {
     let person = match context.variables.get(&"person".to_owned()) {
-        Some(name) => &name[],
+        Some(name) => &name[..],
         None => "stranger"
     };
 
