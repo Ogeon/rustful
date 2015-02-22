@@ -4,7 +4,7 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(unsafe_destructor, old_impl_check, io, collections, std_misc, core, path)]
+#![feature(unsafe_destructor, old_impl_check, old_io, collections, std_misc, core, old_path)]
 #![cfg_attr(test, feature(test))]
 
 #![stable]
