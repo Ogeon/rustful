@@ -9,15 +9,7 @@ authors = ["hello@erikhedvall.nu"]
 name = "rustful"
 path = "src/lib.rs"
 
-[features]
-default = ["macros"]
-macros = ["rustful_macros"]
-
 [dependencies]
 hyper = "*"
 time = "*"
 url = "*"
-
-[dependencies.rustful_macros]
-path = "macros"
-optional = true

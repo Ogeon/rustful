@@ -42,18 +42,22 @@
 //!
 //!Routers can also be used with a special macro for creating routes, called `insert_routes!`:
 //!
-//!```ignore
-//!#![feature(phase)]
-//!#[phase(plugin)]
-//!extern crate rustful_macros;
-//!
+//!```
+//!# use rustful::{Router, TreeRouter, Context, Response};
+//!# use rustful::Method::Get;
+//!# fn about_us(_c: Context, _w: Response) {}
+//!# fn show_user(_c: Context, _w: Response) {}
+//!# fn show_product(_c: Context, _w: Response) {}
+//!# fn show_error(_c: Context, _w: Response) {}
+//!# fn show_welcome(_c: Context, _w: Response) {}
+//!#[use_macro]
 //!extern crate rustful;
 //!
 //!...
 //!
 //!
 //!let router = insert_routes!{
-//!    TreeRouter::new(): {
+//!    TreeRouter::new() => {
 //!        "/about" => Get: about_us as fn(Context, Response),
 //!        "/user/:user" => Get: show_user as fn(Context, Response),
 //!        "/product/:name" => Get: show_product as fn(Context, Response),
@@ -67,8 +71,6 @@
 //!but it allows more advanced structures to be defined without
 //!the need to write the same paths multiple times. This can be
 //!useful to lower the risk of typing errors, among other things.
-//!
-//!This can be found in the crate `rustful_macros`.
 
 #![stable]
 

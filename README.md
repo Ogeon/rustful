@@ -1,4 +1,4 @@
-rustful
+Rustful
 =======
 
 [![Build Status](https://travis-ci.org/Ogeon/rustful.png?branch=master)](https://travis-ci.org/Ogeon/rustful)
@@ -19,39 +19,25 @@ Some of the features are:
 
 [Online documentation can be found here](http://ogeon.github.io/rustful/doc/rustful/).
 
-#Getting started
+#Getting Started
 
 ##Cargo.toml Entries
 
-Add the following lines to your `Cargo.toml` file to get the main library:
+Add the following lines to your `Cargo.toml` file:
 
 ```toml
 [dependencies.rustful]
 git = "https://github.com/Ogeon/rustful"
 ```
 
-and the following lines to get all the helpful macros:
-
-```toml
-[dependencies.rustful_macros]
-git = "https://github.com/Ogeon/rustful"
-```
-
-###Default Features
-
-* `macros` - A collection of helpful macros.
-
-##Write your server
+##Write Your Server
 Here is a simple example of what a simple project could look like. Visit
 `http://localhost:8080` or `http://localhost:8080/Olivia` (if your name is
 Olivia) to try it.
 
 ```rust
-//Include `rustful_macros` during the plugin phase
-//to be able to use `router!`.
-#![feature(plugin)]
-#![plugin(rustful_macros)]
-
+//Include macros to be able to use `inser_routes!`.
+#[macro_use]
 extern crate rustful;
 
 use std::error::Error;
@@ -62,7 +48,7 @@ use rustful::Method::Get;
 fn say_hello(context: Context, response: Response) {
     //Get the value of the path variable `:person`, from below.
     let person = match context.variables.get("person") {
-        Some(name) => &name[],
+        Some(name) => &name[..],
         None => "stranger"
     };
 
@@ -75,7 +61,7 @@ fn say_hello(context: Context, response: Response) {
 
 fn main() {
     let router = insert_routes!{
-        TreeRouter::new(): {
+        TreeRouter::new() => {
             //Handle requests for root...
             "/" => Get: say_hello,
 

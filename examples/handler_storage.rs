@@ -1,5 +1,4 @@
-#![feature(plugin, old_io, old_path, core)]
-#![plugin(rustful_macros)]
+#![feature(old_io, old_path, core)]
 
 #[macro_use]
 extern crate rustful;
@@ -24,7 +23,7 @@ fn main() {
     let value = Arc::new(RwLock::new(0));
 
     let router = insert_routes!{
-        TreeRouter::new(): {
+        TreeRouter::new() => {
             "/" => Get: Counter{
                 page: page.clone(),
                 value: value.clone(),

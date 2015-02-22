@@ -1,8 +1,5 @@
-//Include `rustful_macros` during the plugin phase
-//to be able to use `router!`.
-#![feature(plugin)]
-#![plugin(rustful_macros)]
-
+//Include macros to be able to use `inser_routes!`.
+#[macro_use]
 extern crate rustful;
 
 use std::error::Error;
@@ -28,7 +25,7 @@ fn main() {
     println!("Visit http://localhost:8080 or http://localhost:8080/Olivia (if your name is Olivia) to try this example.");
 
     let router = insert_routes!{
-        TreeRouter::new(): {
+        TreeRouter::new() => {
             //Handle requests for root...
             "/" => Get: say_hello,
 

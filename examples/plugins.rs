@@ -1,6 +1,6 @@
-#![feature(plugin, core)]
-#![plugin(rustful_macros)]
+#![feature(core)]
 
+#[macro_use]
 extern crate rustful;
 
 use std::sync::RwLock;
@@ -32,9 +32,11 @@ fn main() {
 
     let mut router = TreeRouter::new();
     insert_routes!{
-        &mut router: "print" => {
-            Get: say_hello,
-            ":person" => Get: say_hello
+        &mut router => {
+            "print" => {
+                "/" => Get: say_hello,
+                ":person" => Get: say_hello
+            }
         }
     };
 
