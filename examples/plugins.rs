@@ -7,7 +7,7 @@ use std::sync::RwLock;
 use std::borrow::ToOwned;
 use std::error::Error;
 
-use rustful::{Server, TreeRouter, Context, Response, Log};
+use rustful::{Server, TreeRouter, Context, Response, Log, Handler};
 use rustful::plugin::{ResponseAction, ContextPlugin, ResponsePlugin};
 use rustful::plugin::ContextAction::{self, Continue};
 use rustful::response::ResponseData;
@@ -27,6 +27,16 @@ fn say_hello(context: Context, response: Response) {
     }
 }
 
+//Dodge an ICE, related to functions as handlers.
+struct HandlerFn(fn(Context, Response));
+
+impl Handler for HandlerFn {
+    type Cache = ();
+    fn handle_request(&self, context: Context, response: Response) {
+        self.0(context, response);
+    }
+}
+
 fn main() {
     println!("Visit http://localhost:8080 or http://localhost:8080/Peter (if your name is Peter) to try this example.");
 
@@ -34,8 +44,8 @@ fn main() {
     insert_routes!{
         &mut router => {
             "print" => {
-                "/" => Get: say_hello,
-                ":person" => Get: say_hello
+                "/" => Get: HandlerFn(say_hello),
+                ":person" => Get: HandlerFn(say_hello)
             }
         }
     };

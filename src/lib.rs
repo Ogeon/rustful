@@ -34,6 +34,7 @@ pub use self::log::Log;
 pub use self::router::TreeRouter;
 
 mod utils;
+#[macro_use] mod macros;
 
 pub mod server;
 pub mod router;
@@ -43,7 +44,6 @@ pub mod context;
 pub mod response;
 pub mod plugin;
 pub mod log;
-pub mod macros;
 
 ///HTTP or HTTPS
 #[stable]

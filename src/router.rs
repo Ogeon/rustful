@@ -3,68 +3,98 @@
 //!The `TreeRouter`, for example, can be created from a vector of predefined paths, like this:
 //!
 //!```
-//!# use rustful::{TreeRouter, Context, Response};
-//!# use rustful::Method::Get;
-//!# fn about_us(_c: Context, _w: Response) {}
-//!# fn show_user(_c: Context, _w: Response) {}
-//!# fn show_product(_c: Context, _w: Response) {}
-//!# fn show_error(_c: Context, _w: Response) {}
-//!# fn show_welcome(_c: Context, _w: Response) {}
+//!#[macro_use]
+//!extern crate rustful;
+//!use rustful::Method::Get;
+//!use rustful::TreeRouter;
+//!# use rustful::{Handler, Context, Response};
+//!
+//!# #[derive(Copy)]
+//!# struct DummyHandler;
+//!# impl Handler for DummyHandler {
+//!#     type Cache = ();
+//!#     fn handle_request(&self, _: Context, _: Response){}
+//!# }
+//!# fn main() {
+//!# let about_us = DummyHandler;
+//!# let show_user = DummyHandler;
+//!# let show_product = DummyHandler;
+//!# let show_error = DummyHandler;
+//!# let show_welcome = DummyHandler;
 //!let routes = vec![
-//!    (Get, "/about", about_us as fn(Context, Response)),
-//!    (Get, "/user/:user", show_user as fn(Context, Response)),
-//!    (Get, "/product/:name", show_product as fn(Context, Response)),
-//!    (Get, "/*", show_error as fn(Context, Response)),
-//!    (Get, "/", show_welcome as fn(Context, Response))
+//!    (Get, "/about", about_us),
+//!    (Get, "/user/:user", show_user),
+//!    (Get, "/product/:name", show_product),
+//!    (Get, "/*", show_error),
+//!    (Get, "/", show_welcome)
 //!];
 //!
 //!let router = TreeRouter::from_routes(routes);
+//!# }
 //!```
 //!
 //!Routes may also be added after the router was created, like this:
 //!
 //!```
-//!# use rustful::{Router, TreeRouter, Context, Response};
-//!# use rustful::Method::Get;
-//!# fn about_us(_c: Context, _w: Response) {}
-//!# fn show_user(_c: Context, _w: Response) {}
-//!# fn show_product(_c: Context, _w: Response) {}
-//!# fn show_error(_c: Context, _w: Response) {}
-//!# fn show_welcome(_c: Context, _w: Response) {}
+//!#[macro_use]
+//!extern crate rustful;
+//!use rustful::Method::Get;
+//!use rustful::{Router, TreeRouter};
+//!# use rustful::{Handler, Context, Response};
+//!
+//!# #[derive(Copy)]
+//!# struct DummyHandler;
+//!# impl Handler for DummyHandler {
+//!#     type Cache = ();
+//!#     fn handle_request(&self, _: Context, _: Response){}
+//!# }
+//!# fn main() {
+//!# let about_us = DummyHandler;
+//!# let show_user = DummyHandler;
+//!# let show_product = DummyHandler;
+//!# let show_error = DummyHandler;
+//!# let show_welcome = DummyHandler;
 //!let mut router = TreeRouter::new();
 //!
-//!router.insert(Get, "/about", about_us as fn(Context, Response));
-//!router.insert(Get, "/user/:user", show_user as fn(Context, Response));
-//!router.insert(Get, "/product/:name", show_product as fn(Context, Response));
-//!router.insert(Get, "/*", show_error as fn(Context, Response));
-//!router.insert(Get, "/", show_welcome as fn(Context, Response));
+//!router.insert(Get, "/about", about_us);
+//!router.insert(Get, "/user/:user", show_user);
+//!router.insert(Get, "/product/:name", show_product);
+//!router.insert(Get, "/*", show_error);
+//!router.insert(Get, "/", show_welcome);
+//!# }
 //!```
 //!
 //!Routers can also be used with a special macro for creating routes, called `insert_routes!`:
 //!
 //!```
-//!# use rustful::{Router, TreeRouter, Context, Response};
-//!# use rustful::Method::Get;
-//!# fn about_us(_c: Context, _w: Response) {}
-//!# fn show_user(_c: Context, _w: Response) {}
-//!# fn show_product(_c: Context, _w: Response) {}
-//!# fn show_error(_c: Context, _w: Response) {}
-//!# fn show_welcome(_c: Context, _w: Response) {}
-//!#[use_macro]
+//!#[macro_use]
 //!extern crate rustful;
+//!use rustful::Method::Get;
+//!use rustful::TreeRouter;
+//!# use rustful::{Handler, Context, Response};
 //!
-//!...
-//!
-//!
+//!# #[derive(Copy)]
+//!# struct DummyHandler;
+//!# impl Handler for DummyHandler {
+//!#     type Cache = ();
+//!#     fn handle_request(&self, _: Context, _: Response){}
+//!# }
+//!# fn main() {
+//!# let about_us = DummyHandler;
+//!# let show_user = DummyHandler;
+//!# let show_product = DummyHandler;
+//!# let show_error = DummyHandler;
+//!# let show_welcome = DummyHandler;
 //!let router = insert_routes!{
 //!    TreeRouter::new() => {
-//!        "/about" => Get: about_us as fn(Context, Response),
-//!        "/user/:user" => Get: show_user as fn(Context, Response),
-//!        "/product/:name" => Get: show_product as fn(Context, Response),
-//!        "/*" => Get: show_error as fn(Context, Response),
-//!        "/" => Get: show_welcome as fn(Context, Response)
+//!        "/about" => Get: about_us,
+//!        "/user/:user" => Get: show_user,
+//!        "/product/:name" => Get: show_product,
+//!        "/*" => Get: show_error,
+//!        "/" => Get: show_welcome
 //!    }
 //!};
+//!# }
 //!```
 //!
 //!This macro will generate the same code as the example above,

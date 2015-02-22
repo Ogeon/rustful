@@ -81,8 +81,8 @@ pub trait CachedValue<'a, Value> {
 ///# let log = &StdOut as &Log;
 ///
 ///let file = CachedFile::new(Path::new("/some/file/path.txt"), None);
-///
-///match *file.borrow(log) {
+///let guard = file.borrow(log);
+///match *guard {
 ///    Some(ref content) => println!("loaded file with {} bytes of data", content.len()),
 ///    None => println!("the file was not loaded")
 ///}
@@ -170,8 +170,8 @@ impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
 ///}
 ///
 ///let file = CachedProcessedFile::new(Path::new("/some/file/path.txt"), None, get_size);
-///
-///match *file.borrow(log) {
+///let guard = file.borrow(log);
+///match *guard {
 ///    Some(ref size) => println!("file contains {} bytes of data", size),
 ///    None => println!("the file was not loaded")
 ///}

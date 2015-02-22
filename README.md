@@ -36,13 +36,15 @@ Here is a simple example of what a simple project could look like. Visit
 Olivia) to try it.
 
 ```rust
+#![feature(core)]
+
 //Include macros to be able to use `inser_routes!`.
 #[macro_use]
 extern crate rustful;
 
 use std::error::Error;
 
-use rustful::{Server, Context, Response, TreeRouter};
+use rustful::{Server, Context, Response, TreeRouter, Handler};
 use rustful::Method::Get;
 
 fn say_hello(context: Context, response: Response) {
@@ -59,15 +61,25 @@ fn say_hello(context: Context, response: Response) {
     }
 }
 
+//Dodge an ICE, related to functions as handlers.
+struct HandlerFn(fn(Context, Response));
+
+impl Handler for HandlerFn {
+    type Cache = ();
+    fn handle_request(&self, context: Context, response: Response) {
+        self.0(context, response);
+    }
+}
+
 fn main() {
     let router = insert_routes!{
         TreeRouter::new() => {
             //Handle requests for root...
-            "/" => Get: say_hello,
+            "/" => Get: HandlerFn(say_hello),
 
             //...and one level below.
             //`:person` is a path variable and it will be accessible in the handler.
-            "/:person" => Get: say_hello
+            "/:person" => Get: HandlerFn(say_hello)
         }
     };
 
