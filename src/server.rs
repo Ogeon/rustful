@@ -196,21 +196,21 @@ impl<R, C> Server<R, C> {
     }
 
     ///Change log tool. Default is to print to standard output.
-    pub fn log<L: Log + Send + Sync>(mut self, log: L) -> Server<R, C> {
+    pub fn log<L: Log + Send + Sync + 'static>(mut self, log: L) -> Server<R, C> {
         self.log = Box::new(log) as Box<Log + Send + Sync>;
         self
     }
 
     ///Add a context plugin to the plugin stack.
     #[unstable]
-    pub fn with_context_plugin<P: ContextPlugin<Cache=C> + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
+    pub fn with_context_plugin<P: ContextPlugin<Cache=C> + Send + Sync + 'static>(mut self, plugin: P) ->  Server<R, C> {
         self.context_plugins.push(Box::new(plugin) as Box<ContextPlugin<Cache=C> + Send + Sync>);
         self
     }
 
     ///Add a response plugin to the plugin stack.
     #[unstable]
-    pub fn with_response_plugin<P: ResponsePlugin + Send + Sync>(mut self, plugin: P) ->  Server<R, C> {
+    pub fn with_response_plugin<P: ResponsePlugin + Send + Sync + 'static>(mut self, plugin: P) ->  Server<R, C> {
         self.response_plugins.push(Box::new(plugin) as Box<ResponsePlugin + Send + Sync>);
         self
     }
@@ -218,9 +218,9 @@ impl<R, C> Server<R, C> {
 
 impl<R, H, C> Server<R, C>
     where
-    R: Router<Handler=H> + Send + Sync,
-    H: Handler<Cache=C> + Send + Sync,
-    C: Cache + Send + Sync
+    R: Router<Handler=H> + Send + Sync + 'static,
+    H: Handler<Cache=C> + Send + Sync + 'static,
+    C: Cache + Send + Sync + 'static
 {
     ///Start the server.
     pub fn run(self) -> hyper::HttpResult<Listening> {
