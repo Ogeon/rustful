@@ -3,7 +3,7 @@ Rustful
 
 [![Build Status](https://travis-ci.org/Ogeon/rustful.png?branch=master)](https://travis-ci.org/Ogeon/rustful)
 
-A light RESTful web micro-framework for Rust. The main purpose of rustful is
+A light web micro-framework for Rust. The main purpose of rustful is
 to create a simple, modular and non-intrusive foundation for HTTP
 applications. It has a mainly stateless structure, which naturally allows it
 to run both as one single server and as multiple instances in a cluster.
