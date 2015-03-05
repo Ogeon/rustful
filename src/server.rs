@@ -5,8 +5,9 @@
 use std;
 use std::collections::HashMap;
 use std::sync::RwLock;
-use std::old_io::net::ip::{IpAddr, Ipv4Addr, Port};
+use std::net::{IpAddr, Ipv4Addr};
 use std::borrow::ToOwned;
+use std::path;
 
 use time::{self, Timespec};
 
@@ -29,7 +30,7 @@ use cache::Cache;
 use handler::Handler;
 use response::Response;
 use log::{Log, StdOut};
-use Protocol;
+use Scheme;
 
 use utils;
 
@@ -54,18 +55,18 @@ use utils;
 ///    Err(e) => println!("could not start server: {}", e.description())
 ///}
 ///```
-pub struct Server<R, C> {
+pub struct Server<'s, R, C> {
     ///One or several response handlers.
     pub handlers: R,
 
     ///The port where the server will listen for requests.
-    pub port: Port,
+    pub port: u16,
 
     ///The host address where the server will listen for requests.
     pub host: IpAddr,
 
     ///The type of HTTP protocol.
-    pub protocol: Protocol,
+    pub protocol: Scheme<'s>,
 
     ///The number of threads to be used in the server task pool.
     ///The default (`None`) is based on recommendations from the system.
@@ -95,21 +96,21 @@ pub struct Server<R, C> {
     pub response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
 }
 
-impl Server<(), ()> {
+impl<'s> Server<'s, (), ()> {
     ///Create a new empty server which will listen on host address `0.0.0.0` and port `80`.
-    pub fn new() -> Server<(), ()> {
+    pub fn new() -> Server<'s, (), ()> {
         Server::with_cache(())
     }
 }
 
-impl<C: Cache> Server<(), C> {
+impl<'s, C: Cache> Server<'s, (), C> {
     ///Create a new empty server with a cache.
-    pub fn with_cache(cache: C) -> Server<(), C> {
+    pub fn with_cache(cache: C) -> Server<'s, (), C> {
         Server {
             handlers: (),
             port: 80,
-            host: Ipv4Addr(0, 0, 0, 0),
-            protocol: Protocol::Http,
+            host: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            protocol: Scheme::Http,
             threads: None,
             server: "rustful".to_owned(),
             content_type: Mime(
@@ -126,9 +127,9 @@ impl<C: Cache> Server<(), C> {
     }
 }
 
-impl<R, C> Server<R, C> {
+impl<'s, R, C> Server<'s, R, C> {
     ///Set request handlers.
-    pub fn handlers<NewRouter: Router<Handler=H>, H: Handler<Cache=C>>(self, handlers: NewRouter) -> Server<NewRouter, C> {
+    pub fn handlers<NewRouter: Router<Handler=H>, H: Handler<Cache=C>>(self, handlers: NewRouter) -> Server<'s, NewRouter, C> {
         Server {
             handlers: handlers,
             port: self.port,
@@ -146,20 +147,20 @@ impl<R, C> Server<R, C> {
     }
 
     ///Change the port. Default is `80`.
-    pub fn port(mut self, port: Port) -> Server<R, C> {
+    pub fn port(mut self, port: u16) -> Server<'s, R, C> {
         self.port = port;
         self
     }
 
     ///Change the host address. Default is `0.0.0.0`.
-    pub fn host(mut self, host: IpAddr) -> Server<R, C> {
+    pub fn host(mut self, host: IpAddr) -> Server<'s, R, C> {
         self.host = host;
         self
     }
 
     ///Change the protocol to HTTPS.
-    pub fn https(mut self, cert: Path, key: Path) -> Server<R, C> {
-        self.protocol = Protocol::Https {
+    pub fn https(mut self, cert: &'s path::Path, key: &'s path::Path) -> Server<'s, R, C> {
+        self.protocol = Scheme::Https {
             cert: cert,
             key: key
         };
@@ -170,7 +171,7 @@ impl<R, C> Server<R, C> {
     ///
     ///Passing `None` will set it to the default number of threads,
     ///based on recommendations from the system.
-    pub fn threads(mut self, threads: Option<usize>) -> Server<R, C> {
+    pub fn threads(mut self, threads: Option<usize>) -> Server<'s, R, C> {
         self.threads = threads;
         self
     }
@@ -178,45 +179,45 @@ impl<R, C> Server<R, C> {
     ///Set the minimal number of seconds between each cache clean.
     ///
     ///Passing `None` disables cache cleaning.
-    pub fn cache_clean_interval(mut self, interval: Option<u32>) -> Server<R, C> {
+    pub fn cache_clean_interval(mut self, interval: Option<u32>) -> Server<'s, R, C> {
         self.cache_clean_interval = interval.map(|i| i as i64);
         self
     }
 
     ///Change the server response header. Default is `rustful`.
-    pub fn server_name(mut self, name: String) -> Server<R, C> {
+    pub fn server_name(mut self, name: String) -> Server<'s, R, C> {
         self.server = name;
         self
     }
 
     ///Change the default content type. Default is `text/plain`.
-    pub fn content_type(mut self, content_type: Mime) -> Server<R, C> {
+    pub fn content_type(mut self, content_type: Mime) -> Server<'s, R, C> {
         self.content_type = content_type;
         self
     }
 
     ///Change log tool. Default is to print to standard output.
-    pub fn log<L: Log + Send + Sync + 'static>(mut self, log: L) -> Server<R, C> {
+    pub fn log<L: Log + Send + Sync + 'static>(mut self, log: L) -> Server<'s, R, C> {
         self.log = Box::new(log) as Box<Log + Send + Sync>;
         self
     }
 
     ///Add a context plugin to the plugin stack.
     #[unstable]
-    pub fn with_context_plugin<P: ContextPlugin<Cache=C> + Send + Sync + 'static>(mut self, plugin: P) ->  Server<R, C> {
+    pub fn with_context_plugin<P: ContextPlugin<Cache=C> + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R, C> {
         self.context_plugins.push(Box::new(plugin) as Box<ContextPlugin<Cache=C> + Send + Sync>);
         self
     }
 
     ///Add a response plugin to the plugin stack.
     #[unstable]
-    pub fn with_response_plugin<P: ResponsePlugin + Send + Sync + 'static>(mut self, plugin: P) ->  Server<R, C> {
+    pub fn with_response_plugin<P: ResponsePlugin + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R, C> {
         self.response_plugins.push(Box::new(plugin) as Box<ResponsePlugin + Send + Sync>);
         self
     }
 }
 
-impl<R, H, C> Server<R, C>
+impl<'s, R, H, C> Server<'s, R, C>
     where
     R: Router<Handler=H> + Send + Sync + 'static,
     H: Handler<Cache=C> + Send + Sync + 'static,
@@ -226,19 +227,21 @@ impl<R, H, C> Server<R, C>
     pub fn run(self) -> hyper::HttpResult<Listening> {
         let threads = self.threads;
         let (server, protocol) = self.build();
+        let host = server.host;
+        let port = server.port;
         let http = match protocol {
-            Protocol::Http => hyper::server::Server::http(server.host, server.port),
-            Protocol::Https {cert, key} => hyper::server::Server::https(server.host, server.port, cert, key)
+            Scheme::Http => hyper::server::Server::http(server),
+            Scheme::Https {cert, key} => hyper::server::Server::https(server, cert, key)
         };
 
         match threads {
-            Some(threads) => http.listen_threads(server, threads),
-            None => http.listen(server)
+            Some(threads) => http.listen_threads(host, port, threads),
+            None => http.listen(host, port)
         }
     }
 
     ///Build a runnable instance of the server.
-    pub fn build(self) -> (ServerInstance<R, C>, Protocol) {
+    pub fn build(self) -> (ServerInstance<R, C>, Scheme<'s>) {
         (ServerInstance {
             handlers: self.handlers,
             port: self.port,
@@ -274,7 +277,7 @@ impl<R, H, C> Server<R, C>
 pub struct ServerInstance<R, C> {
     handlers: R,
 
-    port: Port,
+    port: u16,
     host: IpAddr,
 
     server: String,

@@ -4,8 +4,8 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(unsafe_destructor, old_impl_check, old_io, collections, std_misc, core, old_path)]
-#![cfg_attr(test, feature(test))]
+#![feature(unsafe_destructor, old_impl_check, io, path, fs, net, collections, std_misc, core)]
+#![cfg_attr(test, feature(test, tempdir))]
 
 #![stable]
 
@@ -47,7 +47,7 @@ pub mod log;
 
 ///HTTP or HTTPS
 #[stable]
-pub enum Protocol {
+pub enum Scheme<'a> {
     ///Standard HTTP.
     #[stable]
     Http,
@@ -56,9 +56,9 @@ pub enum Protocol {
     #[stable]
     Https {
         ///Path to SSL certificate.
-        cert: Path,
+        cert: &'a std::path::Path,
 
         ///Path to key file.
-        key: Path
+        key: &'a std::path::Path
     }
 }

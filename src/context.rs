@@ -3,7 +3,7 @@
 #![stable]
 
 use std::collections::HashMap;
-use std::old_io::IoResult;
+use std::io::{self, Read};
 use std::ops::{Deref, DerefMut};
 
 use hyper::server::request::Request;
@@ -74,23 +74,25 @@ impl<'r> BodyReader<'r> {
     }
 }
 
-impl<'r> Reader for BodyReader<'r> {
+impl<'r> Read for BodyReader<'r> {
     ///Read the request body.
-    fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.request.read(buf)
     }
 }
 
 ///`BodyReader` extension for reading and parsing a query string.
 pub trait ExtQueryBody {
-    fn read_query_body(&mut self) -> IoResult<HashMap<String, String>>;
+    fn read_query_body(&mut self) -> io::Result<HashMap<String, String>>;
 }
 
 impl<'r> ExtQueryBody for BodyReader<'r> {
     ///Read and parse the request body as a query string.
     ///The body will be decoded as UTF-8 and plain '+' characters will be replaced with spaces.
     #[inline]
-    fn read_query_body(&mut self) -> IoResult<HashMap<String, String>> {
-        Ok(utils::parse_parameters(&try!(self.read_to_end())))
+    fn read_query_body(&mut self) -> io::Result<HashMap<String, String>> {
+        let mut buf = Vec::new();
+        try!(self.read_to_end(&mut buf));
+        Ok(utils::parse_parameters(&buf))
     }
 }

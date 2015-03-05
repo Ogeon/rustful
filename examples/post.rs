@@ -1,9 +1,11 @@
-#![feature(old_io, old_path, core)]
+#![feature(io, path, fs, core)]
 
 #[macro_use]
 extern crate rustful;
 
-use std::old_io::{File, IoResult};
+use std::io::{self, Read};
+use std::fs::File;
+use std::path;
 use std::borrow::ToOwned;
 use std::error::Error;
 
@@ -66,8 +68,8 @@ fn main() {
 
     //Fill our cache with files
     let cache = Files {
-        page: CachedProcessedFile::new(Path::new("examples/post/page.html"), None, read_string),
-        form: CachedProcessedFile::new(Path::new("examples/post/form.html"), None, read_string)
+        page: CachedProcessedFile::new(&path::Path::new("examples/post/page.html"), None, read_string),
+        form: CachedProcessedFile::new(&path::Path::new("examples/post/form.html"), None, read_string)
     };
 
     //Handlers implements the Router trait, so it can be passed to the server as it is
@@ -80,19 +82,20 @@ fn main() {
     }
 }
 
-fn read_string(_log: &Log, mut file: IoResult<File>) -> IoResult<Option<String>> {
-    //Make the file mutable and try to read it into a string
-    file.read_to_string().map(|s| Some(s))
+fn read_string(_log: &Log, file: io::Result<File>) -> io::Result<Option<String>> {
+    //Read file into a string
+    let mut string = String::new();
+    try!(file).read_to_string(&mut string).map(|_| Some(string))
 }
 
 
 //We want to store the files as strings
-struct Files {
-    page: CachedProcessedFile<String>,
-    form: CachedProcessedFile<String>
+struct Files<'p> {
+    page: CachedProcessedFile<'p, String>,
+    form: CachedProcessedFile<'p, String>
 }
 
-impl Cache for Files {
+impl<'p> Cache for Files<'p> {
 
     //Cache cleaning is not used in this example, but this is implemented anyway.
     fn free_unused(&self, log: &Log) {

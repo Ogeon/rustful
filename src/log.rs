@@ -1,9 +1,10 @@
 //!Log tools.
 
-use std::old_io::{self, Writer, IoResult};
+use std::io::{self, Write};
+use std::fs;
 use std::sync::Mutex;
 
-pub type Result = IoResult<()>;
+pub type Result = io::Result<()>;
 
 ///Common trait for log tools.
 pub trait Log {
@@ -56,11 +57,11 @@ impl Log for StdOut {
 
 ///Log tool for printing to a file.
 pub struct File {
-	file: Mutex<old_io::File>
+	file: Mutex<fs::File>
 }
 
 impl File {
-	pub fn new(file: old_io::File) -> File {
+	pub fn new(file: fs::File) -> File {
 		File {
 			file: Mutex::new(file)
 		}
@@ -95,7 +96,7 @@ impl Log for File {
 
 #[cfg(test)]
 mod test {
-	use std::old_io::{self, TempDir};
+	use std::fs;
 	use log;
 	use Server;
 	use Context;
@@ -105,8 +106,8 @@ mod test {
 
 	#[test]
 	fn log_to_file() {
-		let dir = TempDir::new("log_to_file").unwrap();
-		let file = old_io::File::create(&dir.path().join("test.log")).unwrap();
+		let dir = fs::TempDir::new("log_to_file").unwrap();
+		let file = fs::File::create(&dir.path().join("test.log")).unwrap();
 		Server::new().handlers(handler).log(log::File::new(file)).build();
 	}
 }

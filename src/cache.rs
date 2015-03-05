@@ -2,8 +2,9 @@
 
 #![stable]
 
-use std::old_io::{File, IoResult};
-use std::old_io::fs::PathExtensions;
+use std::io::{self, Read};
+use std::path;
+use std::fs::{File, PathExt};
 use std::sync::{RwLock, RwLockReadGuard};
 
 use time;
@@ -76,11 +77,12 @@ pub trait CachedValue<'a, Value> {
 ///The whole file will be loaded when accessed.
 ///
 ///```rust
+///use std::path;
 ///use rustful::cache::{CachedValue, CachedFile};
 ///# use rustful::log::{Log, StdOut};
 ///# let log = &StdOut as &Log;
 ///
-///let file = CachedFile::new(Path::new("/some/file/path.txt"), None);
+///let file = CachedFile::new(&path::Path::new("/some/file/path.txt"), None);
 ///let guard = file.borrow(log);
 ///match *guard {
 ///    Some(ref content) => println!("loaded file with {} bytes of data", content.len()),
@@ -88,8 +90,8 @@ pub trait CachedValue<'a, Value> {
 ///}
 ///```
 #[unstable]
-pub struct CachedFile {
-    path: Path,
+pub struct CachedFile<'p> {
+    path: &'p path::Path,
     file: RwLock<Option<Vec<u8>>>,
     modified: RwLock<u64>,
     last_accessed: RwLock<Timespec>,
@@ -97,9 +99,9 @@ pub struct CachedFile {
 }
 
 #[unstable]
-impl CachedFile {
+impl<'p> CachedFile<'p> {
     ///Creates a new `CachedFile` which will be freed `unused_after` seconds after the latest access.
-    pub fn new(path: Path, unused_after: Option<u32>) -> CachedFile {
+    pub fn new(path: &'p path::Path, unused_after: Option<u32>) -> CachedFile<'p> {
         CachedFile {
             path: path,
             file: RwLock::new(None),
@@ -110,7 +112,7 @@ impl CachedFile {
     }
 }
 
-impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
+impl<'a, 'p> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile<'p> {
     fn borrow_current(&'a self, log: &Log) -> RwLockReadGuard<'a, Option<Vec<u8>>> {
         if self.unused_after.is_some() {
             *unwrap_mutex!(log, self.last_accessed.write()) = time::get_time();
@@ -120,8 +122,16 @@ impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
     }
 
     fn load(&self, log: &Log) {
-        *unwrap_mutex!(log, self.modified.write()) = self.path.stat().map(|s| s.modified).unwrap_or(0);
-        *unwrap_mutex!(log, self.file.write()) = File::open(&self.path).read_to_end().ok();
+        *unwrap_mutex!(log, self.modified.write()) = self.path.metadata().map(|m| m.modified()).unwrap_or(0);
+        let mut buf = Vec::new();
+        let res = match File::open(self.path) {
+            Ok(ref mut f) => f.read_to_end(&mut buf),
+            Err(e) => {
+                log.error(&format!("could not open file {}: {}", self.path.display(), e));
+                Err(e)
+            }
+        };
+        *unwrap_mutex!(log, self.file.write()) = res.ok().map(|_| buf);
 
         if self.unused_after.is_some() {
             *unwrap_mutex!(log, self.last_accessed.write()) = time::get_time();
@@ -134,7 +144,7 @@ impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
 
     fn expired(&self, log: &Log) -> bool {
         if unwrap_mutex!(log, self.file.read()).is_some() {
-            self.path.stat().map(|s| s.modified > *unwrap_mutex!(log, self.modified.read())).unwrap_or(false)
+            self.path.metadata().map(|m| m.modified() > *unwrap_mutex!(log, self.modified.read())).unwrap_or(false)
         } else {
             true
         }
@@ -160,16 +170,18 @@ impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
 ///each time it is loaded and the result will be stored.
 ///
 ///```rust
-///use std::old_io::{File, IoResult};
+///use std::io;
+///use std::path;
+///use std::fs::{File, PathExt};
 ///use rustful::cache::{CachedValue, CachedProcessedFile};
 ///# use rustful::log::{Log, StdOut};
 ///# let log = &StdOut as &Log;
 ///
-///fn get_size(_log: &Log, file: IoResult<File>) -> IoResult<Option<u64>> {
-///    file.and_then(|mut file| file.stat()).map(|stat| Some(stat.size))
+///fn get_size(_log: &Log, file: io::Result<File>) -> io::Result<Option<u64>> {
+///    file.and_then(|mut file| file.metadata()).map(|m| Some(m.len()))
 ///}
 ///
-///let file = CachedProcessedFile::new(Path::new("/some/file/path.txt"), None, get_size);
+///let file = CachedProcessedFile::new(&path::Path::new("/some/file/path.txt"), None, get_size);
 ///let guard = file.borrow(log);
 ///match *guard {
 ///    Some(ref size) => println!("file contains {} bytes of data", size),
@@ -177,20 +189,20 @@ impl<'a> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile {
 ///}
 ///```
 #[unstable]
-pub struct CachedProcessedFile<T> {
-    path: Path,
+pub struct CachedProcessedFile<'p, T> {
+    path: &'p path::Path,
     file: RwLock<Option<T>>,
     modified: RwLock<u64>,
     last_accessed: RwLock<Timespec>,
     unused_after: Option<i64>,
-    processor: fn(&Log, IoResult<File>) -> IoResult<Option<T>>
+    processor: fn(&Log, io::Result<File>) -> io::Result<Option<T>>
 }
 
 #[unstable]
-impl<T: Send+Sync> CachedProcessedFile<T> {
+impl<'p, T: Send+Sync> CachedProcessedFile<'p, T> {
     ///Creates a new `CachedProcessedFile` which will be freed `unused_after` seconds after the latest access.
     ///The file will be processed by the provided `processor` function each time it's loaded.
-    pub fn new(path: Path, unused_after: Option<u32>, processor: fn(&Log, IoResult<File>) -> IoResult<Option<T>>) -> CachedProcessedFile<T> {
+    pub fn new(path: &'p path::Path, unused_after: Option<u32>, processor: fn(&Log, io::Result<File>) -> io::Result<Option<T>>) -> CachedProcessedFile<'p, T> {
         CachedProcessedFile {
             path: path,
             file: RwLock::new(None),
@@ -202,7 +214,7 @@ impl<T: Send+Sync> CachedProcessedFile<T> {
     }
 }
 
-impl<'a, T: Send+Sync> CachedValue<'a, RwLockReadGuard<'a, Option<T>>> for CachedProcessedFile<T> {
+impl<'a, 'p, T: Send+Sync> CachedValue<'a, RwLockReadGuard<'a, Option<T>>> for CachedProcessedFile<'p, T> {
     fn borrow_current(&'a self, log: &Log) -> RwLockReadGuard<'a, Option<T>> {
         if self.unused_after.is_some() {
             *unwrap_mutex!(log, self.last_accessed.write()) = time::get_time();
@@ -212,7 +224,7 @@ impl<'a, T: Send+Sync> CachedValue<'a, RwLockReadGuard<'a, Option<T>>> for Cache
     }
 
     fn load(&self, log: &Log) {
-        *unwrap_mutex!(log, self.modified.write()) = self.path.stat().map(|s| s.modified).unwrap_or(0);
+        *unwrap_mutex!(log, self.modified.write()) = self.path.metadata().map(|m| m.modified()).unwrap_or(0);
         *unwrap_mutex!(log, self.file.write()) = (self.processor)(log, File::open(&self.path)).ok().and_then(|result| result);
 
         if self.unused_after.is_some() {
@@ -226,7 +238,7 @@ impl<'a, T: Send+Sync> CachedValue<'a, RwLockReadGuard<'a, Option<T>>> for Cache
 
     fn expired(&self, log: &Log) -> bool {
         if unwrap_mutex!(log, self.file.read()).is_some() {
-            self.path.stat().map(|s| s.modified > *unwrap_mutex!(log, self.modified.read())).unwrap_or(true)
+            self.path.metadata().map(|m| m.modified() > *unwrap_mutex!(log, self.modified.read())).unwrap_or(true)
         } else {
             true
         }
@@ -247,7 +259,9 @@ impl<'a, T: Send+Sync> CachedValue<'a, RwLockReadGuard<'a, Option<T>>> for Cache
 
 #[cfg(test)]
 mod test {
-    use std::old_io::{File, IoResult};
+    use std::io::{self, Read};
+    use std::fs::File;
+    use std::path;
     use cache::{CachedValue, CachedFile, CachedProcessedFile};
     use log::{Log, Result};
 
@@ -268,7 +282,7 @@ mod test {
     #[test]
     fn file() {
         let log = &DummyLog as &Log;
-        let file = CachedFile::new(Path::new("LICENSE"), None);
+        let file = CachedFile::new(path::Path::new("LICENSE"), None);
         assert_eq!(file.expired(log), true);
         assert!(file.borrow(log).as_ref().map(|v| v.len()).unwrap_or(0) > 0);
         assert_eq!(file.expired(log), false);
@@ -278,12 +292,13 @@ mod test {
 
     #[test]
     fn modified_file() {
-        fn just_read(_log: &Log, mut file: IoResult<File>) -> IoResult<Option<Vec<u8>>> {
-            file.read_to_end().map(|v| Some(v))
+        fn just_read(_log: &Log, file: io::Result<File>) -> io::Result<Option<Vec<u8>>> {
+            let mut buf = Vec::new();
+            try!(file).read_to_end(&mut buf).map(|_| Some(buf))
         }
 
         let log = &DummyLog as &Log;
-        let file = CachedProcessedFile::new(Path::new("LICENSE"), None, just_read);
+        let file = CachedProcessedFile::new(path::Path::new("LICENSE"), None, just_read);
         assert_eq!(file.expired(log), true);
         assert!(file.borrow(log).as_ref().map(|v| v.len()).unwrap_or(0) > 0);
         assert_eq!(file.expired(log), false);

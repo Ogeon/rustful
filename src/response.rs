@@ -3,7 +3,7 @@
 #![stable]
 
 use std;
-use std::old_io::{IoResult, IoError, Writer, OtherIoError};
+use std::io::{self, Write};
 use std::error::FromError;
 use std::borrow::ToOwned;
 
@@ -16,7 +16,7 @@ use hyper::version::HttpVersion;
 use StatusCode;
 
 use plugin::ResponsePlugin;
-use plugin::ResponseAction::{self, Write, DoNothing, Error};
+use plugin::ResponseAction as Action;
 use log::Log;
 
 ///The result of a response action.
@@ -27,11 +27,11 @@ pub enum ResponseError {
     PluginError(String),
 
     ///There was an IO error.
-    IoError(IoError)
+    IoError(io::Error)
 }
 
-impl FromError<IoError> for ResponseError {
-    fn from_error(err: IoError) -> ResponseError {
+impl FromError<io::Error> for ResponseError {
+    fn from_error(err: io::Error) -> ResponseError {
         ResponseError::IoError(err)
     }
 }
@@ -174,7 +174,7 @@ pub struct Response<'a, 'b> {
     status: Option<StatusCode>,
 
     version: Option<HttpVersion>,
-    writer: Option<HttpWriter<&'a mut (Writer + 'a)>>,
+    writer: Option<HttpWriter<&'a mut (io::Write + 'a)>>,
     plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>,
     log: &'b (Log + 'b)
 }
@@ -219,31 +219,31 @@ impl<'a, 'b> Response<'a, 'b> {
 
     fn make_writer(&mut self) -> ResponseWriter<'a, 'b> {
         let mut write_queue = Vec::new();
-        let mut header_result = (self.status.take().unwrap(), self.headers.take().unwrap(), Write(None));
+        let mut header_result = (self.status.take().unwrap(), self.headers.take().unwrap(), Action::Write(None));
 
         for plugin in self.plugins {
             header_result = match header_result {
-                (_, _, DoNothing) => break,
-                (_, _, Error(_)) => break,
+                (_, _, Action::DoNothing) => break,
+                (_, _, Action::Error(_)) => break,
                 (status, headers, r) => {
                     write_queue.push(r);
 
                     match plugin.begin(self.log, status, headers) {
-                        (status, headers, Error(e)) => (status, headers, Error(e)),
+                        (status, headers, Action::Error(e)) => (status, headers, Action::Error(e)),
                         (status, headers, result) => {
                             let mut error = None;
                             
                             write_queue = write_queue.into_iter().filter_map(|action| match action {
-                                Write(content) => Some(plugin.write(self.log, content)),
-                                DoNothing => None,
-                                Error(e) => {
+                                Action::Write(content) => Some(plugin.write(self.log, content)),
+                                Action::DoNothing => None,
+                                Action::Error(e) => {
                                     error = Some(e);
                                     None
                                 }
                             }).collect();
 
                             match error {
-                                Some(e) => (status, headers, Error(e)),
+                                Some(e) => (status, headers, Action::Error(e)),
                                 None => (status, headers, result)
                             }
                         }
@@ -253,7 +253,7 @@ impl<'a, 'b> Response<'a, 'b> {
         }
 
         let writer = match header_result {
-            (_, _, Error(e)) => Err(ResponseError::PluginError(e)),
+            (_, _, Action::Error(e)) => Err(ResponseError::PluginError(e)),
             (status, headers, last_result) => {
                 write_queue.push(last_result);
 
@@ -267,11 +267,11 @@ impl<'a, 'b> Response<'a, 'b> {
 
                 for action in write_queue {
                     writer = match (action, writer) {
-                        (Write(Some(content)), Ok(mut writer)) => match writer.write_all(content.as_bytes()) {
+                        (Action::Write(Some(content)), Ok(mut writer)) => match writer.write_all(content.as_bytes()) {
                             Ok(_) => Ok(writer),
                             Err(e) => Err(ResponseError::IoError(e))
                         },
-                        (Error(e), _) => Err(ResponseError::PluginError(e)),
+                        (Action::Error(e), _) => Err(ResponseError::PluginError(e)),
                         (_, writer) => writer
                     };
                 }
@@ -310,28 +310,34 @@ pub struct ResponseWriter<'a, 'b> {
 impl<'a, 'b> ResponseWriter<'a, 'b> {
 
     ///Writes response body data to the client.
-    pub fn send<'d, Content: IntoResponseData<'d>>(&mut self, content: Content) -> Result<(), ResponseError> {
+    pub fn send<'d, Content: IntoResponseData<'d>>(&mut self, content: Content) -> Result<usize, ResponseError> {
         let mut writer = try!(self.writer.as_mut().expect("write after close").as_mut().map_err(|e| e.clone()));
-        let mut plugin_result = ResponseAction::write(Some(content));
+        let mut plugin_result = Action::write(Some(content));
 
         for plugin in self.plugins {
             plugin_result = match plugin_result {
-                Write(content) => plugin.write(self.log, content),
+                Action::Write(content) => plugin.write(self.log, content),
                 _ => break
             }
         }
 
         let write_result = match plugin_result {
-            Write(Some(ref s)) => Some(writer.write_all(s.as_bytes())),
+            Action::Write(Some(ref s)) => {
+                let buf = s.as_bytes();
+                match writer.write_all(buf) {
+                    Ok(()) => Some(Ok(buf.len())),
+                    Err(e) => Some(Err(e))
+                }
+            },
             _ => None
         };
 
         match write_result {
-            Some(Ok(_)) => Ok(()),
+            Some(Ok(l)) => Ok(l),
             Some(Err(e)) => Err(ResponseError::IoError(e)),
             None => match plugin_result {
-                Error(e) => Err(ResponseError::PluginError(e)),
-                Write(None) => Ok(()),
+                Action::Error(e) => Err(ResponseError::PluginError(e)),
+                Action::Write(None) => Ok(0),
                 _ => unreachable!()
             }
         }
@@ -346,14 +352,14 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
     fn finish(&mut self) -> Result<(), ResponseError> {
         let mut writer = try!(self.writer.take().expect("can only finish once"));
-        let mut write_queue: Vec<ResponseAction> = Vec::new();
+        let mut write_queue: Vec<Action> = Vec::new();
 
         for plugin in self.plugins {
             let mut error = None;
             write_queue = write_queue.into_iter().filter_map(|action| match action {
-                Write(content) => Some(plugin.write(self.log, content)),
-                DoNothing => None,
-                Error(e) => {
+                Action::Write(content) => Some(plugin.write(self.log, content)),
+                Action::DoNothing => None,
+                Action::Error(e) => {
                     error = Some(e);
                     None
                 }
@@ -368,8 +374,8 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         for action in write_queue {
             try!{
                 match action {
-                    Write(Some(content)) => writer.write_all(content.as_bytes()),
-                    Error(e) => return Err(ResponseError::PluginError(e)),
+                    Action::Write(Some(content)) => writer.write_all(content.as_bytes()),
+                    Action::Error(e) => return Err(ResponseError::PluginError(e)),
                     _ => Ok(())
                 }
             }
@@ -377,19 +383,24 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
         writer.end().map_err(|e| ResponseError::IoError(e))
     }
+
+    fn borrow_writer(&mut self) -> Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>, ResponseError> {
+        self.writer.as_mut().expect("write after close").as_mut().map_err(|e| e.clone())
+    }
 }
 
-impl<'a, 'b> Writer for ResponseWriter<'a, 'b> {
-    fn write_all(&mut self, content: &[u8]) -> IoResult<()> {
-        match self.send(content) {
-            Ok(()) => Ok(()),
-            Err(ResponseError::IoError(e)) => Err(e),
-            Err(ResponseError::PluginError(e)) => Err(IoError{
-                kind: OtherIoError,
-                desc: "response plugin error",
-                detail: Some(e)
-            })
-        }
+impl<'a, 'b> Write for ResponseWriter<'a, 'b> {
+    fn write(&mut self, content: &[u8]) -> io::Result<usize> {
+        response_to_io_result(self.send(content))
+    }
+
+    fn write_all(&mut self, content: &[u8]) -> io::Result<()> {
+        self.write(content).map(|_| ())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let mut writer = try!(response_to_io_result(self.borrow_writer()));
+        writer.flush()
     }
 }
 
@@ -401,5 +412,17 @@ impl<'a, 'b> Drop for ResponseWriter<'a, 'b> {
         if self.writer.is_some() {
             self.finish();
         }
+    }
+}
+
+fn response_to_io_result<T>(res:  Result<T, ResponseError>) -> io::Result<T> {
+    match res {
+        Ok(v) => Ok(v),
+        Err(ResponseError::IoError(e)) => Err(e),
+        Err(ResponseError::PluginError(e)) => Err(io::Error::new(
+            io::ErrorKind::Other,
+            "response plugin error",
+            Some(e)
+        ))
     }
 }

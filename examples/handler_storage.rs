@@ -1,9 +1,11 @@
-#![feature(old_io, old_path, core)]
+#![feature(io, path, fs, core)]
 
 #[macro_use]
 extern crate rustful;
 
-use std::old_io::{File, IoResult};
+use std::io::{self, Read};
+use std::fs::File;
+use std::path;
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
@@ -17,7 +19,7 @@ fn main() {
     println!("Visit http://localhost:8080 to try this example.");
 
     //Cache the page
-    let page = Arc::new(CachedProcessedFile::new(Path::new("examples/handler_storage/page.html"), None, read_string));
+    let page = Arc::new(CachedProcessedFile::new(&path::Path::new("examples/handler_storage/page.html"), None, read_string));
 
     //The shared counter state
     let value = Arc::new(RwLock::new(0));
@@ -59,21 +61,22 @@ fn sub(value: i32) -> i32 {
     value - 1
 }
 
-fn read_string(_log: &Log, mut file: IoResult<File>) -> IoResult<Option<String>> {
+fn read_string(_log: &Log, file: io::Result<File>) -> io::Result<Option<String>> {
     //Read file into a string
-    file.read_to_string().map(|s| Some(s))
+    let mut string = String::new();
+    try!(file).read_to_string(&mut string).map(|_| Some(string))
 }
 
 
-struct Counter {
+struct Counter<'p> {
     //We are using the handler to cache the page in this exmaple
-    page: Arc<CachedProcessedFile<String>>,
+    page: Arc<CachedProcessedFile<'p, String>>,
 
     value: Arc<RwLock<i32>>,
     operation: Option<fn(i32) -> i32>
 }
 
-impl Handler for Counter {
+impl<'p> Handler for Counter<'p> {
     type Cache = ();
 
     fn handle_request(&self, context: Context, mut response: Response) {
