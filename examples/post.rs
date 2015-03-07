@@ -1,4 +1,4 @@
-#![feature(io, path, fs, core)]
+#![feature(io, path, core)]
 
 #[macro_use]
 extern crate rustful;
