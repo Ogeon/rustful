@@ -5,12 +5,12 @@
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
 #![feature(unsafe_destructor, old_impl_check, io, path, fs, net, collections, std_misc, core)]
-#![cfg_attr(test, feature(test, tempdir))]
+#![cfg_attr(test, feature(test))]
 
 #![stable]
 
-#[cfg(test)]
-extern crate test;
+#[cfg(test)] extern crate test;
+#[cfg(test)] extern crate tempdir;
 
 extern crate url;
 extern crate time;

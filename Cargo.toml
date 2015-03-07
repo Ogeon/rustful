@@ -13,3 +13,6 @@ path = "src/lib.rs"
 hyper = "*"
 time = "*"
 url = "*"
+
+[dev-dependencies]
+tempdir = "*"
