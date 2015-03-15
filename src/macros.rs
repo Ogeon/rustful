@@ -116,15 +116,13 @@ macro_rules! __insert_internal {
     };
     ($router:ident, [$($steps:expr),*], $path:expr => $method:path: $handler:expr, $($next:tt)*) => {
         {
-            let path = vec![$($steps,)* $path].connect("/");
-            $router.insert($method, &path, $handler);
+            $router.insert($method, &[$($steps,)* $path][..], $handler);
             __insert_internal!($router, [$($steps),*], $($next)*)
         }
     };
     ($router:ident, [$($steps:expr),*], $path:expr => $method:path: $handler:expr) => {
         {
-           let path = vec![$($steps,)* $path].connect("/");
-            $router.insert($method, &path, $handler);
+            $router.insert($method, &[$($steps,)* $path][..], $handler);
         }
     };
 }

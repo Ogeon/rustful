@@ -1,6 +1,9 @@
 //!Routers stores request handlers, using an HTTP method and a path as keys.
 //!
-//!The `TreeRouter`, for example, can be created from a vector of predefined paths, like this:
+//!Rustful provides a tree structured all-round router called `TreeRouter`,
+//!but any other type of router can be used, as long as it implements the
+//!`Router` trait. This will also make it possible to initialize it using the
+//!`insert_routes!` macro:
 //!
 //!```
 //!#[macro_use]
@@ -18,25 +21,37 @@
 //!# fn main() {
 //!# let about_us = DummyHandler;
 //!# let show_user = DummyHandler;
+//!# let list_users = DummyHandler;
 //!# let show_product = DummyHandler;
+//!# let list_products = DummyHandler;
 //!# let show_error = DummyHandler;
 //!# let show_welcome = DummyHandler;
-//!let routes = vec![
-//!    (Get, "/about", about_us),
-//!    (Get, "/user/:user", show_user),
-//!    (Get, "/product/:name", show_product),
-//!    (Get, "/*", show_error),
-//!    (Get, "/", show_welcome)
-//!];
-//!
-//!let router = TreeRouter::from_routes(routes);
+//!let router = insert_routes!{
+//!    TreeRouter::new() => {
+//!        "/about" => Get: about_us,
+//!        "/users" => {
+//!            "/" => Get: list_users,
+//!            ":id" => Get: show_user
+//!        },
+//!        "/products" => {
+//!            "/" => Get: list_products,
+//!            ":id" => Get: show_product
+//!        },
+//!        "/*" => Get: show_error,
+//!        "/" => Get: show_welcome
+//!    }
+//!};
 //!# }
 //!```
 //!
-//!Routes may also be added after the router was created, like this:
+//!This macro creates the same structure as the example below, but it allows
+//!tree structures to be defined without the need to write the same paths
+//!multiple times. This can be useful to lower the risk of typing errors,
+//!among other things.
+//!
+//!Routes may also be added using the insert method, like this:
 //!
 //!```
-//!#[macro_use]
 //!extern crate rustful;
 //!use rustful::Method::Get;
 //!use rustful::{Router, TreeRouter};
@@ -51,56 +66,22 @@
 //!# fn main() {
 //!# let about_us = DummyHandler;
 //!# let show_user = DummyHandler;
+//!# let list_users = DummyHandler;
 //!# let show_product = DummyHandler;
+//!# let list_products = DummyHandler;
 //!# let show_error = DummyHandler;
 //!# let show_welcome = DummyHandler;
 //!let mut router = TreeRouter::new();
 //!
 //!router.insert(Get, "/about", about_us);
-//!router.insert(Get, "/user/:user", show_user);
-//!router.insert(Get, "/product/:name", show_product);
+//!router.insert(Get, "/users", list_users);
+//!router.insert(Get, "/users/:id", show_user);
+//!router.insert(Get, "/products", list_products);
+//!router.insert(Get, "/products/:id", show_product);
 //!router.insert(Get, "/*", show_error);
 //!router.insert(Get, "/", show_welcome);
 //!# }
 //!```
-//!
-//!Routers can also be used with a special macro for creating routes, called `insert_routes!`:
-//!
-//!```
-//!#[macro_use]
-//!extern crate rustful;
-//!use rustful::Method::Get;
-//!use rustful::TreeRouter;
-//!# use rustful::{Handler, Context, Response};
-//!
-//!# #[derive(Copy)]
-//!# struct DummyHandler;
-//!# impl Handler for DummyHandler {
-//!#     type Cache = ();
-//!#     fn handle_request(&self, _: Context, _: Response){}
-//!# }
-//!# fn main() {
-//!# let about_us = DummyHandler;
-//!# let show_user = DummyHandler;
-//!# let show_product = DummyHandler;
-//!# let show_error = DummyHandler;
-//!# let show_welcome = DummyHandler;
-//!let router = insert_routes!{
-//!    TreeRouter::new() => {
-//!        "/about" => Get: about_us,
-//!        "/user/:user" => Get: show_user,
-//!        "/product/:name" => Get: show_product,
-//!        "/*" => Get: show_error,
-//!        "/" => Get: show_welcome
-//!    }
-//!};
-//!# }
-//!```
-//!
-//!This macro will generate the same code as the example above,
-//!but it allows more advanced structures to be defined without
-//!the need to write the same paths multiple times. This can be
-//!useful to lower the risk of typing errors, among other things.
 
 #![stable]
 
@@ -108,6 +89,10 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::vec::Vec;
 use std::borrow::ToOwned;
+use std::iter::{Iterator, IntoIterator, FromIterator, FlatMap};
+use std::str::SplitTerminator;
+use std::slice::Iter;
+use std::ops::Deref;
 use hyper::method::Method;
 
 use handler::Handler;
@@ -116,27 +101,113 @@ use self::Branch::{Static, Variable, Wildcard};
 
 pub type RouterResult<'a, T> = Option<(&'a T, HashMap<String, String>)>;
 
-///Routers are used to store request handlers.
+///A common trait for routers.
 ///
-///A router implementing the `Router` trait will always be compatible with
-///the `insert_routes!` macro.
+///A router must to implement this trait to be usable in a Rustful server. This
+///trait will also make the router compatible with the `insert_routes!` macro.
 pub trait Router {
     type Handler;
-    ///Find and return the matching handler and variable values.
-    fn find(&self, method: &Method, path: &str) -> Option<(&Self::Handler, HashMap<String, String>)>;
 
     ///Insert a new handler into the router.
-    fn insert(&mut self, method: Method, path: &str, handler: Self::Handler);
+    fn insert<'r, R: Route<'r> + ?Sized>(&mut self, method: Method, route: &'r R, handler: Self::Handler);
+
+    ///Find and return the matching handler and variable values.
+    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, method: &Method, route: &'r R) -> RouterResult<'a, Self::Handler>;
 }
 
 impl<H: Handler> Router for H {
     type Handler = H;
 
-    fn find(&self, _method: &Method, _path: &str) -> Option<(&H, HashMap<String, String>)> {
+    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, _method: &Method, _route: &'r R) -> RouterResult<'a, H> {
         Some((self, HashMap::new()))
     }
 
-    fn insert(&mut self, _method: Method, _path: &str, _handler: H) {}
+    fn insert<'r, R: Route<'r> + 'r + ?Sized>(&mut self, _method: Method, _route: &'r R, _handler: H) {}
+}
+
+///A segmented route.
+pub trait Route<'a> {
+    type Segments: Iterator<Item=&'a str>;
+
+    ///Create a route segment iterator. The iterator is expected to return
+    ///None for a root path (`/`).
+    ///
+    ///```rust
+    ///# use rustful::router::Route;
+    ///let root = "/";
+    ///assert_eq!(root.segments().next(), None);
+    ///
+    ///let path = ["/path", "to/somewhere/", "/", "/else/"];
+    ///let segments = path.segments().collect();
+    ///assert_eq!(segments, vec!["path", "to", "somewhere", "else"]);
+    ///```
+    fn segments(&'a self) -> <Self as Route<'a>>::Segments;
+}
+
+impl<'a> Route<'a> for str {
+    type Segments = RouteIter<SplitTerminator<'a, char>>;
+
+    fn segments(&'a self) -> <Self as Route<'a>>::Segments {
+        let s = if self.starts_with('/') {
+            &self[1..]
+        } else {
+            self
+        };
+
+        if s.len() == 0 {
+            RouteIter::Root
+        } else {
+            RouteIter::Path(s.split_terminator('/'))
+        }
+    }
+}
+
+
+impl<'a, R: Route<'a>> Route<'a> for [R] {
+    type Segments = FlatMap<Iter<'a, R>, <R as Route<'a>>::Segments, fn(&'a R) -> <R as Route<'a>>::Segments>;
+
+    fn segments(&'a self) -> <Self as Route>::Segments {
+        fn segments<'a, T: Route<'a> + 'a>(s: &'a T) -> <T as Route<'a>>::Segments {
+            s.segments()
+        }
+
+        self.iter().flat_map(segments::<'a>)
+    }
+}
+
+impl<'a, 'b: 'a, T: Deref<Target=R> + 'b, R: Route<'a> + ?Sized + 'b> Route<'a> for T {
+    type Segments = <R as Route<'a>>::Segments;
+
+    #[inline]
+    fn segments(&'a self) -> <Self as Route<'a>>::Segments {
+        self.deref().segments()
+    }
+}
+
+///Utility iterator for when a root path may be hard to represent.
+pub enum RouteIter<I: Iterator> {
+    ///A root path (`/`).
+    Root,
+    ///A non-root path (`path/to/somewhere`).
+    Path(I)
+}
+
+impl<I: Iterator> Iterator for RouteIter<I> {
+    type Item = <I as Iterator>::Item;
+
+    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
+        match self {
+            &mut RouteIter::Path(ref mut i) => i.next(),
+            &mut RouteIter::Root => None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            &RouteIter::Path(ref i) => i.size_hint(),
+            &RouteIter::Root => (0, Some(0))
+        }
+    }
 }
 
 enum Branch {
@@ -148,13 +219,10 @@ enum Branch {
 ///Stores items, such as request handlers, using an HTTP method and a path as keys.
 ///
 ///Paths can be static (`"path/to/item"`) or variable (`"users/:group/:user"`)
-///and contain wildcards (`"path/*/item/*"`).
-///
-///Variables (starting with `:`) will match whatever word the request path contains at
-///that point and it will be sent as a value to the item.
-///
-///Wildcards (a single `*`) will consume the segments until the rest of the
-///path gives a match.
+///and contain wildcards (`"path/*/item/*"`). Variables (starting with `:`)
+///will match whatever word the request path contains at that point and it
+///will be sent as a value to the item. Wildcards (a single `*`) will consume
+///the segments until the rest of the path gives a match.
 ///
 ///```ignore
 ///pattern = "a/*/b"
@@ -190,17 +258,6 @@ impl<T> TreeRouter<T> {
         }
     }
 
-    ///Generates a `TreeRouter` tree from a set of items and paths.
-    pub fn from_routes(routes: Vec<(Method, &str, T)>) -> TreeRouter<T> {
-        let mut root = TreeRouter::new();
-
-        for (method, path, item) in routes {
-            root.insert(method, path, item);
-        }
-
-        root
-    }
-
     //Tries to find a router matching the key or inserts a new one if none exists.
     fn find_or_insert_router<'a>(&'a mut self, key: &str) -> &'a mut TreeRouter<T> {
         if key == "*" {
@@ -225,8 +282,8 @@ impl<T> TreeRouter<T> {
 impl<T> Router for TreeRouter<T> {
     type Handler = T;
 
-    fn find<'a>(&'a self, method: &Method, path: &str) -> RouterResult<'a, T> {
-        let path = path_to_vec(path);
+    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, method: &Method, route: &'r R) -> RouterResult<'a, T> {
+        let path = route.segments().collect::<Vec<_>>();
         let method_str = method.to_string();
 
         if path.len() == 0 {
@@ -254,7 +311,7 @@ impl<T> Router for TreeRouter<T> {
                             });
 
                             let var_map = variable_names.iter().zip(values).map(|(key, value)| {
-                                (key.clone(), value)
+                                (key.clone(), value.to_owned())
                             });
 
                             return Some((item, var_map.collect()))
@@ -265,7 +322,7 @@ impl<T> Router for TreeRouter<T> {
 
                 match branch {
                     Static => {
-                        current.static_routes.get(&path[index]).map(|next| {
+                        current.static_routes.get(path[index]).map(|next| {
                             variables.get_mut(index).map(|v| *v = false);
                             
                             stack.push((next, Wildcard, index+1));
@@ -299,57 +356,42 @@ impl<T> Router for TreeRouter<T> {
         }
     }
 
-    ///Inserts an item into the `TreeRouter` at a given path.
-    fn insert(&mut self, method: Method, path: &str, item: T) {
-        let path = path_to_vec(path.trim());
+    fn insert<'r, R: Route<'r> + ?Sized>(&mut self, method: Method, route: &'r R, item: T) {
+        let (endpoint, variable_names) = route.segments().fold((self, Vec::new()),
 
-        if path.len() == 0 {
-            self.items.insert(method.to_string().to_owned(), (item, Vec::new()));
-        } else {
-            let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
-
-                |(current, mut variable_names), piece| {
-                    let next = current.find_or_insert_router(&piece);
-                    if piece.len() > 0 && piece.char_at(0) == ':' {
-                        //piece.shift_char();
-                        variable_names.push(piece[1..].to_owned());
-                    }
-
-                    (next, variable_names)
+            |(current, mut variable_names), piece| {
+                let next = current.find_or_insert_router(&piece);
+                if piece.len() > 0 && piece.char_at(0) == ':' {
+                    variable_names.push(piece[1..].to_owned());
                 }
 
-            );
+                (next, variable_names)
+            }
 
-            endpoint.items.insert(method.to_string().to_owned(), (item, variable_names));
-        }
+        );
+
+        endpoint.items.insert(method.to_string().to_owned(), (item, variable_names));
     }
 }
 
 impl<T: Clone> TreeRouter<T> {
     ///Insert an other TreeRouter at a path. The content of the other TreeRouter will be merged with this one.
     ///Content with the same path and method will be overwritten.
-    pub fn insert_router(&mut self, path: &str, router: &TreeRouter<T>) {
-        let path = path_to_vec(path.trim());
+    pub fn insert_router<'r, R: Route<'r> + ?Sized>(&mut self, route: &'r R, router: &TreeRouter<T>) {
+        let (endpoint, variable_names) = route.segments().fold((self, Vec::new()),
 
-        if path.len() == 0 {
-            self.merge_router(Vec::new(), router);
-        } else {
-            let (endpoint, variable_names) = path.into_iter().fold((self, Vec::new()),
-
-                |(current, mut variable_names), piece| {
-                    let next = current.find_or_insert_router(&piece);
-                    if piece.len() > 0 && piece.char_at(0) == ':' {
-                        //piece.shift_char();
-                        variable_names.push(piece[1..].to_owned());
-                    }
-
-                    (next, variable_names)
+            |(current, mut variable_names), piece| {
+                let next = current.find_or_insert_router(&piece);
+                if piece.len() > 0 && piece.char_at(0) == ':' {
+                    variable_names.push(piece[1..].to_owned());
                 }
 
-            );
+                (next, variable_names)
+            }
 
-            endpoint.merge_router(variable_names, router);
-        }
+        );
+
+        endpoint.merge_router(variable_names, router);
     }
 
     //Mergers this TreeRouter with an other TreeRouter.
@@ -392,20 +434,50 @@ impl<T: Clone> TreeRouter<T> {
     }
 }
 
-//Converts a path to a suitable array of path segments
-fn path_to_vec(path: &str) -> Vec<String> {
-    if path.len() == 0 {
-        vec!()
-    } else if path.len() == 1 {
-        if path == "/" {
-            vec!()
-        } else {
-            vec!(path.to_string())
+impl<'r, T, R: Route<'r> + 'r + ?Sized> FromIterator<(Method, &'r R, T)> for TreeRouter<T> {
+    ///Create a `TreeRouter` from a collection of routes.
+    ///
+    ///```
+    ///extern crate rustful;
+    ///use rustful::Method::Get;
+    ///use rustful::TreeRouter;
+    ///# use rustful::{Handler, Context, Response};
+    ///
+    ///# #[derive(Copy)]
+    ///# struct DummyHandler;
+    ///# impl Handler for DummyHandler {
+    ///#     type Cache = ();
+    ///#     fn handle_request(&self, _: Context, _: Response){}
+    ///# }
+    ///# fn main() {
+    ///# let about_us = DummyHandler;
+    ///# let show_user = DummyHandler;
+    ///# let list_users = DummyHandler;
+    ///# let show_product = DummyHandler;
+    ///# let list_products = DummyHandler;
+    ///# let show_error = DummyHandler;
+    ///# let show_welcome = DummyHandler;
+    ///let routes = vec![
+    ///    (Get, "/about", about_us),
+    ///    (Get, "/users", list_users),
+    ///    (Get, "/users/:id", show_user),
+    ///    (Get, "/products", list_products),
+    ///    (Get, "/products/:id", show_product),
+    ///    (Get, "/*", show_error),
+    ///    (Get, "/", show_welcome)
+    ///];
+    ///
+    ///let router: TreeRouter<_> = routes.into_iter().collect();
+    ///# }
+    ///```
+    fn from_iter<I: IntoIterator<Item=(Method, &'r R, T)>>(iterator: I) -> TreeRouter<T> {
+        let mut root = TreeRouter::new();
+
+        for (method, route, item) in iterator {
+            root.insert(method, route, item);
         }
-    } else {
-        let start = if path.char_at(0) == '/' { 1 } else { 0 };
-        let end = if path.char_at(path.len() - 1) == '/' { 1 } else { 0 };
-        path[start..path.len() - end].split('/').map(|s| s.to_string()).collect()
+
+        root
     }
 }
 
@@ -453,7 +525,7 @@ mod test {
     fn one_static_route() {
         let routes = vec![(Get, "path/to/test1", "test 1")];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
         check(router.find(&Get, "path/to/test1"), Some("test 1"));
         check(router.find(&Get, "path/to"), None);
@@ -468,7 +540,7 @@ mod test {
             (Get, "path/to/test1/no/test3", "test 3")
         ];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
         check(router.find(&Get, ""), Some("test 1"));
         check(router.find(&Get, "path/to/test/no2"), Some("test 2"));
@@ -480,7 +552,7 @@ mod test {
     fn one_variable_route() {
         let routes = vec![(Get, "path/:a/test1", "test_var")];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
         check_variable(router.find(&Get, "path/to/test1"), Some("to"));
         check_variable(router.find(&Get, "path/to"), None);
@@ -496,7 +568,7 @@ mod test {
             (Post, "path/to/:c/:a/:b", "test_var")
         ];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
         check_variable(router.find(&Get, "path/to/test1"), Some(""));
         check_variable(router.find(&Get, "path/to/test/no2"), Some("to"));
@@ -509,7 +581,7 @@ mod test {
     fn one_wildcard_end_route() {
         let routes = vec![(Get, "path/to/*", "test 1")];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
         check(router.find(&Get, "path/to/test1"), Some("test 1"));
         check(router.find(&Get, "path/to/same/test1"), Some("test 1"));
@@ -523,7 +595,7 @@ mod test {
     fn one_wildcard_middle_route() {
         let routes = vec![(Get, "path/*/test1", "test 1")];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
         check(router.find(&Get, "path/to/test1"), Some("test 1"));
         check(router.find(&Get, "path/to/same/test1"), Some("test 1"));
@@ -536,7 +608,7 @@ mod test {
     fn one_universal_wildcard_route() {
         let routes = vec![(Get, "*", "test 1")];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
         check(router.find(&Get, "path/to/test1"), Some("test 1"));
         check(router.find(&Get, "path/to/same/test1"), Some("test 1"));
@@ -554,7 +626,7 @@ mod test {
             (Get, "path/to/*/*/*", "test 3")
         ];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
         check(router.find(&Get, "path/to/test1"), Some("test 1"));
         check(router.find(&Get, "path/for/test/no2"), Some("test 2"));
@@ -572,7 +644,7 @@ mod test {
             (Get, "/path/to/test3/again/", "test 3")
         ];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
         check(router.find(&Get, ""), Some("test 1"));
         check(router.find(&Get, "path/to/test/no2/"), Some("test 2"));
@@ -590,7 +662,7 @@ mod test {
             (Put, "/", "put")
         ];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
 
 
         check(router.find(&Get, "/"), Some("get"));
@@ -614,8 +686,8 @@ mod test {
             (Post, "test1/no/test3", "test 3 post")
         ];
 
-        let mut router1 = TreeRouter::from_routes(routes1);
-        let router2 = TreeRouter::from_routes(routes2);
+        let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
+        let router2 = routes2.into_iter().collect::<TreeRouter<_>>();
 
         router1.insert_router("path/to", &router2);
 
@@ -633,8 +705,8 @@ mod test {
         let routes1 = vec![(Get, ":a/:b/:c", "test 2")];
         let routes2 = vec![(Get, ":b/:c/test", "test 1")];
 
-        let mut router1 = TreeRouter::from_routes(routes1);
-        let router2 = TreeRouter::from_routes(routes2);
+        let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
+        let router2 = routes2.into_iter().collect::<TreeRouter<_>>();
 
         router1.insert_router(":a", &router2);
         
@@ -648,8 +720,8 @@ mod test {
         let routes1 = vec![(Get, "path/to", "test 2")];
         let routes2 = vec![(Get, "*/test1", "test 1")];
 
-        let mut router1 = TreeRouter::from_routes(routes1);
-        let router2 = TreeRouter::from_routes(routes2);
+        let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
+        let router2 = routes2.into_iter().collect::<TreeRouter<_>>();
 
         router1.insert_router("path", &router2);
 
@@ -692,7 +764,7 @@ mod test {
             "path/to/test1/nothing/at/all"
         ];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
         let mut counter = 0;
 
         b.iter(|| {
@@ -723,7 +795,7 @@ mod test {
             "path/to/test1/nothing/at/all/and/all/and/all/and/a"
         ];
 
-        let router = TreeRouter::from_routes(routes);
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
         let mut counter = 0;
 
         b.iter(|| {
