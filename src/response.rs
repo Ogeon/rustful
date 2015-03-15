@@ -4,7 +4,7 @@
 
 use std;
 use std::io::{self, Write};
-use std::error::FromError;
+use std::error::{Error, FromError};
 use std::borrow::ToOwned;
 
 use hyper;
@@ -45,18 +45,18 @@ impl std::fmt::Display for ResponseError {
     }
 }
 
-impl std::error::Error for ResponseError {
+impl Error for ResponseError {
     fn description(&self) -> &str {
         match *self {
             ResponseError::PluginError(ref desc) => desc,
-            ResponseError::IoError(ref e) => e.description()
+            ResponseError::IoError(ref e) => Error::description(e)
         }
     }
 
     fn cause(&self) -> Option<&std::error::Error> {
         match *self {
             ResponseError::PluginError(_) => None,
-            ResponseError::IoError(ref e) => Some(e as &std::error::Error)
+            ResponseError::IoError(ref e) => Some(e as &Error)
         }
     }
 }

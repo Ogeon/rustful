@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 use std::net::{IpAddr, Ipv4Addr};
 use std::borrow::ToOwned;
-use std::path;
+use std::path::Path;
 
 use time::{self, Timespec};
 
@@ -159,7 +159,7 @@ impl<'s, R, C> Server<'s, R, C> {
     }
 
     ///Change the protocol to HTTPS.
-    pub fn https(mut self, cert: &'s path::Path, key: &'s path::Path) -> Server<'s, R, C> {
+    pub fn https(mut self, cert: &'s Path, key: &'s Path) -> Server<'s, R, C> {
         self.protocol = Scheme::Https {
             cert: cert,
             key: key

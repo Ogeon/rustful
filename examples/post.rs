@@ -1,11 +1,11 @@
-#![feature(io, path, core)]
+#![feature(core)]
 
 #[macro_use]
 extern crate rustful;
 
 use std::io::{self, Read};
 use std::fs::File;
-use std::path;
+use std::path::Path;
 use std::borrow::ToOwned;
 use std::error::Error;
 
@@ -68,8 +68,8 @@ fn main() {
 
     //Fill our cache with files
     let cache = Files {
-        page: CachedProcessedFile::new(&path::Path::new("examples/post/page.html"), None, read_string),
-        form: CachedProcessedFile::new(&path::Path::new("examples/post/form.html"), None, read_string)
+        page: CachedProcessedFile::new(&Path::new("examples/post/page.html"), None, read_string),
+        form: CachedProcessedFile::new(&Path::new("examples/post/form.html"), None, read_string)
     };
 
     //Handlers implements the Router trait, so it can be passed to the server as it is

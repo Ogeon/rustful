@@ -1,11 +1,11 @@
-#![feature(io, path, core)]
+#![feature(core)]
 
 #[macro_use]
 extern crate rustful;
 
 use std::io::{self, Read};
 use std::fs::File;
-use std::path;
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
@@ -19,7 +19,7 @@ fn main() {
     println!("Visit http://localhost:8080 to try this example.");
 
     //Cache the page
-    let page = Arc::new(CachedProcessedFile::new(&path::Path::new("examples/handler_storage/page.html"), None, read_string));
+    let page = Arc::new(CachedProcessedFile::new(&Path::new("examples/handler_storage/page.html"), None, read_string));
 
     //The shared counter state
     let value = Arc::new(RwLock::new(0));
