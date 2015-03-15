@@ -184,17 +184,17 @@ ContentType(content_type!("image", "png"));
 macro_rules! content_type {
     ($main_type:expr, $sub_type:expr) => ({
         $crate::mime::Mime (
-            std::str::FromStr::from_str($main_type).unwrap(),
-            std::str::FromStr::from_str($sub_type).unwrap(),
+            ::std::str::FromStr::from_str($main_type).unwrap(),
+            ::std::str::FromStr::from_str($sub_type).unwrap(),
             Vec::new()
         )
     });
 
     ($main_type:expr, $sub_type:expr, $(($param:expr, $value:expr)),+) => ({
         $crate::mime::Mime (
-            std::str::FromStr::from_str($main_type).unwrap(),
-            std::str::FromStr::from_str($sub_type).unwrap(),
-            vec!( $( (std::str::FromStr::from_str($param).unwrap(), std::str::FromStr::from_str($value).unwrap()) ),+ )
+            ::std::str::FromStr::from_str($main_type).unwrap(),
+            ::std::str::FromStr::from_str($sub_type).unwrap(),
+            vec!( $( (::std::str::FromStr::from_str($param).unwrap(), ::std::str::FromStr::from_str($value).unwrap()) ),+ )
         )
     });
 }
