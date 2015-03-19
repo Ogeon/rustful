@@ -22,6 +22,7 @@ pub use hyper::status::StatusCode;
 pub use hyper::header;
 pub use hyper::HttpResult;
 pub use hyper::HttpError;
+pub use hyper::version::HttpVersion;
 
 pub use self::server::Server;
 pub use self::context::Context;

@@ -2,7 +2,6 @@
 
 #![stable]
 
-use std;
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::net::{IpAddr, Ipv4Addr};
@@ -15,7 +14,7 @@ use url::percent_encoding::lossy_utf8_percent_decode;
 
 use hyper;
 use hyper::server::Handler as HyperHandler;
-use hyper::header::{Headers, Date, ContentType, ContentLength};
+use hyper::header::{Date, ContentType, ContentLength};
 use hyper::mime::Mime;
 use hyper::uri::RequestUri;
 
@@ -316,11 +315,15 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
     H: Handler<Cache=C> + Send + Sync,
     C: Cache + Send + Sync,
 {
-    fn handle(&self, mut request: hyper::server::request::Request, writer: hyper::server::response::Response) {
-        let request_uri = request.uri.clone();
-        let request_method = request.method.clone();
-        let mut request_headers = Headers::new();
-        std::mem::swap(&mut request_headers, &mut request.headers);
+    fn handle(&self, request: hyper::server::request::Request, writer: hyper::server::response::Response) {
+        let (
+            request_addr,
+            request_method,
+            request_headers,
+            request_uri,
+            request_version,
+            request_reader
+        ) = request.deconstruct();
 
         let mut response = Response::new(writer, &self.response_plugins, &*self.log);
         response.set_header(Date(time::now_utc()));
@@ -347,14 +350,16 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
 
                 let mut context = Context {
                     headers: request_headers,
+                    http_version: request_version,
                     method: request_method,
+                    address: request_addr,
                     path: lossy_utf8_percent_decode(&path),
                     variables: HashMap::new(),
                     query: query,
                     fragment: fragment,
                     cache: &self.cache,
                     log: &*self.log,
-                    body_reader: context::BodyReader::from_request(request)
+                    body_reader: context::BodyReader::from_reader(request_reader)
                 };
 
                 match self.modify_context(&mut context) {

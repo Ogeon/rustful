@@ -3,13 +3,16 @@
 #![stable]
 
 use std::collections::HashMap;
-use std::io::{self, Read};
+use std::io::{self, Read, BufReader};
+use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
 
-use hyper::server::request::Request;
+use hyper::http::HttpReader;
+use hyper::net::NetworkStream;
 
 use utils;
 
+use HttpVersion;
 use Method;
 use header::Headers;
 use log::Log;
@@ -18,9 +21,15 @@ use log::Log;
 ///
 ///A `Context` can be dereferenced to a `BodyReader`, allowing direct access to
 ///the underlying read methods.
-pub struct Context<'r, 'c, Cache: 'c =()> {
+pub struct Context<'a, 'b: 'a, 'c, Cache: 'c =()> {
     ///Headers from the HTTP request.
     pub headers: Headers,
+
+    ///The HTTP version used in the request.
+    pub http_version: HttpVersion,
+
+    ///The client address
+    pub address: SocketAddr,
 
     ///The HTTP method.
     pub method: Method,
@@ -44,37 +53,37 @@ pub struct Context<'r, 'c, Cache: 'c =()> {
     pub log: &'c (Log + 'c),
 
     ///A reader for the request body.
-    pub body_reader: BodyReader<'r>
+    pub body_reader: BodyReader<'a, 'b>
 }
 
-impl<'r, 'c, C> Deref for Context<'r, 'c, C> {
-    type Target = BodyReader<'r>;
+impl<'a, 'b, 'c, C> Deref for Context<'a, 'b, 'c, C> {
+    type Target = BodyReader<'a, 'b>;
 
-    fn deref<'a>(&'a self) -> &'a BodyReader<'r> {
+    fn deref<'r>(&'r self) -> &'r BodyReader<'a, 'b> {
         &self.body_reader
     }
 }
 
-impl<'r, 'c, C> DerefMut for Context<'r, 'c, C> {
-    fn deref_mut<'a>(&'a mut self) -> &'a mut BodyReader<'r> {
+impl<'a, 'b, 'c, C> DerefMut for Context<'a, 'b, 'c, C> {
+    fn deref_mut<'r>(&'r mut self) -> &'r mut BodyReader<'a, 'b> {
         &mut self.body_reader
     }
 }
 
 ///A reader for a request body.
-pub struct BodyReader<'r> {
-    request: Request<'r>
+pub struct BodyReader<'a, 'b: 'a> {
+    request: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>
 }
 
-impl<'r> BodyReader<'r> {
-    pub fn from_request(request: Request<'r>) -> BodyReader<'r> {
+impl<'a, 'b> BodyReader<'a, 'b> {
+    pub fn from_reader(request: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>) -> BodyReader<'a, 'b> {
         BodyReader {
             request: request
         }
     }
 }
 
-impl<'r> Read for BodyReader<'r> {
+impl<'a, 'b> Read for BodyReader<'a, 'b> {
     ///Read the request body.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.request.read(buf)
@@ -86,7 +95,7 @@ pub trait ExtQueryBody {
     fn read_query_body(&mut self) -> io::Result<HashMap<String, String>>;
 }
 
-impl<'r> ExtQueryBody for BodyReader<'r> {
+impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
     ///Read and parse the request body as a query string.
     ///The body will be decoded as UTF-8 and plain '+' characters will be replaced with spaces.
     #[inline]
