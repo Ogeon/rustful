@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::sync::RwLock;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::borrow::ToOwned;
 use std::path::Path;
 
@@ -58,11 +58,8 @@ pub struct Server<'s, R, C> {
     ///One or several response handlers.
     pub handlers: R,
 
-    ///The port where the server will listen for requests.
-    pub port: u16,
-
-    ///The host address where the server will listen for requests.
-    pub host: IpAddr,
+    ///The host address and port where the server will listen for requests.
+    pub host: SocketAddr,
 
     ///The type of HTTP protocol.
     pub protocol: Scheme<'s>,
@@ -107,8 +104,7 @@ impl<'s, C: Cache> Server<'s, (), C> {
     pub fn with_cache(cache: C) -> Server<'s, (), C> {
         Server {
             handlers: (),
-            port: 80,
-            host: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            host: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 80)),
             protocol: Scheme::Http,
             threads: None,
             server: "rustful".to_owned(),
@@ -131,7 +127,6 @@ impl<'s, R, C> Server<'s, R, C> {
     pub fn handlers<NewRouter: Router<Handler=H>, H: Handler<Cache=C>>(self, handlers: NewRouter) -> Server<'s, NewRouter, C> {
         Server {
             handlers: handlers,
-            port: self.port,
             host: self.host,
             protocol: self.protocol,
             threads: self.threads,
@@ -147,12 +142,17 @@ impl<'s, R, C> Server<'s, R, C> {
 
     ///Change the port. Default is `80`.
     pub fn port(mut self, port: u16) -> Server<'s, R, C> {
-        self.port = port;
+        self.host = match self.host {
+            SocketAddr::V4(addr) => SocketAddr::V4(SocketAddrV4::new(addr.ip().clone(), port)),
+            SocketAddr::V6(addr) => {
+                SocketAddr::V6(SocketAddrV6::new(addr.ip().clone(), port, addr.flowinfo(), addr.scope_id()))
+            }
+        };
         self
     }
 
-    ///Change the host address. Default is `0.0.0.0`.
-    pub fn host(mut self, host: IpAddr) -> Server<'s, R, C> {
+    ///Change the host address. Default is `0.0.0.0:80`.
+    pub fn host(mut self, host: SocketAddr) -> Server<'s, R, C> {
         self.host = host;
         self
     }
@@ -227,15 +227,14 @@ impl<'s, R, H, C> Server<'s, R, C>
         let threads = self.threads;
         let (server, protocol) = self.build();
         let host = server.host;
-        let port = server.port;
         let http = match protocol {
             Scheme::Http => hyper::server::Server::http(server),
             Scheme::Https {cert, key} => hyper::server::Server::https(server, cert, key)
         };
 
         match threads {
-            Some(threads) => http.listen_threads(host, port, threads),
-            None => http.listen(host, port)
+            Some(threads) => http.listen_threads(host, threads),
+            None => http.listen(host)
         }
     }
 
@@ -243,7 +242,6 @@ impl<'s, R, H, C> Server<'s, R, C>
     pub fn build(self) -> (ServerInstance<R, C>, Scheme<'s>) {
         (ServerInstance {
             handlers: self.handlers,
-            port: self.port,
             host: self.host,
             server: self.server,
             content_type: self.content_type,
@@ -276,8 +274,7 @@ impl<'s, R, H, C> Server<'s, R, C>
 pub struct ServerInstance<R, C> {
     handlers: R,
 
-    port: u16,
-    host: IpAddr,
+    host: SocketAddr,
 
     server: String,
     content_type: Mime,
