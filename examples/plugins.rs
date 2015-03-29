@@ -29,7 +29,6 @@ fn say_hello(context: Context, response: Response) {
 struct HandlerFn(fn(Context, Response));
 
 impl Handler for HandlerFn {
-    type Cache = ();
     fn handle_request(&self, context: Context, response: Response) {
         self.0(context, response);
     }
@@ -80,8 +79,6 @@ impl RequestLogger {
 }
 
 impl ContextPlugin for RequestLogger {
-    type Cache = ();
-
     ///Count requests and log the path.
     fn modify(&self, log: &Log, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
@@ -104,8 +101,6 @@ impl PathPrefix {
 }
 
 impl ContextPlugin for PathPrefix {
-    type Cache = ();
-
     ///Append the prefix to the path
     fn modify(&self, _log: &Log, context: &mut Context) -> ContextAction {
         context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);

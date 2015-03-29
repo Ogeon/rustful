@@ -3,12 +3,11 @@
 #![stable]
 
 use std::collections::HashMap;
-use std::sync::RwLock;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::borrow::ToOwned;
 use std::path::Path;
 
-use time::{self, Timespec};
+use time;
 
 use url::percent_encoding::lossy_utf8_percent_decode;
 
@@ -25,7 +24,6 @@ use StatusCode;
 use context::{self, Context};
 use plugin::{ContextPlugin, ContextAction, ResponsePlugin};
 use router::Router;
-use cache::Cache;
 use handler::Handler;
 use response::Response;
 use log::{Log, StdOut};
@@ -43,7 +41,6 @@ use utils;
 ///# use rustful::{Server, Handler, Context, Response};
 ///# struct R;
 ///# impl Handler for R {
-///#     type Cache = ();
 ///#     fn handle_request(&self, _context: Context, _response: Response) {}
 ///# }
 ///# let router = R;
@@ -54,7 +51,7 @@ use utils;
 ///    Err(e) => println!("could not start server: {}", e.description())
 ///}
 ///```
-pub struct Server<'s, R, C> {
+pub struct Server<'s, R> {
     ///One or several response handlers.
     pub handlers: R,
 
@@ -74,34 +71,21 @@ pub struct Server<'s, R, C> {
     ///The default media type.
     pub content_type: Mime,
 
-    ///A structure where resources are cached.
-    pub cache: C,
-
-    ///How often the cache should be cleaned. Measured in seconds.
-    pub cache_clean_interval: Option<i64>,
-
     ///Tool for printing to a log.
     pub log: Box<Log + Send + Sync>,
 
     ///The context plugin stack.
     #[unstable]
-    pub context_plugins: Vec<Box<ContextPlugin<Cache=C> + Send + Sync>>,
+    pub context_plugins: Vec<Box<ContextPlugin + Send + Sync>>,
 
     ///The response plugin stack.
     #[unstable]
     pub response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
 }
 
-impl<'s> Server<'s, (), ()> {
+impl<'s> Server<'s, ()> {
     ///Create a new empty server which will listen on host address `0.0.0.0` and port `80`.
-    pub fn new() -> Server<'s, (), ()> {
-        Server::with_cache(())
-    }
-}
-
-impl<'s, C: Cache> Server<'s, (), C> {
-    ///Create a new empty server with a cache.
-    pub fn with_cache(cache: C) -> Server<'s, (), C> {
+    pub fn new() -> Server<'s, ()> {
         Server {
             handlers: (),
             host: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 80)),
@@ -113,8 +97,6 @@ impl<'s, C: Cache> Server<'s, (), C> {
                 hyper::mime::SubLevel::Plain,
                 vec![(hyper::mime::Attr::Charset, hyper::mime::Value::Utf8)]
             ),
-            cache: cache,
-            cache_clean_interval: None,
             log: Box::new(StdOut),
             context_plugins: Vec::new(),
             response_plugins: Vec::new()
@@ -122,9 +104,9 @@ impl<'s, C: Cache> Server<'s, (), C> {
     }
 }
 
-impl<'s, R, C> Server<'s, R, C> {
+impl<'s, R> Server<'s, R> {
     ///Set request handlers.
-    pub fn handlers<NewRouter: Router<Handler=H>, H: Handler<Cache=C>>(self, handlers: NewRouter) -> Server<'s, NewRouter, C> {
+    pub fn handlers<NewRouter: Router<Handler=H>, H: Handler>(self, handlers: NewRouter) -> Server<'s, NewRouter> {
         Server {
             handlers: handlers,
             host: self.host,
@@ -132,8 +114,6 @@ impl<'s, R, C> Server<'s, R, C> {
             threads: self.threads,
             server: self.server,
             content_type: self.content_type,
-            cache: self.cache,
-            cache_clean_interval: self.cache_clean_interval,
             log: self.log,
             context_plugins: self.context_plugins,
             response_plugins: self.response_plugins,
@@ -141,7 +121,7 @@ impl<'s, R, C> Server<'s, R, C> {
     }
 
     ///Change the port. Default is `80`.
-    pub fn port(mut self, port: u16) -> Server<'s, R, C> {
+    pub fn port(mut self, port: u16) -> Server<'s, R> {
         self.host = match self.host {
             SocketAddr::V4(addr) => SocketAddr::V4(SocketAddrV4::new(addr.ip().clone(), port)),
             SocketAddr::V6(addr) => {
@@ -152,13 +132,13 @@ impl<'s, R, C> Server<'s, R, C> {
     }
 
     ///Change the host address. Default is `0.0.0.0:80`.
-    pub fn host(mut self, host: SocketAddr) -> Server<'s, R, C> {
+    pub fn host(mut self, host: SocketAddr) -> Server<'s, R> {
         self.host = host;
         self
     }
 
     ///Change the protocol to HTTPS.
-    pub fn https(mut self, cert: &'s Path, key: &'s Path) -> Server<'s, R, C> {
+    pub fn https(mut self, cert: &'s Path, key: &'s Path) -> Server<'s, R> {
         self.protocol = Scheme::Https {
             cert: cert,
             key: key
@@ -170,57 +150,48 @@ impl<'s, R, C> Server<'s, R, C> {
     ///
     ///Passing `None` will set it to the default number of threads,
     ///based on recommendations from the system.
-    pub fn threads(mut self, threads: Option<usize>) -> Server<'s, R, C> {
+    pub fn threads(mut self, threads: Option<usize>) -> Server<'s, R> {
         self.threads = threads;
         self
     }
 
-    ///Set the minimal number of seconds between each cache clean.
-    ///
-    ///Passing `None` disables cache cleaning.
-    pub fn cache_clean_interval(mut self, interval: Option<u32>) -> Server<'s, R, C> {
-        self.cache_clean_interval = interval.map(|i| i as i64);
-        self
-    }
-
     ///Change the server response header. Default is `rustful`.
-    pub fn server_name(mut self, name: String) -> Server<'s, R, C> {
+    pub fn server_name(mut self, name: String) -> Server<'s, R> {
         self.server = name;
         self
     }
 
     ///Change the default content type. Default is `text/plain`.
-    pub fn content_type(mut self, content_type: Mime) -> Server<'s, R, C> {
+    pub fn content_type(mut self, content_type: Mime) -> Server<'s, R> {
         self.content_type = content_type;
         self
     }
 
     ///Change log tool. Default is to print to standard output.
-    pub fn log<L: Log + Send + Sync + 'static>(mut self, log: L) -> Server<'s, R, C> {
+    pub fn log<L: Log + Send + Sync + 'static>(mut self, log: L) -> Server<'s, R> {
         self.log = Box::new(log);
         self
     }
 
     ///Add a context plugin to the plugin stack.
     #[unstable]
-    pub fn with_context_plugin<P: ContextPlugin<Cache=C> + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R, C> {
+    pub fn with_context_plugin<P: ContextPlugin + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R> {
         self.context_plugins.push(Box::new(plugin));
         self
     }
 
     ///Add a response plugin to the plugin stack.
     #[unstable]
-    pub fn with_response_plugin<P: ResponsePlugin + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R, C> {
+    pub fn with_response_plugin<P: ResponsePlugin + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R> {
         self.response_plugins.push(Box::new(plugin));
         self
     }
 }
 
-impl<'s, R, H, C> Server<'s, R, C>
+impl<'s, R, H> Server<'s, R>
     where
     R: Router<Handler=H> + Send + Sync + 'static,
-    H: Handler<Cache=C> + Send + Sync + 'static,
-    C: Cache + Send + Sync + 'static
+    H: Handler + Send + Sync + 'static
 {
     ///Start the server.
     pub fn run(self) -> hyper::HttpResult<Listening> {
@@ -239,15 +210,12 @@ impl<'s, R, H, C> Server<'s, R, C>
     }
 
     ///Build a runnable instance of the server.
-    pub fn build(self) -> (ServerInstance<R, C>, Scheme<'s>) {
+    pub fn build(self) -> (ServerInstance<R>, Scheme<'s>) {
         (ServerInstance {
             handlers: self.handlers,
             host: self.host,
             server: self.server,
             content_type: self.content_type,
-            cache: self.cache,
-            cache_clean_interval: self.cache_clean_interval,
-            last_cache_clean: RwLock::new(Timespec::new(0, 0)),
             log: self.log,
             context_plugins: self.context_plugins,
             response_plugins: self.response_plugins,
@@ -265,13 +233,12 @@ impl<'s, R, H, C> Server<'s, R, C>
 ///# use rustful::{Server, Handler, Context, Response};
 ///# struct R;
 ///# impl Handler for R {
-///#     type Cache = ();
 ///#     fn handle_request(&self, _context: Context, _response: Response) {}
 ///# }
 ///# let router = R;
 ///let (server_instance, protocol) = Server::new().port(8080).handlers(router).build();
 ///```
-pub struct ServerInstance<R, C> {
+pub struct ServerInstance<R> {
     handlers: R,
 
     host: SocketAddr,
@@ -279,19 +246,15 @@ pub struct ServerInstance<R, C> {
     server: String,
     content_type: Mime,
 
-    cache: C,
-    cache_clean_interval: Option<i64>,
-    last_cache_clean: RwLock<Timespec>,
-
     log: Box<Log + Send + Sync>,
 
-    context_plugins: Vec<Box<ContextPlugin<Cache=C> + Send + Sync>>,
+    context_plugins: Vec<Box<ContextPlugin + Send + Sync>>,
     response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
 }
 
-impl<R, C: Cache> ServerInstance<R, C> {
+impl<R> ServerInstance<R> {
 
-    fn modify_context(&self, context: &mut Context<C>) -> ContextAction {
+    fn modify_context(&self, context: &mut Context) -> ContextAction {
         let mut result = ContextAction::Continue;
 
         for plugin in &self.context_plugins {
@@ -306,11 +269,10 @@ impl<R, C: Cache> ServerInstance<R, C> {
 
 }
 
-impl<R, H, C> HyperHandler for ServerInstance<R, C>
+impl<R, H> HyperHandler for ServerInstance<R>
     where
     R: Router<Handler=H> + Send + Sync,
-    H: Handler<Cache=C> + Send + Sync,
-    C: Cache + Send + Sync,
+    H: Handler + Send + Sync
 {
     fn handle(&self, request: hyper::server::request::Request, writer: hyper::server::response::Response) {
         let (
@@ -354,7 +316,6 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
                     variables: HashMap::new(),
                     query: query,
                     fragment: fragment,
-                    cache: &self.cache,
                     log: &*self.log,
                     body_reader: context::BodyReader::from_reader(request_reader)
                 };
@@ -383,18 +344,6 @@ impl<R, H, C> HyperHandler for ServerInstance<R, C>
                 response.set_status(StatusCode::BadRequest);
             }
         }
-
-        self.cache_clean_interval.map(|t| {
-            let clean_time = {
-                let last_cache_clean = self.last_cache_clean.read().unwrap();
-                Timespec::new(last_cache_clean.sec + t, last_cache_clean.nsec)
-            };
-
-            if time::get_time() > clean_time {
-                *self.last_cache_clean.write().unwrap() = time::get_time();
-                self.cache.free_unused(&*self.log);
-            }
-        });
     }
 }
 

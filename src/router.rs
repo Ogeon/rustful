@@ -15,7 +15,6 @@
 //!# #[derive(Copy)]
 //!# struct DummyHandler;
 //!# impl Handler for DummyHandler {
-//!#     type Cache = ();
 //!#     fn handle_request(&self, _: Context, _: Response){}
 //!# }
 //!# fn main() {
@@ -60,7 +59,6 @@
 //!# #[derive(Copy)]
 //!# struct DummyHandler;
 //!# impl Handler for DummyHandler {
-//!#     type Cache = ();
 //!#     fn handle_request(&self, _: Context, _: Response){}
 //!# }
 //!# fn main() {
@@ -446,7 +444,6 @@ impl<'r, T, R: Route<'r> + 'r + ?Sized> FromIterator<(Method, &'r R, T)> for Tre
     ///# #[derive(Copy)]
     ///# struct DummyHandler;
     ///# impl Handler for DummyHandler {
-    ///#     type Cache = ();
     ///#     fn handle_request(&self, _: Context, _: Response){}
     ///# }
     ///# fn main() {

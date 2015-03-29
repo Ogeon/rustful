@@ -4,7 +4,7 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(unsafe_destructor, old_impl_check, io, fs_time, path_ext, collections, std_misc, str_char)]
+#![feature(unsafe_destructor, io, fs_time, path_ext, collections, std_misc, str_char)]
 #![cfg_attr(test, feature(test))]
 
 #![stable]
@@ -30,7 +30,6 @@ pub use self::response::Response;
 pub use self::response::ResponseError;
 pub use self::handler::Handler;
 pub use self::router::Router;
-pub use self::cache::Cache;
 pub use self::log::Log;
 pub use self::router::TreeRouter;
 

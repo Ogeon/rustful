@@ -25,7 +25,6 @@ fn say_hello(context: Context, response: Response) {
 struct HandlerFn(fn(Context, Response));
 
 impl Handler for HandlerFn {
-    type Cache = ();
     fn handle_request(&self, context: Context, response: Response) {
         self.0(context, response);
     }

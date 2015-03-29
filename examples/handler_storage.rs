@@ -75,8 +75,6 @@ struct Counter<'p> {
 }
 
 impl<'p> Handler for Counter<'p> {
-    type Cache = ();
-
     fn handle_request(&self, context: Context, mut response: Response) {
         self.operation.map(|op| {
             //Lock the value for writing and update it
