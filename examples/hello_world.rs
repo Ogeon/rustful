@@ -1,5 +1,3 @@
-#![feature(core)]
-
 //Include macros to be able to use `inser_routes!`.
 #[macro_use]
 extern crate rustful;

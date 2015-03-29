@@ -1,5 +1,3 @@
-#![feature(core)]
-
 #[macro_use]
 extern crate rustful;
 
@@ -34,12 +32,12 @@ fn main() {
             "/add" => Get: Counter{
                 page: page.clone(),
                 value: value.clone(),
-                operation: Some(add as fn(i32) -> i32)
+                operation: Some(add)
             },
             "/sub" => Get: Counter{
                 page: page.clone(),
                 value: value.clone(),
-                operation: Some(sub as fn(i32) -> i32)
+                operation: Some(sub)
             }
         }
     };

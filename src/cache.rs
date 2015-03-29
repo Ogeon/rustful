@@ -281,7 +281,7 @@ mod test {
 
     #[test]
     fn file() {
-        let log = &DummyLog as &Log;
+        let log = &DummyLog;
         let file = CachedFile::new(Path::new("LICENSE"), None);
         assert_eq!(file.expired(log), true);
         assert!(file.borrow(log).as_ref().map(|v| v.len()).unwrap_or(0) > 0);
@@ -297,7 +297,7 @@ mod test {
             try!(file).read_to_end(&mut buf).map(|_| Some(buf))
         }
 
-        let log = &DummyLog as &Log;
+        let log = &DummyLog;
         let file = CachedProcessedFile::new(Path::new("LICENSE"), None, just_read);
         assert_eq!(file.expired(log), true);
         assert!(file.borrow(log).as_ref().map(|v| v.len()).unwrap_or(0) > 0);

@@ -115,7 +115,7 @@ impl<'s, C: Cache> Server<'s, (), C> {
             ),
             cache: cache,
             cache_clean_interval: None,
-            log: Box::new(StdOut) as Box<Log + Send + Sync>,
+            log: Box::new(StdOut),
             context_plugins: Vec::new(),
             response_plugins: Vec::new()
         }
@@ -197,21 +197,21 @@ impl<'s, R, C> Server<'s, R, C> {
 
     ///Change log tool. Default is to print to standard output.
     pub fn log<L: Log + Send + Sync + 'static>(mut self, log: L) -> Server<'s, R, C> {
-        self.log = Box::new(log) as Box<Log + Send + Sync>;
+        self.log = Box::new(log);
         self
     }
 
     ///Add a context plugin to the plugin stack.
     #[unstable]
     pub fn with_context_plugin<P: ContextPlugin<Cache=C> + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R, C> {
-        self.context_plugins.push(Box::new(plugin) as Box<ContextPlugin<Cache=C> + Send + Sync>);
+        self.context_plugins.push(Box::new(plugin));
         self
     }
 
     ///Add a response plugin to the plugin stack.
     #[unstable]
     pub fn with_response_plugin<P: ResponsePlugin + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R, C> {
-        self.response_plugins.push(Box::new(plugin) as Box<ResponsePlugin + Send + Sync>);
+        self.response_plugins.push(Box::new(plugin));
         self
     }
 }

@@ -21,7 +21,7 @@ use log::Log;
 
 ///The result of a response action.
 #[unstable]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ResponseError {
     ///A response plugin failed.
     PluginError(String),
@@ -56,7 +56,7 @@ impl Error for ResponseError {
     fn cause(&self) -> Option<&std::error::Error> {
         match *self {
             ResponseError::PluginError(_) => None,
-            ResponseError::IoError(ref e) => Some(e as &Error)
+            ResponseError::IoError(ref e) => Some(e)
         }
     }
 }

@@ -3,12 +3,13 @@
 #![stable]
 
 use std::collections::HashMap;
-use std::io::{self, Read, BufReader};
+use std::io::{self, Read};
 use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
 
 use hyper::http::HttpReader;
 use hyper::net::NetworkStream;
+use hyper::buffer::BufReader;
 
 use utils;
 
