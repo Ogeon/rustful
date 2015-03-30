@@ -15,11 +15,9 @@ use response::{ResponseData, IntoResponseData};
 ///They are able to modify and react to a `Context` before it's sent to the handler.
 #[unstable = "plugin methods and parameters will change when a shared context is added"]
 pub trait ContextPlugin {
-    type Cache;
-
     ///Try to modify the `Context`.
     #[unstable = "plugin methods and parameters will change when a shared context is added"]
-    fn modify(&self, log: &Log, context: &mut Context<Self::Cache>) -> ContextAction;
+    fn modify(&self, log: &Log, context: &mut Context) -> ContextAction;
 }
 
 ///The result from a context plugin.

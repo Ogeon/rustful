@@ -16,7 +16,6 @@
 ///# #[derive(Copy)]
 ///# struct DummyHandler;
 ///# impl Handler for DummyHandler {
-///#     type Cache = ();
 ///#     fn handle_request(&self, _: Context, _: Response){}
 ///# }
 ///# fn main() {
@@ -48,7 +47,6 @@
 ///# #[derive(Copy)]
 ///# struct DummyHandler;
 ///# impl Handler for DummyHandler {
-///#     type Cache = ();
 ///#     fn handle_request(&self, _: Context, _: Response){}
 ///# }
 ///# fn main() {

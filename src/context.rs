@@ -22,7 +22,7 @@ use log::Log;
 ///
 ///A `Context` can be dereferenced to a `BodyReader`, allowing direct access to
 ///the underlying read methods.
-pub struct Context<'a, 'b: 'a, 'c, Cache: 'c =()> {
+pub struct Context<'a, 'b: 'a, 'l> {
     ///Headers from the HTTP request.
     pub headers: Headers,
 
@@ -47,17 +47,14 @@ pub struct Context<'a, 'b: 'a, 'c, Cache: 'c =()> {
     ///The fragment part of the URL (after #), if provided.
     pub fragment: Option<String>,
 
-    ///Resource cache.
-    pub cache: &'c Cache,
-
     ///Log for notes, errors and warnings.
-    pub log: &'c (Log + 'c),
+    pub log: &'l (Log + 'l),
 
     ///A reader for the request body.
     pub body_reader: BodyReader<'a, 'b>
 }
 
-impl<'a, 'b, 'c, C> Deref for Context<'a, 'b, 'c, C> {
+impl<'a, 'b, 'l> Deref for Context<'a, 'b, 'l> {
     type Target = BodyReader<'a, 'b>;
 
     fn deref<'r>(&'r self) -> &'r BodyReader<'a, 'b> {
@@ -65,7 +62,7 @@ impl<'a, 'b, 'c, C> Deref for Context<'a, 'b, 'c, C> {
     }
 }
 
-impl<'a, 'b, 'c, C> DerefMut for Context<'a, 'b, 'c, C> {
+impl<'a, 'b, 'l> DerefMut for Context<'a, 'b, 'l> {
     fn deref_mut<'r>(&'r mut self) -> &'r mut BodyReader<'a, 'b> {
         &mut self.body_reader
     }

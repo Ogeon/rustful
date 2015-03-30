@@ -24,17 +24,6 @@ macro_rules! unwrap_mutex {
     )
 }
 
-///A trait for cache storage.
-#[unstable]
-pub trait Cache {
-    ///Free all the unused cached resources.
-    fn free_unused(&self, log: &Log);
-}
-
-impl Cache for () {
-    fn free_unused(&self, _log: &Log) {}
-}
-
 
 ///This trait provides functions for handling cached resources.
 #[unstable]
