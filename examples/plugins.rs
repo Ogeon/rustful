@@ -6,7 +6,7 @@ use std::borrow::ToOwned;
 use std::error::Error;
 
 use rustful::{Server, TreeRouter, Context, Response, Log, Handler};
-use rustful::plugin::{ResponseAction, ContextPlugin, ResponsePlugin};
+use rustful::plugin::{PluginContext, ResponseAction, ContextPlugin, ResponsePlugin};
 use rustful::plugin::ContextAction::{self, Continue};
 use rustful::response::ResponseData;
 use rustful::Method::Get;
@@ -80,9 +80,9 @@ impl RequestLogger {
 
 impl ContextPlugin for RequestLogger {
     ///Count requests and log the path.
-    fn modify(&self, log: &Log, context: &mut Context) -> ContextAction {
+    fn modify(&self, ctx: PluginContext, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
-        log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path));
+        ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path));
         Continue
     }
 }
@@ -102,7 +102,7 @@ impl PathPrefix {
 
 impl ContextPlugin for PathPrefix {
     ///Append the prefix to the path
-    fn modify(&self, _log: &Log, context: &mut Context) -> ContextAction {
+    fn modify(&self, _ctx: PluginContext, context: &mut Context) -> ContextAction {
         context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);
         Continue
     }
@@ -121,16 +121,16 @@ impl Jsonp {
 }
 
 impl ResponsePlugin for Jsonp {
-    fn begin(&self, _log: &Log, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
+    fn begin(&self, _ctx: PluginContext, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
         let action = ResponseAction::write(Some(format!("{}(", self.function)));
         (status, headers, action)
     }
 
-    fn write<'a>(&'a self, _log: &Log, bytes: Option<ResponseData<'a>>) -> ResponseAction {
+    fn write<'a>(&'a self, _ctx: PluginContext, bytes: Option<ResponseData<'a>>) -> ResponseAction {
         ResponseAction::write(bytes)
     }
 
-    fn end(&self, _log: &Log) -> ResponseAction {
+    fn end(&self, _ctx: PluginContext) -> ResponseAction {
         ResponseAction::write(Some(");"))
     }
 }
