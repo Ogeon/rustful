@@ -376,44 +376,44 @@ fn parse_fragment<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
 fn parse_path_parts() {
     let with = "this".to_owned();
     let and = "that".to_owned();
-    let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=that#lol"));
-    assert_eq!(path, String::from_str("/path/to/something"));
+    let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that#lol".to_string());
+    assert_eq!(path, "/path/to/something".to_string());
     assert_eq!(query.get("with"), Some(&with));
     assert_eq!(query.get("and"), Some(&and));
-    assert_eq!(fragment, Some(String::from_str("lol")));
+    assert_eq!(fragment, Some("lol".to_string()));
 }
 
 #[test]
 fn parse_strange_path() {
     let with = "this".to_owned();
     let and = "what?".to_owned();
-    let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=what?#"));
-    assert_eq!(path, String::from_str("/path/to/something"));
+    let (path, query, fragment) = parse_path("/path/to/something?with=this&and=what?#".to_string());
+    assert_eq!(path, "/path/to/something".to_string());
     assert_eq!(query.get("with"), Some(&with));
     assert_eq!(query.get("and"), Some(&and));
-    assert_eq!(fragment, Some(String::from_str("")));
+    assert_eq!(fragment, Some("".to_string()));
 }
 
 #[test]
 fn parse_missing_path_parts() {
     let with = "this".to_owned();
     let and = "that".to_owned();
-    let (path, query, fragment) = parse_path(String::from_str("/path/to/something?with=this&and=that"));
-    assert_eq!(path, String::from_str("/path/to/something"));
+    let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that".to_string());
+    assert_eq!(path, "/path/to/something".to_string());
     assert_eq!(query.get("with"), Some(&with));
     assert_eq!(query.get("and"), Some(&and));
     assert_eq!(fragment, None);
 
 
-    let (path, query, fragment) = parse_path(String::from_str("/path/to/something#lol"));
-    assert_eq!(path, String::from_str("/path/to/something"));
+    let (path, query, fragment) = parse_path("/path/to/something#lol".to_string());
+    assert_eq!(path, "/path/to/something".to_string());
     assert_eq!(query.len(), 0);
-    assert_eq!(fragment, Some(String::from_str("lol")));
+    assert_eq!(fragment, Some("lol".to_string()));
 
 
-    let (path, query, fragment) = parse_path(String::from_str("?with=this&and=that#lol"));
-    assert_eq!(path, String::from_str(""));
+    let (path, query, fragment) = parse_path("?with=this&and=that#lol".to_string());
+    assert_eq!(path, "".to_string());
     assert_eq!(query.get("with"), Some(&with));
     assert_eq!(query.get("and"), Some(&and));
-    assert_eq!(fragment, Some(String::from_str("lol")));
+    assert_eq!(fragment, Some("lol".to_string()));
 }

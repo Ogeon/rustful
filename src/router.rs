@@ -273,6 +273,62 @@ impl<T> TreeRouter<T> {
             }
         }
     }
+
+    ///Insert an other TreeRouter at a path. The content of the other TreeRouter will be merged with this one and
+    ///content with the same path and method will be overwritten.
+    pub fn insert_router<'r, R: Route<'r> + ?Sized>(&mut self, route: &'r R, router: TreeRouter<T>) {
+        let (endpoint, variable_names) = route.segments().fold((self, Vec::new()),
+
+            |(current, mut variable_names), piece| {
+                let next = current.find_or_insert_router(&piece);
+                if piece.len() > 0 && piece.char_at(0) == ':' {
+                    variable_names.push(piece[1..].to_owned());
+                }
+
+                (next, variable_names)
+            }
+
+        );
+
+        endpoint.merge_router(variable_names, router);
+    }
+
+    //Mergers this TreeRouter with an other TreeRouter.
+    fn merge_router(&mut self, variable_names: Vec<String>, router: TreeRouter<T>) {
+        for (key, (item, var_names)) in router.items {
+            let mut new_var_names = variable_names.clone();
+            new_var_names.extend(var_names);
+            self.items.insert(key, (item, new_var_names));
+        }
+
+        for (key, router) in router.static_routes {
+            let next = match self.static_routes.entry(key.clone()) {
+                Occupied(entry) => entry.into_mut(),
+                Vacant(entry) => entry.insert(TreeRouter::new())
+            };
+            next.merge_router(variable_names.clone(), router);
+        }
+
+        if let Some(router) = router.variable_route {
+            if self.variable_route.is_none() {
+                self.variable_route = Some(Box::new(TreeRouter::new()));
+            }
+
+            if let Some(ref mut next) = self.variable_route {
+                next.merge_router(variable_names.clone(), *router);
+            }
+        }
+
+        if let Some(router) = router.wildcard_route {
+            if self.wildcard_route.is_none() {
+                self.wildcard_route = Some(Box::new(TreeRouter::new()));
+            }
+
+            if let Some(ref mut next) = self.wildcard_route {
+                next.merge_router(variable_names.clone(), *router);
+            }
+        }
+    }
 }
 
 impl<T> Router for TreeRouter<T> {
@@ -367,66 +423,6 @@ impl<T> Router for TreeRouter<T> {
         );
 
         endpoint.items.insert(method.to_string().to_owned(), (item, variable_names));
-    }
-}
-
-impl<T: Clone> TreeRouter<T> {
-    ///Insert an other TreeRouter at a path. The content of the other TreeRouter will be merged with this one.
-    ///Content with the same path and method will be overwritten.
-    pub fn insert_router<'r, R: Route<'r> + ?Sized>(&mut self, route: &'r R, router: &TreeRouter<T>) {
-        let (endpoint, variable_names) = route.segments().fold((self, Vec::new()),
-
-            |(current, mut variable_names), piece| {
-                let next = current.find_or_insert_router(&piece);
-                if piece.len() > 0 && piece.char_at(0) == ':' {
-                    variable_names.push(piece[1..].to_owned());
-                }
-
-                (next, variable_names)
-            }
-
-        );
-
-        endpoint.merge_router(variable_names, router);
-    }
-
-    //Mergers this TreeRouter with an other TreeRouter.
-    fn merge_router(&mut self, variable_names: Vec<String>, router: &TreeRouter<T>) {
-        for (key, &(ref item, ref var_names)) in router.items.iter() {
-            let mut new_var_names = variable_names.clone();
-            new_var_names.push_all(var_names);
-            self.items.insert(key.clone(), (item.clone(), new_var_names));
-        }
-
-        for (key, router) in router.static_routes.iter() {
-            let next = match self.static_routes.entry(key.clone()) {
-                Occupied(entry) => entry.into_mut(),
-                Vacant(entry) => entry.insert(TreeRouter::new())
-            };
-            next.merge_router(variable_names.clone(), router);
-        }
-
-        if router.variable_route.is_some() {
-            if self.variable_route.is_none() {
-                self.variable_route = Some(Box::new(TreeRouter::new()));
-            }
-
-            match self.variable_route.as_mut() {
-                Some(next) => next.merge_router(variable_names.clone(), router.variable_route.as_ref().unwrap()),
-                None => {}
-            }
-        }
-
-        if router.wildcard_route.is_some() {
-            if self.wildcard_route.is_none() {
-                self.wildcard_route = Some(Box::new(TreeRouter::new()));
-            }
-
-            match self.wildcard_route.as_mut() {
-                Some(next) => next.merge_router(variable_names.clone(), router.wildcard_route.as_ref().unwrap()),
-                None => {}
-            }
-        }
     }
 }
 
@@ -683,7 +679,7 @@ mod test {
         let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
         let router2 = routes2.into_iter().collect::<TreeRouter<_>>();
 
-        router1.insert_router("path/to", &router2);
+        router1.insert_router("path/to", router2);
 
         check(router1.find(&Get, ""), Some("test 1"));
         check(router1.find(&Get, "path/to/test/no2"), Some("test 2"));
@@ -702,7 +698,7 @@ mod test {
         let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
         let router2 = routes2.into_iter().collect::<TreeRouter<_>>();
 
-        router1.insert_router(":a", &router2);
+        router1.insert_router(":a", router2);
         
         check_variable(router1.find(&Get, "path/to/test1"), Some("path, to, test1"));
         check_variable(router1.find(&Get, "path/to/test1/test"), Some("path, to, test1"));
@@ -717,7 +713,7 @@ mod test {
         let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
         let router2 = routes2.into_iter().collect::<TreeRouter<_>>();
 
-        router1.insert_router("path", &router2);
+        router1.insert_router("path", router2);
 
         check(router1.find(&Get, "path/to/test1"), Some("test 1"));
         check(router1.find(&Get, "path/to/same/test1"), Some("test 1"));
