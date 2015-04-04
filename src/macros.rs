@@ -13,7 +13,6 @@
 ///use rustful::Method::Get;
 ///# use rustful::{Handler, Context, Response, TreeRouter};
 ///
-///# #[derive(Copy)]
 ///# struct DummyHandler;
 ///# impl Handler for DummyHandler {
 ///#     fn handle_request(&self, _: Context, _: Response){}
@@ -44,7 +43,7 @@
 ///use rustful::Method::{Get, Post, Delete};
 ///# use rustful::{Handler, Context, Response, TreeRouter};
 ///
-///# #[derive(Copy)]
+///# #[derive(Clone, Copy)]
 ///# struct DummyHandler;
 ///# impl Handler for DummyHandler {
 ///#     fn handle_request(&self, _: Context, _: Response){}

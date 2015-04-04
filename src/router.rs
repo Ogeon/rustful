@@ -12,7 +12,6 @@
 //!use rustful::TreeRouter;
 //!# use rustful::{Handler, Context, Response};
 //!
-//!# #[derive(Copy)]
 //!# struct DummyHandler;
 //!# impl Handler for DummyHandler {
 //!#     fn handle_request(&self, _: Context, _: Response){}
@@ -56,7 +55,6 @@
 //!use rustful::{Router, TreeRouter};
 //!# use rustful::{Handler, Context, Response};
 //!
-//!# #[derive(Copy)]
 //!# struct DummyHandler;
 //!# impl Handler for DummyHandler {
 //!#     fn handle_request(&self, _: Context, _: Response){}
@@ -136,7 +134,7 @@ pub trait Route<'a> {
     ///assert_eq!(root.segments().next(), None);
     ///
     ///let path = ["/path", "to/somewhere/", "/", "/else/"];
-    ///let segments = path.segments().collect();
+    ///let segments = path.segments().collect::<Vec<_>>();
     ///assert_eq!(segments, vec!["path", "to", "somewhere", "else"]);
     ///```
     fn segments(&'a self) -> <Self as Route<'a>>::Segments;
@@ -441,7 +439,6 @@ impl<'r, T, R: Route<'r> + 'r + ?Sized> FromIterator<(Method, &'r R, T)> for Tre
     ///use rustful::TreeRouter;
     ///# use rustful::{Handler, Context, Response};
     ///
-    ///# #[derive(Copy)]
     ///# struct DummyHandler;
     ///# impl Handler for DummyHandler {
     ///#     fn handle_request(&self, _: Context, _: Response){}

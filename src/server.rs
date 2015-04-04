@@ -27,6 +27,8 @@ use router::Router;
 use handler::Handler;
 use response::Response;
 use log::{Log, StdOut};
+use header::HttpDate;
+
 use Scheme;
 
 use utils;
@@ -285,7 +287,7 @@ impl<R, H> HyperHandler for ServerInstance<R>
         ) = request.deconstruct();
 
         let mut response = Response::new(writer, &self.response_plugins, &*self.log);
-        response.set_header(Date(time::now_utc()));
+        response.set_header(Date(HttpDate(time::now_utc())));
         response.set_header(ContentType(self.content_type.clone()));
         response.set_header(hyper::header::Server(self.server.clone()));
 

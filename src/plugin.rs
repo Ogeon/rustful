@@ -22,7 +22,6 @@ pub trait ContextPlugin {
 
 ///The result from a context plugin.
 #[unstable = "plugin methods and parameters will change when a shared context is added"]
-#[derive(Copy)]
 pub enum ContextAction {
     ///Continue to the next plugin in the stack.
     #[unstable = "plugin methods and parameters will change when a shared context is added"]

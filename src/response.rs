@@ -4,8 +4,9 @@
 
 use std;
 use std::io::{self, Write};
-use std::error::{Error, FromError};
+use std::error::Error;
 use std::borrow::ToOwned;
+use std::convert::From;
 
 use hyper;
 use hyper::header::{Headers, Header, HeaderFormat};
@@ -21,7 +22,7 @@ use log::Log;
 
 ///The result of a response action.
 #[unstable]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum ResponseError {
     ///A response plugin failed.
     PluginError(String),
@@ -30,8 +31,8 @@ pub enum ResponseError {
     IoError(io::Error)
 }
 
-impl FromError<io::Error> for ResponseError {
-    fn from_error(err: io::Error) -> ResponseError {
+impl From<io::Error> for ResponseError {
+    fn from(err: io::Error) -> ResponseError {
         ResponseError::IoError(err)
     }
 }
@@ -311,7 +312,14 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
     ///Writes response body data to the client.
     pub fn send<'d, Content: IntoResponseData<'d>>(&mut self, content: Content) -> Result<usize, ResponseError> {
-        let mut writer = try!(self.writer.as_mut().expect("write after close").as_mut().map_err(|e| e.clone()));
+        let mut writer = match self.writer {
+            Some(Ok(ref mut writer)) => writer,
+            None => return Err(ResponseError::IoError(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),
+            Some(Err(_)) => if let Some(Err(e)) = self.writer.take() {
+                return Err(e);
+            } else { unreachable!(); }
+        };
+
         let mut plugin_result = Action::write(Some(content));
 
         for plugin in self.plugins {
@@ -385,7 +393,13 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
     }
 
     fn borrow_writer(&mut self) -> Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>, ResponseError> {
-        self.writer.as_mut().expect("write after close").as_mut().map_err(|e| e.clone())
+        match self.writer {
+            Some(Ok(ref mut writer)) => Ok(writer),
+            None => Err(ResponseError::IoError(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),
+            Some(Err(_)) => if let Some(Err(e)) = self.writer.take() {
+                Err(e)
+            } else { unreachable!(); }
+        }
     }
 }
 
@@ -419,10 +433,6 @@ fn response_to_io_result<T>(res:  Result<T, ResponseError>) -> io::Result<T> {
     match res {
         Ok(v) => Ok(v),
         Err(ResponseError::IoError(e)) => Err(e),
-        Err(ResponseError::PluginError(e)) => Err(io::Error::new(
-            io::ErrorKind::Other,
-            "response plugin error",
-            Some(e)
-        ))
+        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e))
     }
 }
