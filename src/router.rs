@@ -261,7 +261,7 @@ impl<T> TreeRouter<T> {
                 self.wildcard_route = Some(Box::new(TreeRouter::new()));
             }
             &mut **self.wildcard_route.as_mut::<'a>().unwrap()
-        } else if key.len() > 0 && key.char_at(0) == ':' {
+        } else if let Some(':') = key.chars().next() {
             if self.variable_route.is_none() {
                 self.variable_route = Some(Box::new(TreeRouter::new()));
             }
@@ -281,7 +281,7 @@ impl<T> TreeRouter<T> {
 
             |(current, mut variable_names), piece| {
                 let next = current.find_or_insert_router(&piece);
-                if piece.len() > 0 && piece.char_at(0) == ':' {
+                if let Some(':') = piece.chars().next() {
                     variable_names.push(piece[1..].to_owned());
                 }
 
@@ -413,7 +413,7 @@ impl<T> Router for TreeRouter<T> {
 
             |(current, mut variable_names), piece| {
                 let next = current.find_or_insert_router(&piece);
-                if piece.len() > 0 && piece.char_at(0) == ':' {
+                if let Some(':') = piece.chars().next() {
                     variable_names.push(piece[1..].to_owned());
                 }
 
