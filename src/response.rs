@@ -289,7 +289,6 @@ impl<'a, 'b> Response<'a, 'b> {
     }
 }
 
-#[unsafe_destructor]
 #[allow(unused_must_use)]
 impl<'a, 'b> Drop for Response<'a, 'b> {
     ///Writes status code and headers and closes the connection.
@@ -418,7 +417,6 @@ impl<'a, 'b> Write for ResponseWriter<'a, 'b> {
     }
 }
 
-#[unsafe_destructor]
 #[allow(unused_must_use)]
 impl<'a, 'b> Drop for ResponseWriter<'a, 'b> {
     ///Finishes writing and closes the connection.
