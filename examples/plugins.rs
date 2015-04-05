@@ -2,7 +2,6 @@
 extern crate rustful;
 
 use std::sync::RwLock;
-use std::borrow::ToOwned;
 use std::error::Error;
 
 use rustful::{Server, TreeRouter, Context, Response, Log, Handler};
@@ -13,8 +12,13 @@ use rustful::Method::Get;
 use rustful::StatusCode;
 use rustful::header::Headers;
 
-fn say_hello(context: Context, response: Response) {
-    let person = match context.variables.get(&"person".to_owned()) {
+fn say_hello(mut context: Context, mut response: Response) {
+    //Take the name of the JSONP function from the query variables
+    if let Some(jsonp_name) = context.query.remove("jsonp") {
+        response.plugin_storage().insert(JsonpFn(jsonp_name));
+    }
+
+    let person = match context.variables.get("person") {
         Some(name) => &name[..],
         None => "stranger"
     };
@@ -36,6 +40,7 @@ impl Handler for HandlerFn {
 
 fn main() {
     println!("Visit http://localhost:8080 or http://localhost:8080/Peter (if your name is Peter) to try this example.");
+    println!("Append ?jsonp=someFunction to get a JSONP response.");
 
     let mut router = TreeRouter::new();
     insert_routes!{
@@ -56,7 +61,7 @@ fn main() {
            .with_context_plugin(PathPrefix::new("print"))
            .with_context_plugin(RequestLogger::new())
 
-           .with_response_plugin(Jsonp::new("setMessage"))
+           .with_response_plugin(Jsonp)
 
            .run();
 
@@ -108,29 +113,29 @@ impl ContextPlugin for PathPrefix {
     }
 }
 
-struct Jsonp {
-    function: &'static str
-}
+struct JsonpFn(String);
 
-impl Jsonp {
-    pub fn new(function: &'static str) -> Jsonp {
-        Jsonp {
-            function: function
-        }
-    }
-}
+struct Jsonp;
 
 impl ResponsePlugin for Jsonp {
-    fn begin(&self, _ctx: PluginContext, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
-        let action = ResponseAction::write(Some(format!("{}(", self.function)));
-        (status, headers, action)
+    fn begin(&self, ctx: PluginContext, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
+        //Check if a JSONP function is defined and write the beginning of the call
+        let output = if let Some(&JsonpFn(ref function)) = ctx.storage.get() {
+            Some(format!("{}(", function))
+        } else {
+            None
+        };
+
+        (status, headers, ResponseAction::write(output))
     }
 
     fn write<'a>(&'a self, _ctx: PluginContext, bytes: Option<ResponseData<'a>>) -> ResponseAction {
         ResponseAction::write(bytes)
     }
 
-    fn end(&self, _ctx: PluginContext) -> ResponseAction {
-        ResponseAction::write(Some(");"))
+    fn end(&self, ctx: PluginContext) -> ResponseAction {
+        //Check if a JSONP function is defined and write the end of the call
+        let output = ctx.storage.get::<JsonpFn>().map(|_| ");");
+        ResponseAction::write(output)
     }
 }
