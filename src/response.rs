@@ -131,41 +131,27 @@ impl<'a> ResponseData<'a> {
     }
 }
 
-
-///Represents anything that can be turned into `ResponseData`.
-#[stable]
-pub trait IntoResponseData<'a> {
-    #[stable]
-    fn into_response_data(self) -> ResponseData<'a>;
-}
-
-impl IntoResponseData<'static> for Vec<u8> {
-    fn into_response_data(self) -> ResponseData<'static> {
+impl<'a> Into<ResponseData<'a>> for Vec<u8> {
+    fn into(self) -> ResponseData<'a> {
         ResponseData::Bytes(self)
     }
 }
 
-impl<'a> IntoResponseData<'a> for &'a [u8] {
-    fn into_response_data(self) -> ResponseData<'a> {
+impl<'a> Into<ResponseData<'a>> for &'a [u8] {
+    fn into(self) -> ResponseData<'a> {
         ResponseData::ByteSlice(self)
     }
 }
 
-impl IntoResponseData<'static> for String {
-    fn into_response_data(self) -> ResponseData<'static> {
+impl<'a> Into<ResponseData<'a>> for String {
+    fn into(self) -> ResponseData<'a> {
         ResponseData::String(self)
     }
 }
 
-impl<'a> IntoResponseData<'a> for &'a str {
-    fn into_response_data(self) -> ResponseData<'a> {
+impl<'a> Into<ResponseData<'a>> for &'a str {
+    fn into(self) -> ResponseData<'a> {
         ResponseData::StringSlice(self)
-    }
-}
-
-impl<'a> IntoResponseData<'a> for ResponseData<'a> {
-    fn into_response_data(self) -> ResponseData<'a> {
-        self
     }
 }
 
@@ -342,7 +328,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
     }
 
     ///Writes response body data to the client.
-    pub fn send<'d, Content: IntoResponseData<'d>>(&mut self, content: Content) -> Result<usize, ResponseError> {
+    pub fn send<'d, Content: Into<ResponseData<'d>>>(&mut self, content: Content) -> Result<usize, ResponseError> {
         let mut writer = match self.writer {
             Some(Ok(ref mut writer)) => writer,
             None => return Err(ResponseError::IoError(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),

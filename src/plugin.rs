@@ -10,7 +10,7 @@ use header::Headers;
 use context::Context;
 use log::Log;
 
-use response::{ResponseData, IntoResponseData};
+use response::ResponseData;
 
 ///Contextual tools for plugins.
 pub struct PluginContext<'a> {
@@ -79,8 +79,8 @@ pub enum ResponseAction<'a> {
 }
 
 impl<'a> ResponseAction<'a> {
-    pub fn next<T: IntoResponseData<'a>>(data: Option<T>) -> ResponseAction<'a> {
-        ResponseAction::Next(data.map(|d| d.into_response_data()))
+    pub fn next<T: Into<ResponseData<'a>>>(data: Option<T>) -> ResponseAction<'a> {
+        ResponseAction::Next(data.map(|d| d.into()))
     }
 
     pub fn silent_abort() -> ResponseAction<'a> {
