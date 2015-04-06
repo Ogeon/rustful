@@ -14,9 +14,11 @@ use hyper::net::Fresh;
 use hyper::http::HttpWriter;
 use hyper::version::HttpVersion;
 
+use anymap::AnyMap;
+
 use StatusCode;
 
-use plugin::ResponsePlugin;
+use plugin::{PluginContext, ResponsePlugin};
 use plugin::ResponseAction as Action;
 use log::Log;
 
@@ -177,7 +179,8 @@ pub struct Response<'a, 'b> {
     version: Option<HttpVersion>,
     writer: Option<HttpWriter<&'a mut (io::Write + 'a)>>,
     plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>,
-    log: &'b (Log + 'b)
+    log: &'b (Log + 'b),
+    plugin_storage: Option<AnyMap>
 }
 
 impl<'a, 'b> Response<'a, 'b> {
@@ -189,7 +192,8 @@ impl<'a, 'b> Response<'a, 'b> {
             version: Some(version),
             writer: Some(writer),
             plugins: plugins,
-            log: log
+            log: log,
+            plugin_storage: Some(AnyMap::new())
         }
     }
 
@@ -208,6 +212,12 @@ impl<'a, 'b> Response<'a, 'b> {
     ///Get a HTTP response header if set.
     pub fn get_header<H: Header + HeaderFormat>(&self) -> Option<&H> {
         self.headers.as_ref().and_then(|h| h.get::<H>())
+    }
+
+    ///Mutably borrow the plugin storage. It can be used to communicate with
+    ///the response plugins.
+    pub fn plugin_storage(&mut self) -> &mut AnyMap {
+        self.plugin_storage.as_mut().expect("response used after drop")
     }
 
     ///Turn the `Response` into a `ResponseWriter` to allow the response body to be written.
@@ -229,13 +239,27 @@ impl<'a, 'b> Response<'a, 'b> {
                 (status, headers, r) => {
                     write_queue.push(r);
 
-                    match plugin.begin(self.log, status, headers) {
+                    let plugin_res = {
+                        let plugin_context = PluginContext {
+                            storage: self.plugin_storage(),
+                            log: self.log
+                        };
+                        plugin.begin(plugin_context, status, headers)
+                    };
+
+                    match plugin_res {
                         (status, headers, Action::Error(e)) => (status, headers, Action::Error(e)),
                         (status, headers, result) => {
                             let mut error = None;
                             
                             write_queue = write_queue.into_iter().filter_map(|action| match action {
-                                Action::Write(content) => Some(plugin.write(self.log, content)),
+                                Action::Write(content) => {
+                                    let plugin_context = PluginContext {
+                                        storage: self.plugin_storage(),
+                                        log: self.log
+                                    };
+                                    Some(plugin.write(plugin_context, content))
+                                },
                                 Action::DoNothing => None,
                                 Action::Error(e) => {
                                     error = Some(e);
@@ -284,7 +308,8 @@ impl<'a, 'b> Response<'a, 'b> {
         ResponseWriter {
             writer: Some(writer),
             plugins: self.plugins,
-            log: self.log
+            log: self.log,
+            plugin_storage: self.plugin_storage.take().expect("response used after drop")
         }
     }
 }
@@ -304,10 +329,17 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 pub struct ResponseWriter<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, ResponseError>>,
     plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>,
-    log: &'b (Log + 'b)
+    log: &'b (Log + 'b),
+    plugin_storage: AnyMap
 }
 
 impl<'a, 'b> ResponseWriter<'a, 'b> {
+
+    ///Mutably borrow the plugin storage. It can be used to communicate with
+    ///the response plugins.
+    pub fn plugin_storage(&mut self) -> &mut AnyMap {
+        &mut self.plugin_storage
+    }
 
     ///Writes response body data to the client.
     pub fn send<'d, Content: IntoResponseData<'d>>(&mut self, content: Content) -> Result<usize, ResponseError> {
@@ -323,7 +355,13 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
         for plugin in self.plugins {
             plugin_result = match plugin_result {
-                Action::Write(content) => plugin.write(self.log, content),
+                Action::Write(content) => {
+                    let plugin_context = PluginContext {
+                        storage: &mut self.plugin_storage,
+                        log: self.log
+                    };
+                    plugin.write(plugin_context, content)
+                },
                 _ => break
             }
         }
@@ -364,7 +402,13 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         for plugin in self.plugins {
             let mut error = None;
             write_queue = write_queue.into_iter().filter_map(|action| match action {
-                Action::Write(content) => Some(plugin.write(self.log, content)),
+                Action::Write(content) => {
+                    let plugin_context = PluginContext {
+                        storage: &mut self.plugin_storage,
+                        log: self.log
+                    };
+                    Some(plugin.write(plugin_context, content))
+                },
                 Action::DoNothing => None,
                 Action::Error(e) => {
                     error = Some(e);
@@ -374,7 +418,13 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
             match error {
                 Some(e) => return Err(ResponseError::PluginError(e)),
-                None => write_queue.push(plugin.end(self.log))
+                None => {
+                    let plugin_context = PluginContext {
+                        storage: &mut self.plugin_storage,
+                        log: self.log
+                    };
+                    write_queue.push(plugin.end(plugin_context))
+                }
             }
         }
 

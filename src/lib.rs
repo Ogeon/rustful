@@ -15,6 +15,7 @@
 extern crate url;
 extern crate time;
 extern crate hyper;
+extern crate anymap;
 
 pub use hyper::mime;
 pub use hyper::method::Method;

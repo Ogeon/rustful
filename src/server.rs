@@ -19,10 +19,12 @@ use hyper::uri::RequestUri;
 
 pub use hyper::server::Listening;
 
+use anymap::AnyMap;
+
 use StatusCode;
 
 use context::{self, Context};
-use plugin::{ContextPlugin, ContextAction, ResponsePlugin};
+use plugin::{PluginContext, ContextPlugin, ContextAction, ResponsePlugin};
 use router::Router;
 use handler::Handler;
 use response::Response;
@@ -256,12 +258,18 @@ pub struct ServerInstance<R> {
 
 impl<R> ServerInstance<R> {
 
-    fn modify_context(&self, context: &mut Context) -> ContextAction {
+    fn modify_context(&self, plugin_storage: &mut AnyMap, context: &mut Context) -> ContextAction {
         let mut result = ContextAction::Continue;
 
         for plugin in &self.context_plugins {
             result = match result {
-                ContextAction::Continue => plugin.modify(&*self.log, context),
+                ContextAction::Continue => {
+                    let plugin_context = PluginContext {
+                        storage: plugin_storage,
+                        log: &*self.log
+                    };
+                    plugin.modify(plugin_context, context)
+                },
                 _ => return result
             };
         }
@@ -322,8 +330,11 @@ impl<R, H> HyperHandler for ServerInstance<R>
                     body_reader: context::BodyReader::from_reader(request_reader)
                 };
 
-                match self.modify_context(&mut context) {
+                let mut plugin_storage = AnyMap::new();
+
+                match self.modify_context(&mut plugin_storage, &mut context) {
                     ContextAction::Continue => {
+                        *response.plugin_storage() = plugin_storage;
                         match self.handlers.find(&context.method, &context.path) {
                             Some((handler, variables)) => {
                                 context.variables = variables;
@@ -336,6 +347,7 @@ impl<R, H> HyperHandler for ServerInstance<R>
                         }
                     },
                     ContextAction::Abort(status) => {
+                        *response.plugin_storage() = plugin_storage;
                         response.set_header(ContentLength(0));
                         response.set_status(status);
                     }

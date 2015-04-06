@@ -13,6 +13,7 @@ path = "src/lib.rs"
 hyper = "*"
 time = "*"
 url = "*"
+anymap = "*"
 
 [dev-dependencies]
 tempdir = "*"
