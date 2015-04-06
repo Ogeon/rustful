@@ -28,7 +28,7 @@ pub use hyper::version::HttpVersion;
 pub use self::server::Server;
 pub use self::context::Context;
 pub use self::response::Response;
-pub use self::response::ResponseError;
+pub use self::response::Error;
 pub use self::handler::Handler;
 pub use self::router::Router;
 pub use self::log::Log;
