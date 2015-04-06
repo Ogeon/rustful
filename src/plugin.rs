@@ -34,10 +34,20 @@ pub trait ContextPlugin {
 ///The result from a context plugin.
 pub enum ContextAction {
     ///Continue to the next plugin in the stack.
-    Continue,
+    Next,
 
     ///Abort and send HTTP status.
     Abort(StatusCode)
+}
+
+impl<'a> ContextAction {
+    pub fn next() -> ContextAction {
+        ContextAction::Next
+    }
+
+    pub fn abort(status: StatusCode) -> ContextAction {
+        ContextAction::Abort(status)
+    }
 }
 
 
@@ -59,25 +69,25 @@ pub trait ResponsePlugin {
 ///The result from a `ResponsePlugin`.
 pub enum ResponseAction<'a> {
     ///Continue to the next plugin and maybe write data.
-    Write(Option<ResponseData<'a>>),
+    Next(Option<ResponseData<'a>>),
 
     ///Do not continue to the next plugin.
-    DoNothing,
+    SilentAbort,
 
     ///Abort with an error.
-    Error(String)
+    Abort(String)
 }
 
 impl<'a> ResponseAction<'a> {
-    pub fn write<T: IntoResponseData<'a>>(data: Option<T>) -> ResponseAction<'a> {
-        ResponseAction::Write(data.map(|d| d.into_response_data()))
+    pub fn next<T: IntoResponseData<'a>>(data: Option<T>) -> ResponseAction<'a> {
+        ResponseAction::Next(data.map(|d| d.into_response_data()))
     }
 
-    pub fn do_nothing() -> ResponseAction<'static> {
-        ResponseAction::DoNothing
+    pub fn silent_abort() -> ResponseAction<'a> {
+        ResponseAction::SilentAbort
     }
 
-    pub fn error(message: String) -> ResponseAction<'static> {
-        ResponseAction::Error(message)
+    pub fn abort(message: String) -> ResponseAction<'a> {
+        ResponseAction::Abort(message)
     }
 }

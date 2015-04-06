@@ -259,11 +259,11 @@ pub struct ServerInstance<R> {
 impl<R> ServerInstance<R> {
 
     fn modify_context(&self, plugin_storage: &mut AnyMap, context: &mut Context) -> ContextAction {
-        let mut result = ContextAction::Continue;
+        let mut result = ContextAction::Next;
 
         for plugin in &self.context_plugins {
             result = match result {
-                ContextAction::Continue => {
+                ContextAction::Next => {
                     let plugin_context = PluginContext {
                         storage: plugin_storage,
                         log: &*self.log
@@ -333,7 +333,7 @@ impl<R, H> HyperHandler for ServerInstance<R>
                 let mut plugin_storage = AnyMap::new();
 
                 match self.modify_context(&mut plugin_storage, &mut context) {
-                    ContextAction::Continue => {
+                    ContextAction::Next => {
                         *response.plugin_storage() = plugin_storage;
                         match self.handlers.find(&context.method, &context.path) {
                             Some((handler, variables)) => {

@@ -230,12 +230,12 @@ impl<'a, 'b> Response<'a, 'b> {
 
     fn make_writer(&mut self) -> ResponseWriter<'a, 'b> {
         let mut write_queue = Vec::new();
-        let mut header_result = (self.status.take().unwrap(), self.headers.take().unwrap(), Action::Write(None));
+        let mut header_result = (self.status.take().unwrap(), self.headers.take().unwrap(), Action::Next(None));
 
         for plugin in self.plugins {
             header_result = match header_result {
-                (_, _, Action::DoNothing) => break,
-                (_, _, Action::Error(_)) => break,
+                (_, _, Action::SilentAbort) => break,
+                (_, _, Action::Abort(_)) => break,
                 (status, headers, r) => {
                     write_queue.push(r);
 
@@ -248,27 +248,27 @@ impl<'a, 'b> Response<'a, 'b> {
                     };
 
                     match plugin_res {
-                        (status, headers, Action::Error(e)) => (status, headers, Action::Error(e)),
+                        (status, headers, Action::Abort(e)) => (status, headers, Action::Abort(e)),
                         (status, headers, result) => {
                             let mut error = None;
                             
                             write_queue = write_queue.into_iter().filter_map(|action| match action {
-                                Action::Write(content) => {
+                                Action::Next(content) => {
                                     let plugin_context = PluginContext {
                                         storage: self.plugin_storage(),
                                         log: self.log
                                     };
                                     Some(plugin.write(plugin_context, content))
                                 },
-                                Action::DoNothing => None,
-                                Action::Error(e) => {
+                                Action::SilentAbort => None,
+                                Action::Abort(e) => {
                                     error = Some(e);
                                     None
                                 }
                             }).collect();
 
                             match error {
-                                Some(e) => (status, headers, Action::Error(e)),
+                                Some(e) => (status, headers, Action::Abort(e)),
                                 None => (status, headers, result)
                             }
                         }
@@ -278,7 +278,7 @@ impl<'a, 'b> Response<'a, 'b> {
         }
 
         let writer = match header_result {
-            (_, _, Action::Error(e)) => Err(ResponseError::PluginError(e)),
+            (_, _, Action::Abort(e)) => Err(ResponseError::PluginError(e)),
             (status, headers, last_result) => {
                 write_queue.push(last_result);
 
@@ -292,11 +292,11 @@ impl<'a, 'b> Response<'a, 'b> {
 
                 for action in write_queue {
                     writer = match (action, writer) {
-                        (Action::Write(Some(content)), Ok(mut writer)) => match writer.write_all(content.as_bytes()) {
+                        (Action::Next(Some(content)), Ok(mut writer)) => match writer.write_all(content.as_bytes()) {
                             Ok(_) => Ok(writer),
                             Err(e) => Err(ResponseError::IoError(e))
                         },
-                        (Action::Error(e), _) => Err(ResponseError::PluginError(e)),
+                        (Action::Abort(e), _) => Err(ResponseError::PluginError(e)),
                         (_, writer) => writer
                     };
                 }
@@ -351,11 +351,11 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
             } else { unreachable!(); }
         };
 
-        let mut plugin_result = Action::write(Some(content));
+        let mut plugin_result = Action::next(Some(content));
 
         for plugin in self.plugins {
             plugin_result = match plugin_result {
-                Action::Write(content) => {
+                Action::Next(content) => {
                     let plugin_context = PluginContext {
                         storage: &mut self.plugin_storage,
                         log: self.log
@@ -367,7 +367,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         }
 
         let write_result = match plugin_result {
-            Action::Write(Some(ref s)) => {
+            Action::Next(Some(ref s)) => {
                 let buf = s.as_bytes();
                 match writer.write_all(buf) {
                     Ok(()) => Some(Ok(buf.len())),
@@ -381,8 +381,8 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
             Some(Ok(l)) => Ok(l),
             Some(Err(e)) => Err(ResponseError::IoError(e)),
             None => match plugin_result {
-                Action::Error(e) => Err(ResponseError::PluginError(e)),
-                Action::Write(None) => Ok(0),
+                Action::Abort(e) => Err(ResponseError::PluginError(e)),
+                Action::Next(None) => Ok(0),
                 _ => unreachable!()
             }
         }
@@ -402,15 +402,15 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         for plugin in self.plugins {
             let mut error = None;
             write_queue = write_queue.into_iter().filter_map(|action| match action {
-                Action::Write(content) => {
+                Action::Next(content) => {
                     let plugin_context = PluginContext {
                         storage: &mut self.plugin_storage,
                         log: self.log
                     };
                     Some(plugin.write(plugin_context, content))
                 },
-                Action::DoNothing => None,
-                Action::Error(e) => {
+                Action::SilentAbort => None,
+                Action::Abort(e) => {
                     error = Some(e);
                     None
                 }
@@ -431,8 +431,8 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         for action in write_queue {
             try!{
                 match action {
-                    Action::Write(Some(content)) => writer.write_all(content.as_bytes()),
-                    Action::Error(e) => return Err(ResponseError::PluginError(e)),
+                    Action::Next(Some(content)) => writer.write_all(content.as_bytes()),
+                    Action::Abort(e) => return Err(ResponseError::PluginError(e)),
                     _ => Ok(())
                 }
             }

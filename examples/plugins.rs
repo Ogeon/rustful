@@ -5,8 +5,7 @@ use std::sync::RwLock;
 use std::error::Error;
 
 use rustful::{Server, TreeRouter, Context, Response, Log, Handler};
-use rustful::plugin::{PluginContext, ResponseAction, ContextPlugin, ResponsePlugin};
-use rustful::plugin::ContextAction::{self, Continue};
+use rustful::plugin::{PluginContext, ResponsePlugin, ResponseAction, ContextPlugin, ContextAction};
 use rustful::response::ResponseData;
 use rustful::Method::Get;
 use rustful::StatusCode;
@@ -88,7 +87,7 @@ impl ContextPlugin for RequestLogger {
     fn modify(&self, ctx: PluginContext, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
         ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path));
-        Continue
+        ContextAction::next()
     }
 }
 
@@ -109,7 +108,7 @@ impl ContextPlugin for PathPrefix {
     ///Append the prefix to the path
     fn modify(&self, _ctx: PluginContext, context: &mut Context) -> ContextAction {
         context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);
-        Continue
+        ContextAction::next()
     }
 }
 
@@ -126,16 +125,16 @@ impl ResponsePlugin for Jsonp {
             None
         };
 
-        (status, headers, ResponseAction::write(output))
+        (status, headers, ResponseAction::next(output))
     }
 
     fn write<'a>(&'a self, _ctx: PluginContext, bytes: Option<ResponseData<'a>>) -> ResponseAction {
-        ResponseAction::write(bytes)
+        ResponseAction::next(bytes)
     }
 
     fn end(&self, ctx: PluginContext) -> ResponseAction {
         //Check if a JSONP function is defined and write the end of the call
         let output = ctx.storage.get::<JsonpFn>().map(|_| ");");
-        ResponseAction::write(output)
+        ResponseAction::next(output)
     }
 }
