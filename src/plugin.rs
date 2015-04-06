@@ -10,7 +10,7 @@ use header::Headers;
 use context::Context;
 use log::Log;
 
-use response::ResponseData;
+use response::Data;
 
 ///Contextual tools for plugins.
 pub struct PluginContext<'a> {
@@ -60,7 +60,7 @@ pub trait ResponsePlugin {
         (StatusCode, Headers, ResponseAction);
 
     ///Handle content before writing it to the body.
-    fn write<'a>(&'a self, context: PluginContext, content: Option<ResponseData<'a>>) -> ResponseAction;
+    fn write<'a>(&'a self, context: PluginContext, content: Option<Data<'a>>) -> ResponseAction;
 
     ///End of body writing. Last chance to add content.
     fn end(&self, context: PluginContext) -> ResponseAction;
@@ -69,7 +69,7 @@ pub trait ResponsePlugin {
 ///The result from a `ResponsePlugin`.
 pub enum ResponseAction<'a> {
     ///Continue to the next plugin and maybe write data.
-    Next(Option<ResponseData<'a>>),
+    Next(Option<Data<'a>>),
 
     ///Do not continue to the next plugin.
     SilentAbort,
@@ -79,7 +79,7 @@ pub enum ResponseAction<'a> {
 }
 
 impl<'a> ResponseAction<'a> {
-    pub fn next<T: Into<ResponseData<'a>>>(data: Option<T>) -> ResponseAction<'a> {
+    pub fn next<T: Into<Data<'a>>>(data: Option<T>) -> ResponseAction<'a> {
         ResponseAction::Next(data.map(|d| d.into()))
     }
 

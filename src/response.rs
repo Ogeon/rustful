@@ -5,8 +5,10 @@
 use std;
 use std::io::{self, Write};
 use std::error;
-use std::borrow::ToOwned;
+use std::borrow::Cow;
 use std::convert::From;
+use std::str::{from_utf8, Utf8Error};
+use std::string::{FromUtf8Error};
 
 use hyper;
 use hyper::header::{Headers, Header, HeaderFormat};
@@ -64,35 +66,26 @@ impl error::Error for Error {
     }
 }
 
+///Unified representation of response data.
 #[stable]
-pub enum ResponseData<'a> {
+pub enum Data<'a> {
     ///Data in byte form.
     #[stable]
-    Bytes(Vec<u8>),
-
-    ///Data in byte form.
-    #[stable]
-    ByteSlice(&'a [u8]),
+    Bytes(Cow<'a, [u8]>),
 
     ///Data in string form.
     #[stable]
-    String(String),
-
-    ///Data in string form.
-    #[stable]
-    StringSlice(&'a str)
+    String(Cow<'a, str>)
 }
 
 #[stable]
-impl<'a> ResponseData<'a> {
+impl<'a> Data<'a> {
     ///Borrow the content as a byte slice.
     #[stable]
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            &ResponseData::Bytes(ref bytes) => bytes,
-            &ResponseData::ByteSlice(ref bytes) => bytes,
-            &ResponseData::String(ref string) => string.as_bytes(),
-            &ResponseData::StringSlice(ref string) => string.as_bytes()
+            &Data::Bytes(ref bytes) => bytes,
+            &Data::String(ref string) => string.as_bytes(),
         }
     }
 
@@ -100,58 +93,51 @@ impl<'a> ResponseData<'a> {
     #[stable]
     pub fn into_bytes(self) -> Vec<u8> {
         match self {
-            ResponseData::Bytes(bytes) => bytes,
-            ResponseData::ByteSlice(bytes) => bytes.to_vec(),
-            ResponseData::String(string) => string.into_bytes(),
-            ResponseData::StringSlice(string) => string.as_bytes().to_vec()
+            Data::Bytes(bytes) => bytes.into_owned(),
+            Data::String(string) => string.into_owned().into_bytes()
         }
     }
 
-    ///Borrow the content as a string slice if the content is a string.
-    ///Returns an `None` if the content is a byte vector, a byte slice or if the action is `Error`.
+    ///Borrow the content as a UTF-8 string slice, if possible.
     #[stable]
-    pub fn as_string(&self) -> Option<&str> {
+    pub fn as_string(&self) -> Result<&str, Utf8Error> {
         match self {
-            &ResponseData::String(ref string) => Some(string),
-            &ResponseData::StringSlice(ref string) => Some(string),
-            _ => None
+            &Data::Bytes(ref bytes) => from_utf8(bytes),
+            &Data::String(ref string) => Ok(string),
         }
     }
 
-    ///Extract the contained string or string slice if there is any.
-    ///Returns an `None` if the content is a byte vector, a byte slice or if the action is `Error`.
-    ///Slices are copied.
-    #[unstable = "may change to use Cow"]
-    pub fn into_string(self) -> Option<String> {
+    ///Turn the content into a UTF-8 string, if possible. Slices are copied.
+    #[stable]
+    pub fn into_string(self) -> Result<String, FromUtf8Error> {
         match self {
-            ResponseData::String(string) => Some(string),
-            ResponseData::StringSlice(string) => Some(string.to_owned()),
-            _ => None
+            Data::Bytes(bytes) => String::from_utf8(bytes.into_owned()),
+            Data::String(string) => Ok(string.into_owned())
         }
     }
 }
 
-impl<'a> Into<ResponseData<'a>> for Vec<u8> {
-    fn into(self) -> ResponseData<'a> {
-        ResponseData::Bytes(self)
+impl<'a> Into<Data<'a>> for Vec<u8> {
+    fn into(self) -> Data<'a> {
+        Data::Bytes(Cow::Owned(self))
     }
 }
 
-impl<'a> Into<ResponseData<'a>> for &'a [u8] {
-    fn into(self) -> ResponseData<'a> {
-        ResponseData::ByteSlice(self)
+impl<'a> Into<Data<'a>> for &'a [u8] {
+    fn into(self) -> Data<'a> {
+        Data::Bytes(Cow::Borrowed(self))
     }
 }
 
-impl<'a> Into<ResponseData<'a>> for String {
-    fn into(self) -> ResponseData<'a> {
-        ResponseData::String(self)
+impl<'a> Into<Data<'a>> for String {
+    fn into(self) -> Data<'a> {
+        Data::String(Cow::Owned(self))
     }
 }
 
-impl<'a> Into<ResponseData<'a>> for &'a str {
-    fn into(self) -> ResponseData<'a> {
-        ResponseData::StringSlice(self)
+impl<'a> Into<Data<'a>> for &'a str {
+    fn into(self) -> Data<'a> {
+        Data::String(Cow::Borrowed(self))
     }
 }
 
@@ -328,7 +314,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
     }
 
     ///Writes response body data to the client.
-    pub fn send<'d, Content: Into<ResponseData<'d>>>(&mut self, content: Content) -> Result<usize, Error> {
+    pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<usize, Error> {
         let mut writer = match self.writer {
             Some(Ok(ref mut writer)) => writer,
             None => return Err(Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),

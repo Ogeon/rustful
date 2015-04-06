@@ -6,7 +6,7 @@ use std::error::Error;
 
 use rustful::{Server, TreeRouter, Context, Response, Log, Handler};
 use rustful::plugin::{PluginContext, ResponsePlugin, ResponseAction, ContextPlugin, ContextAction};
-use rustful::response::ResponseData;
+use rustful::response::Data;
 use rustful::Method::Get;
 use rustful::StatusCode;
 use rustful::header::Headers;
@@ -128,7 +128,7 @@ impl ResponsePlugin for Jsonp {
         (status, headers, ResponseAction::next(output))
     }
 
-    fn write<'a>(&'a self, _ctx: PluginContext, bytes: Option<ResponseData<'a>>) -> ResponseAction {
+    fn write<'a>(&'a self, _ctx: PluginContext, bytes: Option<Data<'a>>) -> ResponseAction {
         ResponseAction::next(bytes)
     }
 
