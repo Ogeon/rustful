@@ -214,7 +214,8 @@ impl<'a, 'b> Response<'a, 'b> {
         self.headers.as_ref().and_then(|h| h.get::<H>())
     }
 
-    ///Mutably borrow the plugin storage.
+    ///Mutably borrow the plugin storage. It can be used to communicate with
+    ///the response plugins.
     pub fn plugin_storage(&mut self) -> &mut AnyMap {
         self.plugin_storage.as_mut().expect("response used after drop")
     }
@@ -334,7 +335,8 @@ pub struct ResponseWriter<'a, 'b> {
 
 impl<'a, 'b> ResponseWriter<'a, 'b> {
 
-    ///Mutably borrow the plugin storage.
+    ///Mutably borrow the plugin storage. It can be used to communicate with
+    ///the response plugins.
     pub fn plugin_storage(&mut self) -> &mut AnyMap {
         &mut self.plugin_storage
     }
