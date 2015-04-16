@@ -1,7 +1,5 @@
 //!Request and context plugins.
 
-#![stable]
-
 use anymap::AnyMap;
 
 use StatusCode;

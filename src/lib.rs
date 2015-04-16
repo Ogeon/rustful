@@ -7,8 +7,6 @@
 #![feature(fs_time, path_ext, std_misc, core)]
 #![cfg_attr(test, feature(test))]
 
-#![stable]
-
 #[cfg(test)] extern crate test;
 #[cfg(test)] extern crate tempdir;
 
@@ -49,14 +47,11 @@ pub mod log;
 use std::path::Path;
 
 ///HTTP or HTTPS
-#[stable]
 pub enum Scheme<'a> {
     ///Standard HTTP.
-    #[stable]
     Http,
 
     ///HTTP with SSL encryption.
-    #[stable]
     Https {
         ///Path to SSL certificate.
         cert: &'a Path,

@@ -1,7 +1,5 @@
 //!Server configuration and instance.
 
-#![stable]
-
 use std::collections::HashMap;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::borrow::ToOwned;
@@ -79,11 +77,9 @@ pub struct Server<'s, R> {
     pub log: Box<Log + Send + Sync>,
 
     ///The context plugin stack.
-    #[unstable]
     pub context_plugins: Vec<Box<ContextPlugin + Send + Sync>>,
 
     ///The response plugin stack.
-    #[unstable]
     pub response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
 }
 
@@ -178,14 +174,12 @@ impl<'s, R> Server<'s, R> {
     }
 
     ///Add a context plugin to the plugin stack.
-    #[unstable]
     pub fn with_context_plugin<P: ContextPlugin + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R> {
         self.context_plugins.push(Box::new(plugin));
         self
     }
 
     ///Add a response plugin to the plugin stack.
-    #[unstable]
     pub fn with_response_plugin<P: ResponsePlugin + Send + Sync + 'static>(mut self, plugin: P) ->  Server<'s, R> {
         self.response_plugins.push(Box::new(plugin));
         self

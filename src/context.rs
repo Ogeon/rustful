@@ -1,7 +1,5 @@
 //!Handler context and request body reading extensions.
 
-#![stable]
-
 use std::collections::HashMap;
 use std::io::{self, Read};
 use std::net::SocketAddr;

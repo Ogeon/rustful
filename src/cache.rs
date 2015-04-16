@@ -1,7 +1,5 @@
 //!Traits and implementations for cached resources.
 
-#![stable]
-
 use std::io::{self, Read};
 use std::path::Path;
 use std::fs::{File, PathExt};
@@ -26,7 +24,6 @@ macro_rules! unwrap_mutex {
 
 
 ///This trait provides functions for handling cached resources.
-#[unstable]
 pub trait CachedValue<'a, Value> {
 
     ///Borrow the cached value, without loading or reloading it.
@@ -78,7 +75,6 @@ pub trait CachedValue<'a, Value> {
 ///    None => println!("the file was not loaded")
 ///}
 ///```
-#[unstable]
 pub struct CachedFile<'p> {
     path: &'p Path,
     file: RwLock<Option<Vec<u8>>>,
@@ -87,7 +83,6 @@ pub struct CachedFile<'p> {
     unused_after: Option<i64>
 }
 
-#[unstable]
 impl<'p> CachedFile<'p> {
     ///Creates a new `CachedFile` which will be freed `unused_after` seconds after the latest access.
     pub fn new(path: &'p Path, unused_after: Option<u32>) -> CachedFile<'p> {
@@ -177,7 +172,6 @@ impl<'a, 'p> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFil
 ///    None => println!("the file was not loaded")
 ///}
 ///```
-#[unstable]
 pub struct CachedProcessedFile<'p, T> {
     path: &'p Path,
     file: RwLock<Option<T>>,
@@ -187,7 +181,6 @@ pub struct CachedProcessedFile<'p, T> {
     processor: fn(&Log, io::Result<File>) -> io::Result<Option<T>>
 }
 
-#[unstable]
 impl<'p, T: Send+Sync> CachedProcessedFile<'p, T> {
     ///Creates a new `CachedProcessedFile` which will be freed `unused_after` seconds after the latest access.
     ///The file will be processed by the provided `processor` function each time it's loaded.

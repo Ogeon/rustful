@@ -1,7 +1,5 @@
 //!Response writers.
 
-#![stable]
-
 use std;
 use std::io::{self, Write};
 use std::error;
@@ -25,7 +23,6 @@ use plugin::ResponseAction as Action;
 use log::Log;
 
 ///The result of a response action.
-#[unstable]
 #[derive(Debug)]
 pub enum Error {
     ///A response plugin failed.
@@ -67,21 +64,16 @@ impl error::Error for Error {
 }
 
 ///Unified representation of response data.
-#[stable]
 pub enum Data<'a> {
     ///Data in byte form.
-    #[stable]
     Bytes(Cow<'a, [u8]>),
 
     ///Data in string form.
-    #[stable]
     String(Cow<'a, str>)
 }
 
-#[stable]
 impl<'a> Data<'a> {
     ///Borrow the content as a byte slice.
-    #[stable]
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             &Data::Bytes(ref bytes) => bytes,
@@ -90,7 +82,6 @@ impl<'a> Data<'a> {
     }
 
     ///Turns the content into a byte vector. Slices are copied.
-    #[stable]
     pub fn into_bytes(self) -> Vec<u8> {
         match self {
             Data::Bytes(bytes) => bytes.into_owned(),
@@ -99,7 +90,6 @@ impl<'a> Data<'a> {
     }
 
     ///Borrow the content as a UTF-8 string slice, if possible.
-    #[stable]
     pub fn as_string(&self) -> Result<&str, Utf8Error> {
         match self {
             &Data::Bytes(ref bytes) => from_utf8(bytes),
@@ -108,7 +98,6 @@ impl<'a> Data<'a> {
     }
 
     ///Turn the content into a UTF-8 string, if possible. Slices are copied.
-    #[stable]
     pub fn into_string(self) -> Result<String, FromUtf8Error> {
         match self {
             Data::Bytes(bytes) => String::from_utf8(bytes.into_owned()),
