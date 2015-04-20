@@ -1,4 +1,7 @@
 language: rust
+rust:
+  - nightly
+  - 1.0.0-beta.2
 os:
   - linux
   - osx
@@ -7,10 +10,9 @@ env:
     - secure: dQm6A7+yuwJTXrnZehIhCSX0NS9amJ8EZE6e2cD4KMKhxqoThsSuKBWmMrb3iT9l3fYhgFakc/W6jdSrsmglmcUUqdmUNCnDSB5q3Nb9cThYT6F7Ueyxl7n8Hz1RiuEl7qef/Ze45Ej481L86dctWWblB/hcywh6d+hTR0+r0O8=
     - secure: "MvCGPnHryMhBTgqLo7ehOhT3VNkioqBpk/LmH+Zsbs5zrdjZlOkoegq1RbzaT0O5pjlCPDi/GzmCHDwXK5geKJ99spN6BFj/NL99/+f/KKGwzsiRtJg64daEjbxMqJeUzllXd4frDEfunZthziU1vVVWsaScG7IGyFk2QH1d1CY="
 script:
-  - cargo build -v
-  - cargo test -v
-  - cargo doc --no-deps
+  - sh scripts/cargo.sh build -v
+  - sh scripts/cargo.sh test -v
+  - sh scripts/cargo.sh doc --no-deps
 after_success:
   - mv target/doc doc
-  - curl http://www.rust-ci.org/artifacts/put?t=$RUSTCI_TOKEN | sh
   - bash upload_doc.sh
