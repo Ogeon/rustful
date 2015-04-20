@@ -472,6 +472,7 @@ impl<'r, T, R: Route<'r> + 'r + ?Sized> FromIterator<(Method, &'r R, T)> for Tre
 #[cfg(test)]
 mod test {
     use router::Router;
+    #[cfg(feature = "nightly")]
     use test::Bencher;
     use super::TreeRouter;
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
@@ -721,6 +722,7 @@ mod test {
 
     
     #[bench]
+    #[cfg(feature = "nightly")]
     fn search_speed(b: &mut Bencher) {
         let routes = vec![
             (Get, "path/to/test1", "test 1"),
@@ -762,6 +764,7 @@ mod test {
 
     
     #[bench]
+    #[cfg(feature = "nightly")]
     fn wildcard_speed(b: &mut Bencher) {
         let routes = vec![
             (Get, "*/to/*/*/a", "test 1")

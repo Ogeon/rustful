@@ -4,11 +4,15 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
 
-#![feature(fs_time, path_ext, std_misc)]
-#![cfg_attr(test, feature(test))]
+#![cfg_attr(feature = "nightly", feature(fs_time, path_ext, std_misc))]
+#![cfg_attr(test, cfg_attr(feature = "nightly", feature(test)))]
 
-#[cfg(test)] extern crate test;
-#[cfg(test)] extern crate tempdir;
+#[cfg(test)]
+#[cfg(feature = "nightly")]
+extern crate test;
+
+#[cfg(test)]
+extern crate tempdir;
 
 extern crate url;
 extern crate time;

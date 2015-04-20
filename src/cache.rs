@@ -1,15 +1,22 @@
 //!Traits and implementations for cached resources.
 
+#[cfg(feature = "nightly")]
 use std::io::{self, Read};
+#[cfg(feature = "nightly")]
 use std::path::Path;
+#[cfg(feature = "nightly")]
 use std::fs::{File, PathExt};
+#[cfg(feature = "nightly")]
 use std::sync::{RwLock, RwLockReadGuard};
 
+#[cfg(feature = "nightly")]
 use time;
+#[cfg(feature = "nightly")]
 use time::Timespec;
 
 use log::Log;
 
+#[cfg(feature = "nightly")]
 macro_rules! unwrap_mutex {
     ($log:ident, $mutex:expr) => (
         match $mutex {
@@ -75,6 +82,7 @@ pub trait CachedValue<'a, Value> {
 ///    None => println!("the file was not loaded")
 ///}
 ///```
+#[cfg(feature = "nightly")]
 pub struct CachedFile<'p> {
     path: &'p Path,
     file: RwLock<Option<Vec<u8>>>,
@@ -83,6 +91,7 @@ pub struct CachedFile<'p> {
     unused_after: Option<i64>
 }
 
+#[cfg(feature = "nightly")]
 impl<'p> CachedFile<'p> {
     ///Creates a new `CachedFile` which will be freed `unused_after` seconds after the latest access.
     pub fn new(path: &'p Path, unused_after: Option<u32>) -> CachedFile<'p> {
@@ -96,6 +105,7 @@ impl<'p> CachedFile<'p> {
     }
 }
 
+#[cfg(feature = "nightly")]
 impl<'a, 'p> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFile<'p> {
     fn borrow_current(&'a self, log: &Log) -> RwLockReadGuard<'a, Option<Vec<u8>>> {
         if self.unused_after.is_some() {
@@ -172,6 +182,7 @@ impl<'a, 'p> CachedValue<'a, RwLockReadGuard<'a, Option<Vec<u8>>>> for CachedFil
 ///    None => println!("the file was not loaded")
 ///}
 ///```
+#[cfg(feature = "nightly")]
 pub struct CachedProcessedFile<'p, T> {
     path: &'p Path,
     file: RwLock<Option<T>>,
@@ -181,6 +192,7 @@ pub struct CachedProcessedFile<'p, T> {
     processor: fn(&Log, io::Result<File>) -> io::Result<Option<T>>
 }
 
+#[cfg(feature = "nightly")]
 impl<'p, T: Send+Sync> CachedProcessedFile<'p, T> {
     ///Creates a new `CachedProcessedFile` which will be freed `unused_after` seconds after the latest access.
     ///The file will be processed by the provided `processor` function each time it's loaded.
@@ -196,6 +208,7 @@ impl<'p, T: Send+Sync> CachedProcessedFile<'p, T> {
     }
 }
 
+#[cfg(feature = "nightly")]
 impl<'a, 'p, T: Send+Sync> CachedValue<'a, RwLockReadGuard<'a, Option<T>>> for CachedProcessedFile<'p, T> {
     fn borrow_current(&'a self, log: &Log) -> RwLockReadGuard<'a, Option<T>> {
         if self.unused_after.is_some() {
@@ -240,6 +253,7 @@ impl<'a, 'p, T: Send+Sync> CachedValue<'a, RwLockReadGuard<'a, Option<T>>> for C
 }
 
 #[cfg(test)]
+#[cfg(feature = "nightly")]
 mod test {
     use std::io::{self, Read};
     use std::fs::File;

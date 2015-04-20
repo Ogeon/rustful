@@ -72,7 +72,7 @@ impl Log for File {
 	fn try_note(&self, message: &str) -> Result {
 		let mut f = match self.file.lock() {
 			Ok(f) => f,
-			Err(e) => e.into_inner()
+			Err(_e) => return Err(io::Error::new(io::ErrorKind::Other, "poisoned log file lock"))
 		};
 		write!(f, "note: {}", message)
 	}
@@ -80,7 +80,7 @@ impl Log for File {
 	fn try_warning(&self, message: &str) -> Result {
 		let mut f = match self.file.lock() {
 			Ok(f) => f,
-			Err(e) => e.into_inner()
+			Err(_e) => return Err(io::Error::new(io::ErrorKind::Other, "poisoned log file lock"))
 		};
 		write!(f, "warning: {}", message)
 	}
@@ -88,7 +88,7 @@ impl Log for File {
 	fn try_error(&self, message: &str) -> Result {
 		let mut f = match self.file.lock() {
 			Ok(f) => f,
-			Err(e) => e.into_inner()
+			Err(_e) => return Err(io::Error::new(io::ErrorKind::Other, "poisoned log file lock"))
 		};
 		write!(f, "error: {}", message)
 	}

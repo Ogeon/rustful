@@ -10,9 +10,7 @@ name = "rustful"
 path = "src/lib.rs"
 
 [features]
-#this will be default as long as it's the only alternative
-default = ["nightly"]
-nightly = ["hyper/nightly"]
+nightly = ["hyper/nightly", "anymap/nightly"]
 
 [dependencies]
 hyper = "*"
