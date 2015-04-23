@@ -17,7 +17,7 @@ Some of the features are:
 * Plugin system for request and response filtering.
 * Variables and recursive wildcards in routes.
 
-[Online documentation can be found here](http://ogeon.github.io/rustful/doc/rustful/).
+[Online documentation](http://ogeon.github.io/docs/rustful/master/rustful/index.html).
 
 #Getting Started
 

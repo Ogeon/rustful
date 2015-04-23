@@ -2,7 +2,7 @@
 
 #![crate_type = "rlib"]
 
-#![doc(html_root_url = "http://ogeon.github.io/rustful/doc/")]
+#![doc(html_root_url = "http://ogeon.github.io/docs/rustful/master/")]
 
 #![cfg_attr(feature = "nightly", feature(fs_time, path_ext, std_misc))]
 #![cfg_attr(test, cfg_attr(feature = "nightly", feature(test)))]
