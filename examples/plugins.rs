@@ -51,18 +51,21 @@ fn main() {
         }
     };
 
-    let server_result = Server::new()
-           .handlers(router)
-           .port(8080)
+    let server_result = Server {
+        host: 8080.into(),
+        handlers: router,
 
-            //Log path, change path, log again
-           .with_context_plugin(RequestLogger::new())
-           .with_context_plugin(PathPrefix::new("print"))
-           .with_context_plugin(RequestLogger::new())
+        //Log path, change path, log again
+        context_plugins: vec![
+            Box::new(RequestLogger::new()),
+            Box::new(PathPrefix::new("print")),
+            Box::new(RequestLogger::new())
+        ],
 
-           .with_response_plugin(Jsonp)
+        response_plugins: vec![Box::new(Jsonp)],
 
-           .run();
+        ..Server::default()
+    }.run();
 
     match server_result {
         Ok(_server) => {},

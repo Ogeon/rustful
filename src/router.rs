@@ -243,12 +243,7 @@ pub struct TreeRouter<T> {
 impl<T> TreeRouter<T> {
     ///Creates an empty `TreeRouter`.
     pub fn new() -> TreeRouter<T> {
-        TreeRouter {
-            items: HashMap::new(),
-            static_routes: HashMap::new(),
-            variable_route: None,
-            wildcard_route: None
-        }
+        TreeRouter::default()
     }
 
     //Tries to find a router matching the key or inserts a new one if none exists.
@@ -465,6 +460,17 @@ impl<'r, T, R: Route<'r> + 'r + ?Sized> FromIterator<(Method, &'r R, T)> for Tre
         }
 
         root
+    }
+}
+
+impl<T> Default for TreeRouter<T> {
+    fn default() -> TreeRouter<T> {
+        TreeRouter {
+            items: HashMap::new(),
+            static_routes: HashMap::new(),
+            variable_route: None,
+            wildcard_route: None
+        }
     }
 }
 

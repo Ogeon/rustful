@@ -109,6 +109,9 @@ mod test {
 	fn log_to_file() {
 		let dir = tempdir::TempDir::new("log_to_file").unwrap();
 		let file = fs::File::create(&dir.path().join("test.log")).unwrap();
-		Server::new().handlers(handler).log(log::File::new(file)).build();
+		Server {
+			log: Box::new(log::File::new(file)),
+			..Server::new(handler)
+		}.build();
 	}
 }

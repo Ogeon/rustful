@@ -49,8 +49,10 @@ pub mod plugin;
 pub mod log;
 
 use std::path::Path;
+use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
+use std::str::FromStr;
 
-///HTTP or HTTPS
+///HTTP or HTTPS.
 pub enum Scheme<'a> {
     ///Standard HTTP.
     Http,
@@ -62,5 +64,82 @@ pub enum Scheme<'a> {
 
         ///Path to key file.
         key: &'a Path
+    }
+}
+
+///A host address and a port.
+///
+///Can be conveniently converted from an existing address-port pair or just a port:
+///
+///```
+///use std::net::Ipv4Addr;
+///use rustful::Host;
+///
+///let host1: Host = (Ipv4Addr::new(0, 0, 0, 0), 80).into();
+///let host2: Host = 80.into();
+///
+///assert_eq!(host1, host2);
+///```
+#[derive(Eq, PartialEq, Debug, Hash, Clone, Copy)]
+pub struct Host(SocketAddr);
+
+impl Host {
+    ///Create a `Host` with the address `0.0.0.0:port`. This is the same as `port.into()`.
+    pub fn any_v4(port: u16) -> Host {
+        Host(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port)))
+    }
+
+    ///Change the port of the host address.
+    pub fn port(&mut self, port: u16) {
+        self.0 = match self.0 {
+            SocketAddr::V4(addr) => SocketAddr::V4(SocketAddrV4::new(addr.ip().clone(), port)),
+            SocketAddr::V6(addr) => {
+                SocketAddr::V6(SocketAddrV6::new(addr.ip().clone(), port, addr.flowinfo(), addr.scope_id()))
+            }
+        };
+    }
+}
+
+impl From<Host> for SocketAddr {
+    fn from(host: Host) -> SocketAddr {
+        host.0
+    }
+}
+
+impl From<u16> for Host {
+    fn from(port: u16) -> Host {
+        Host::any_v4(port)
+    }
+}
+
+impl From<SocketAddr> for Host {
+    fn from(addr: SocketAddr) -> Host {
+        Host(addr)
+    }
+}
+
+impl From<SocketAddrV4> for Host {
+    fn from(addr: SocketAddrV4) -> Host {
+        Host(SocketAddr::V4(addr))
+    }
+}
+
+impl From<SocketAddrV6> for Host {
+    fn from(addr: SocketAddrV6) -> Host {
+        Host(SocketAddr::V6(addr))
+    }
+}
+
+impl From<(Ipv4Addr, u16)> for Host {
+    fn from((ip, port): (Ipv4Addr, u16)) -> Host {
+        Host(SocketAddr::V4(SocketAddrV4::new(ip, port)))
+    }
+}
+
+impl FromStr for Host {
+    type Err = <SocketAddr as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Host, Self::Err> {
+        s.parse().map(|s| Host(s))
     }
 }

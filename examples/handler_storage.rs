@@ -40,7 +40,11 @@ fn main() {
         }
     };
 
-    let server_result = Server::new().port(8080).handlers(router).run();
+    let server_result = Server {
+        host: 8080.into(),
+        handlers: router,
+        ..Server::default()
+    }.run();
 
     match server_result {
         Ok(_server) => {},
