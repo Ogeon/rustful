@@ -13,7 +13,7 @@ Some of the features are:
 * Generic response handlers. Just implement the Handler trait and you are done.
 * Unified log system to make sure everything is working together.
 * Some handy macros reduces risk for typos and makes life easier.
-* Plugin system for request and response filtering.
+* Pluggable request and response filtering.
 * Variables and recursive wildcards in routes.
 
 [Online documentation](http://ogeon.github.io/docs/rustful/master/rustful/index.html).

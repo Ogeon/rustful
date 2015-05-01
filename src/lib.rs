@@ -44,7 +44,7 @@ pub mod router;
 pub mod handler;
 pub mod context;
 pub mod response;
-pub mod plugin;
+pub mod filter;
 pub mod log;
 
 #[cfg(feature = "nightly")]

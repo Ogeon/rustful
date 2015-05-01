@@ -5,7 +5,7 @@ use std::sync::RwLock;
 use std::error::Error;
 
 use rustful::{Server, TreeRouter, Context, Response, Log, Handler};
-use rustful::plugin::{PluginContext, ResponsePlugin, ResponseAction, ContextPlugin, ContextAction};
+use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilter, ContextAction};
 use rustful::response::Data;
 use rustful::Method::Get;
 use rustful::StatusCode;
@@ -14,7 +14,7 @@ use rustful::header::Headers;
 fn say_hello(mut context: Context, mut response: Response) {
     //Take the name of the JSONP function from the query variables
     if let Some(jsonp_name) = context.query.remove("jsonp") {
-        response.plugin_storage().insert(JsonpFn(jsonp_name));
+        response.filter_storage().insert(JsonpFn(jsonp_name));
     }
 
     let person = match context.variables.get("person") {
@@ -56,13 +56,13 @@ fn main() {
         handlers: router,
 
         //Log path, change path, log again
-        context_plugins: vec![
+        context_filters: vec![
             Box::new(RequestLogger::new()),
             Box::new(PathPrefix::new("print")),
             Box::new(RequestLogger::new())
         ],
 
-        response_plugins: vec![Box::new(Jsonp)],
+        response_filters: vec![Box::new(Jsonp)],
 
         ..Server::default()
     }.run();
@@ -85,9 +85,9 @@ impl RequestLogger {
     }
 }
 
-impl ContextPlugin for RequestLogger {
+impl ContextFilter for RequestLogger {
     ///Count requests and log the path.
-    fn modify(&self, ctx: PluginContext, context: &mut Context) -> ContextAction {
+    fn modify(&self, ctx: FilterContext, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
         ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path));
         ContextAction::next()
@@ -107,9 +107,9 @@ impl PathPrefix {
     }
 }
 
-impl ContextPlugin for PathPrefix {
+impl ContextFilter for PathPrefix {
     ///Append the prefix to the path
-    fn modify(&self, _ctx: PluginContext, context: &mut Context) -> ContextAction {
+    fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
         context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);
         ContextAction::next()
     }
@@ -119,8 +119,8 @@ struct JsonpFn(String);
 
 struct Jsonp;
 
-impl ResponsePlugin for Jsonp {
-    fn begin(&self, ctx: PluginContext, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
+impl ResponseFilter for Jsonp {
+    fn begin(&self, ctx: FilterContext, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
         //Check if a JSONP function is defined and write the beginning of the call
         let output = if let Some(&JsonpFn(ref function)) = ctx.storage.get() {
             Some(format!("{}(", function))
@@ -131,11 +131,11 @@ impl ResponsePlugin for Jsonp {
         (status, headers, ResponseAction::next(output))
     }
 
-    fn write<'a>(&'a self, _ctx: PluginContext, bytes: Option<Data<'a>>) -> ResponseAction {
+    fn write<'a>(&'a self, _ctx: FilterContext, bytes: Option<Data<'a>>) -> ResponseAction {
         ResponseAction::next(bytes)
     }
 
-    fn end(&self, ctx: PluginContext) -> ResponseAction {
+    fn end(&self, ctx: FilterContext) -> ResponseAction {
         //Check if a JSONP function is defined and write the end of the call
         let output = ctx.storage.get::<JsonpFn>().map(|_| ");");
         ResponseAction::next(output)

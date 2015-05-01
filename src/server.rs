@@ -21,7 +21,7 @@ use anymap::AnyMap;
 use StatusCode;
 
 use context::{self, Context};
-use plugin::{PluginContext, ContextPlugin, ContextAction, ResponsePlugin};
+use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::Router;
 use handler::Handler;
 use response::Response;
@@ -80,11 +80,11 @@ pub struct Server<'s, R> {
     ///Tool for printing to a log. The default is to print to standard output.
     pub log: Box<Log + Send + Sync>,
 
-    ///The context plugin stack.
-    pub context_plugins: Vec<Box<ContextPlugin + Send + Sync>>,
+    ///The context filter stack.
+    pub context_filters: Vec<Box<ContextFilter + Send + Sync>>,
 
-    ///The response plugin stack.
-    pub response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
+    ///The response filter stack.
+    pub response_filters: Vec<Box<ResponseFilter + Send + Sync>>
 }
 
 impl<'s, R, H> Server<'s, R>
@@ -120,8 +120,8 @@ impl<'s, R, H> Server<'s, R>
                 vec![(hyper::mime::Attr::Charset, hyper::mime::Value::Utf8)]
             ),
             log: Box::new(StdOut),
-            context_plugins: Vec::new(),
-            response_plugins: Vec::new()
+            context_filters: Vec::new(),
+            response_filters: Vec::new()
         }
     }
 
@@ -149,8 +149,8 @@ impl<'s, R, H> Server<'s, R>
             server: self.server,
             content_type: self.content_type,
             log: self.log,
-            context_plugins: self.context_plugins,
-            response_plugins: self.response_plugins,
+            context_filters: self.context_filters,
+            response_filters: self.response_filters,
         },
         self.scheme)
     }
@@ -194,23 +194,23 @@ pub struct ServerInstance<R> {
 
     log: Box<Log + Send + Sync>,
 
-    context_plugins: Vec<Box<ContextPlugin + Send + Sync>>,
-    response_plugins: Vec<Box<ResponsePlugin + Send + Sync>>
+    context_filters: Vec<Box<ContextFilter + Send + Sync>>,
+    response_filters: Vec<Box<ResponseFilter + Send + Sync>>
 }
 
 impl<R> ServerInstance<R> {
 
-    fn modify_context(&self, plugin_storage: &mut AnyMap, context: &mut Context) -> ContextAction {
+    fn modify_context(&self, filter_storage: &mut AnyMap, context: &mut Context) -> ContextAction {
         let mut result = ContextAction::Next;
 
-        for plugin in &self.context_plugins {
+        for filter in &self.context_filters {
             result = match result {
                 ContextAction::Next => {
-                    let plugin_context = PluginContext {
-                        storage: plugin_storage,
+                    let filter_context = FilterContext {
+                        storage: filter_storage,
                         log: &*self.log
                     };
-                    plugin.modify(plugin_context, context)
+                    filter.modify(filter_context, context)
                 },
                 _ => return result
             };
@@ -236,7 +236,7 @@ impl<R, H> HyperHandler for ServerInstance<R>
             request_reader
         ) = request.deconstruct();
 
-        let mut response = Response::new(writer, &self.response_plugins, &*self.log);
+        let mut response = Response::new(writer, &self.response_filters, &*self.log);
         response.set_header(Date(HttpDate(time::now_utc())));
         response.set_header(ContentType(self.content_type.clone()));
         response.set_header(hyper::header::Server(self.server.clone()));
@@ -272,11 +272,11 @@ impl<R, H> HyperHandler for ServerInstance<R>
                     body_reader: context::BodyReader::from_reader(request_reader)
                 };
 
-                let mut plugin_storage = AnyMap::new();
+                let mut filter_storage = AnyMap::new();
 
-                match self.modify_context(&mut plugin_storage, &mut context) {
+                match self.modify_context(&mut filter_storage, &mut context) {
                     ContextAction::Next => {
-                        *response.plugin_storage() = plugin_storage;
+                        *response.filter_storage() = filter_storage;
                         match self.handlers.find(&context.method, &context.path) {
                             Some((handler, variables)) => {
                                 context.variables = variables;
@@ -289,7 +289,7 @@ impl<R, H> HyperHandler for ServerInstance<R>
                         }
                     },
                     ContextAction::Abort(status) => {
-                        *response.plugin_storage() = plugin_storage;
+                        *response.filter_storage() = filter_storage;
                         response.set_header(ContentLength(0));
                         response.set_status(status);
                     }

@@ -18,15 +18,15 @@ use anymap::AnyMap;
 
 use StatusCode;
 
-use plugin::{PluginContext, ResponsePlugin};
-use plugin::ResponseAction as Action;
+use filter::{FilterContext, ResponseFilter};
+use filter::ResponseAction as Action;
 use log::Log;
 
 ///The result of a response action.
 #[derive(Debug)]
 pub enum Error {
-    ///A response plugin failed.
-    Plugin(String),
+    ///A response filter failed.
+    Filter(String),
 
     ///There was an IO error.
     Io(io::Error)
@@ -41,7 +41,7 @@ impl From<io::Error> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match *self {
-            Error::Plugin(ref desc) => write!(f, "plugin error: {}", desc),
+            Error::Filter(ref desc) => write!(f, "filter error: {}", desc),
             Error::Io(ref e) => write!(f, "io error: {}", e)
         }
     }
@@ -50,14 +50,14 @@ impl std::fmt::Display for Error {
 impl error::Error for Error {
     fn description(&self) -> &str {
         match *self {
-            Error::Plugin(ref desc) => desc,
+            Error::Filter(ref desc) => desc,
             Error::Io(ref e) => e.description()
         }
     }
 
     fn cause(&self) -> Option<&std::error::Error> {
         match *self {
-            Error::Plugin(_) => None,
+            Error::Filter(_) => None,
             Error::Io(ref e) => Some(e)
         }
     }
@@ -139,22 +139,22 @@ pub struct Response<'a, 'b> {
 
     version: Option<HttpVersion>,
     writer: Option<HttpWriter<&'a mut (io::Write + 'a)>>,
-    plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>,
+    filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
     log: &'b (Log + 'b),
-    plugin_storage: Option<AnyMap>
+    filter_storage: Option<AnyMap>
 }
 
 impl<'a, 'b> Response<'a, 'b> {
-    pub fn new(response: hyper::server::response::Response<'a>, plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>, log: &'b Log) -> Response<'a, 'b> {
+    pub fn new(response: hyper::server::response::Response<'a>, filters: &'b Vec<Box<ResponseFilter + Send + Sync>>, log: &'b Log) -> Response<'a, 'b> {
         let (version, writer, status, headers) = response.deconstruct();
         Response {
             headers: Some(headers),
             status: Some(status),
             version: Some(version),
             writer: Some(writer),
-            plugins: plugins,
+            filters: filters,
             log: log,
-            plugin_storage: Some(AnyMap::new())
+            filter_storage: Some(AnyMap::new())
         }
     }
 
@@ -175,16 +175,16 @@ impl<'a, 'b> Response<'a, 'b> {
         self.headers.as_ref().and_then(|h| h.get::<H>())
     }
 
-    ///Mutably borrow the plugin storage. It can be used to communicate with
-    ///the response plugins.
-    pub fn plugin_storage(&mut self) -> &mut AnyMap {
-        self.plugin_storage.as_mut().expect("response used after drop")
+    ///Mutably borrow the filter storage. It can be used to communicate with
+    ///the response filters.
+    pub fn filter_storage(&mut self) -> &mut AnyMap {
+        self.filter_storage.as_mut().expect("response used after drop")
     }
 
     ///Turn the `Response` into a `ResponseWriter` to allow the response body to be written.
     ///
-    ///Status code and headers will be written to the client and `ResponsePlugin::begin()`
-    ///will be called on the registered response plugins.
+    ///Status code and headers will be written to the client and `ResponseFilter::begin()`
+    ///will be called on the registered response filters.
     pub fn into_writer(mut self) -> ResponseWriter<'a, 'b> {
         self.make_writer()
     }
@@ -193,33 +193,33 @@ impl<'a, 'b> Response<'a, 'b> {
         let mut write_queue = Vec::new();
         let mut header_result = (self.status.take().unwrap(), self.headers.take().unwrap(), Action::Next(None));
 
-        for plugin in self.plugins {
+        for filter in self.filters {
             header_result = match header_result {
                 (_, _, Action::SilentAbort) => break,
                 (_, _, Action::Abort(_)) => break,
                 (status, headers, r) => {
                     write_queue.push(r);
 
-                    let plugin_res = {
-                        let plugin_context = PluginContext {
-                            storage: self.plugin_storage(),
+                    let filter_res = {
+                        let filter_context = FilterContext {
+                            storage: self.filter_storage(),
                             log: self.log
                         };
-                        plugin.begin(plugin_context, status, headers)
+                        filter.begin(filter_context, status, headers)
                     };
 
-                    match plugin_res {
+                    match filter_res {
                         (status, headers, Action::Abort(e)) => (status, headers, Action::Abort(e)),
                         (status, headers, result) => {
                             let mut error = None;
                             
                             write_queue = write_queue.into_iter().filter_map(|action| match action {
                                 Action::Next(content) => {
-                                    let plugin_context = PluginContext {
-                                        storage: self.plugin_storage(),
+                                    let filter_context = FilterContext {
+                                        storage: self.filter_storage(),
                                         log: self.log
                                     };
-                                    Some(plugin.write(plugin_context, content))
+                                    Some(filter.write(filter_context, content))
                                 },
                                 Action::SilentAbort => None,
                                 Action::Abort(e) => {
@@ -239,7 +239,7 @@ impl<'a, 'b> Response<'a, 'b> {
         }
 
         let writer = match header_result {
-            (_, _, Action::Abort(e)) => Err(Error::Plugin(e)),
+            (_, _, Action::Abort(e)) => Err(Error::Filter(e)),
             (status, headers, last_result) => {
                 write_queue.push(last_result);
 
@@ -257,7 +257,7 @@ impl<'a, 'b> Response<'a, 'b> {
                             Ok(_) => Ok(writer),
                             Err(e) => Err(Error::Io(e))
                         },
-                        (Action::Abort(e), _) => Err(Error::Plugin(e)),
+                        (Action::Abort(e), _) => Err(Error::Filter(e)),
                         (_, writer) => writer
                     };
                 }
@@ -268,9 +268,9 @@ impl<'a, 'b> Response<'a, 'b> {
 
         ResponseWriter {
             writer: Some(writer),
-            plugins: self.plugins,
+            filters: self.filters,
             log: self.log,
-            plugin_storage: self.plugin_storage.take().expect("response used after drop")
+            filter_storage: self.filter_storage.take().expect("response used after drop")
         }
     }
 }
@@ -289,17 +289,17 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 ///An interface for writing to the response body.
 pub struct ResponseWriter<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
-    plugins: &'b Vec<Box<ResponsePlugin + Send + Sync>>,
+    filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
     log: &'b (Log + 'b),
-    plugin_storage: AnyMap
+    filter_storage: AnyMap
 }
 
 impl<'a, 'b> ResponseWriter<'a, 'b> {
 
-    ///Mutably borrow the plugin storage. It can be used to communicate with
-    ///the response plugins.
-    pub fn plugin_storage(&mut self) -> &mut AnyMap {
-        &mut self.plugin_storage
+    ///Mutably borrow the filter storage. It can be used to communicate with
+    ///the response filters.
+    pub fn filter_storage(&mut self) -> &mut AnyMap {
+        &mut self.filter_storage
     }
 
     ///Writes response body data to the client.
@@ -312,22 +312,22 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
             } else { unreachable!(); }
         };
 
-        let mut plugin_result = Action::next(Some(content));
+        let mut filter_result = Action::next(Some(content));
 
-        for plugin in self.plugins {
-            plugin_result = match plugin_result {
+        for filter in self.filters {
+            filter_result = match filter_result {
                 Action::Next(content) => {
-                    let plugin_context = PluginContext {
-                        storage: &mut self.plugin_storage,
+                    let filter_context = FilterContext {
+                        storage: &mut self.filter_storage,
                         log: self.log
                     };
-                    plugin.write(plugin_context, content)
+                    filter.write(filter_context, content)
                 },
                 _ => break
             }
         }
 
-        let write_result = match plugin_result {
+        let write_result = match filter_result {
             Action::Next(Some(ref s)) => {
                 let buf = s.as_bytes();
                 match writer.write_all(buf) {
@@ -341,8 +341,8 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         match write_result {
             Some(Ok(l)) => Ok(l),
             Some(Err(e)) => Err(Error::Io(e)),
-            None => match plugin_result {
-                Action::Abort(e) => Err(Error::Plugin(e)),
+            None => match filter_result {
+                Action::Abort(e) => Err(Error::Filter(e)),
                 Action::Next(None) => Ok(0),
                 _ => unreachable!()
             }
@@ -360,15 +360,15 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         let mut writer = try!(self.writer.take().expect("can only finish once"));
         let mut write_queue: Vec<Action> = Vec::new();
 
-        for plugin in self.plugins {
+        for filter in self.filters {
             let mut error = None;
             write_queue = write_queue.into_iter().filter_map(|action| match action {
                 Action::Next(content) => {
-                    let plugin_context = PluginContext {
-                        storage: &mut self.plugin_storage,
+                    let filter_context = FilterContext {
+                        storage: &mut self.filter_storage,
                         log: self.log
                     };
-                    Some(plugin.write(plugin_context, content))
+                    Some(filter.write(filter_context, content))
                 },
                 Action::SilentAbort => None,
                 Action::Abort(e) => {
@@ -378,13 +378,13 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
             }).collect();
 
             match error {
-                Some(e) => return Err(Error::Plugin(e)),
+                Some(e) => return Err(Error::Filter(e)),
                 None => {
-                    let plugin_context = PluginContext {
-                        storage: &mut self.plugin_storage,
+                    let filter_context = FilterContext {
+                        storage: &mut self.filter_storage,
                         log: self.log
                     };
-                    write_queue.push(plugin.end(plugin_context))
+                    write_queue.push(filter.end(filter_context))
                 }
             }
         }
@@ -393,7 +393,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
             try!{
                 match action {
                     Action::Next(Some(content)) => writer.write_all(content.as_bytes()),
-                    Action::Abort(e) => return Err(Error::Plugin(e)),
+                    Action::Abort(e) => return Err(Error::Filter(e)),
                     _ => Ok(())
                 }
             }
