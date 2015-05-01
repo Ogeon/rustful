@@ -35,6 +35,23 @@ pub trait Log {
 	}
 }
 
+///A quiet log tool. Nothing will be printed anywhere.
+pub struct Quiet;
+
+impl Log for Quiet {
+	fn try_note(&self, _message: &str) -> Result {
+		Ok(())
+	}
+
+	fn try_warning(&self, _message: &str) -> Result {
+		Ok(())
+	}
+
+	fn try_error(&self, _message: &str) -> Result {
+		Ok(())
+	}
+}
+
 ///Log tool for printing to standard output.
 pub struct StdOut;
 
