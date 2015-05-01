@@ -11,7 +11,6 @@ to run both as one single server and as multiple instances in a cluster.
 Some of the features are:
 
 * Generic response handlers. Just implement the Handler trait and you are done.
-* Optional resource cache with lazy loading and simple cleaning of unused data.
 * Unified log system to make sure everything is working together.
 * Some handy macros reduces risk for typos and makes life easier.
 * Plugin system for request and response filtering.

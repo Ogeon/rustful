@@ -42,11 +42,13 @@ mod utils;
 pub mod server;
 pub mod router;
 pub mod handler;
-pub mod cache;
 pub mod context;
 pub mod response;
 pub mod plugin;
 pub mod log;
+
+#[cfg(feature = "nightly")]
+pub mod cache;
 
 use std::path::Path;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
