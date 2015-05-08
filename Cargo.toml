@@ -7,7 +7,7 @@ description = "A light web micro-framework with the ambition of being simple, mo
 documentation = "http://ogeon.github.io/docs/rustful/master/rustful/index.html"
 repository = "https://github.com/Ogeon/rustful"
 readme = "README.md"
-keywords = ["web", "micro", "framework", "http", "https", "routing"]
+keywords = ["web", "micro", "framework", "http", "routing"]
 license = "MIT"
 
 [lib]
