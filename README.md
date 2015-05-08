@@ -25,9 +25,11 @@ Some of the features are:
 Add the following lines to your `Cargo.toml` file:
 
 ```toml
-[dependencies.rustful]
-git = "https://github.com/Ogeon/rustful"
+[dependencies]
+rustful = "0.1"
 ```
+
+There is also a `nightly` feature for additional compatibility with the future.
 
 ##Write Your Server
 Here is a simple example of what a simple project could look like. Visit
