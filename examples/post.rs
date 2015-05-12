@@ -24,7 +24,7 @@ fn say_hello(mut context: Context, mut response: Response) {
         }
     };
 
-    let files: &Files = if let Some(files) = context.global.downcast_ref() {
+    let files: &Files = if let Some(files) = context.global() {
         files
     } else {
         //Oh no! Why is the global data not a File instance?!

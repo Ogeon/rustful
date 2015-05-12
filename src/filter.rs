@@ -26,6 +26,13 @@ pub struct FilterContext<'a> {
     pub global: &'a Any,
 }
 
+impl<'a> FilterContext<'a> {
+    ///Convenience method for downcasting the `global` field.
+    pub fn global<T: Any>(&self) -> Option<&T> {
+        self.global.downcast_ref()
+    }
+}
+
 ///A trait for context filters.
 ///
 ///They are able to modify and react to a `Context` before it's sent to the handler.

@@ -56,6 +56,13 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub body_reader: BodyReader<'a, 'b>,
 }
 
+impl<'a, 'b, 's> Context<'a, 'b, 's> {
+    ///Convenience method for downcasting the `global` field.
+    pub fn global<T: Any>(&self) -> Option<&T> {
+        self.global.downcast_ref()
+    }
+}
+
 impl<'a, 'b, 's> Deref for Context<'a, 'b, 's> {
     type Target = BodyReader<'a, 'b>;
 
