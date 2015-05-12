@@ -1,5 +1,7 @@
 //!Request and context filters.
 
+use std::any::Any;
+
 use anymap::AnyMap;
 
 use StatusCode;
@@ -18,7 +20,10 @@ pub struct FilterContext<'a> {
     pub storage: &'a mut AnyMap,
 
     ///Log for notes, errors and warnings.
-    pub log: &'a Log
+    pub log: &'a Log,
+
+    ///Globally accessible data.
+    pub global: &'a Any,
 }
 
 ///A trait for context filters.

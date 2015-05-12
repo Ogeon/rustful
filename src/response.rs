@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::convert::From;
 use std::str::{from_utf8, Utf8Error};
 use std::string::{FromUtf8Error};
+use std::any::Any;
 
 use hyper;
 use hyper::header::{Headers, Header, HeaderFormat};
@@ -141,11 +142,17 @@ pub struct Response<'a, 'b> {
     writer: Option<HttpWriter<&'a mut (io::Write + 'a)>>,
     filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
     log: &'b (Log + 'b),
+    global: &'b Any,
     filter_storage: Option<AnyMap>
 }
 
 impl<'a, 'b> Response<'a, 'b> {
-    pub fn new(response: hyper::server::response::Response<'a>, filters: &'b Vec<Box<ResponseFilter + Send + Sync>>, log: &'b Log) -> Response<'a, 'b> {
+    pub fn new(
+        response: hyper::server::response::Response<'a>,
+        filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
+        log: &'b Log,
+        global: &'b Any
+    ) -> Response<'a, 'b> {
         let (version, writer, status, headers) = response.deconstruct();
         Response {
             headers: Some(headers),
@@ -154,6 +161,7 @@ impl<'a, 'b> Response<'a, 'b> {
             writer: Some(writer),
             filters: filters,
             log: log,
+            global: global,
             filter_storage: Some(AnyMap::new())
         }
     }
@@ -203,7 +211,8 @@ impl<'a, 'b> Response<'a, 'b> {
                     let filter_res = {
                         let filter_context = FilterContext {
                             storage: self.filter_storage(),
-                            log: self.log
+                            log: self.log,
+                            global: self.global,
                         };
                         filter.begin(filter_context, status, headers)
                     };
@@ -217,7 +226,8 @@ impl<'a, 'b> Response<'a, 'b> {
                                 Action::Next(content) => {
                                     let filter_context = FilterContext {
                                         storage: self.filter_storage(),
-                                        log: self.log
+                                        log: self.log,
+                                        global: self.global,
                                     };
                                     Some(filter.write(filter_context, content))
                                 },
@@ -270,6 +280,7 @@ impl<'a, 'b> Response<'a, 'b> {
             writer: Some(writer),
             filters: self.filters,
             log: self.log,
+            global: self.global,
             filter_storage: self.filter_storage.take().expect("response used after drop")
         }
     }
@@ -291,6 +302,7 @@ pub struct ResponseWriter<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
     filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
     log: &'b (Log + 'b),
+    global: &'b Any,
     filter_storage: AnyMap
 }
 
@@ -319,7 +331,8 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
                 Action::Next(content) => {
                     let filter_context = FilterContext {
                         storage: &mut self.filter_storage,
-                        log: self.log
+                        log: self.log,
+                        global: self.global,
                     };
                     filter.write(filter_context, content)
                 },
@@ -366,7 +379,8 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
                 Action::Next(content) => {
                     let filter_context = FilterContext {
                         storage: &mut self.filter_storage,
-                        log: self.log
+                        log: self.log,
+                        global: self.global,
                     };
                     Some(filter.write(filter_context, content))
                 },
@@ -382,7 +396,8 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
                 None => {
                     let filter_context = FilterContext {
                         storage: &mut self.filter_storage,
-                        log: self.log
+                        log: self.log,
+                        global: self.global,
                     };
                     write_queue.push(filter.end(filter_context))
                 }
