@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::io::{self, Read};
 use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
-use std::any::Any;
 
 use hyper::http::HttpReader;
 use hyper::net::NetworkStream;
@@ -16,6 +15,8 @@ use HttpVersion;
 use Method;
 use header::Headers;
 use log::Log;
+
+use Global;
 
 ///A container for things like request data and cache.
 ///
@@ -50,17 +51,10 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub log: &'s (Log + 's),
 
     ///Globally accessible data.
-    pub global: &'s Any,
+    pub global: &'s Global,
 
     ///A reader for the request body.
     pub body_reader: BodyReader<'a, 'b>,
-}
-
-impl<'a, 'b, 's> Context<'a, 'b, 's> {
-    ///Convenience method for downcasting the `global` field.
-    pub fn global<T: Any>(&self) -> Option<&T> {
-        self.global.downcast_ref()
-    }
 }
 
 impl<'a, 'b, 's> Deref for Context<'a, 'b, 's> {

@@ -24,7 +24,7 @@ fn say_hello(mut context: Context, mut response: Response) {
         }
     };
 
-    let files: &Files = if let Some(files) = context.global() {
+    let files: &Files = if let Some(files) = context.global.get() {
         files
     } else {
         //Oh no! Why is the global data not a File instance?!
@@ -61,7 +61,7 @@ fn main() {
     //Handlers implements the Router trait, so it can be passed to the server as it is
     let server_result = Server {
         host: 8080.into(),
-        global: Box::new(files),
+        global: Box::new(files).into(),
         ..Server::new(say_hello)
     }.run();
 

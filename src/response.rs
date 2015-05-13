@@ -7,7 +7,6 @@ use std::borrow::Cow;
 use std::convert::From;
 use std::str::{from_utf8, Utf8Error};
 use std::string::{FromUtf8Error};
-use std::any::Any;
 
 use hyper;
 use hyper::header::{Headers, Header, HeaderFormat};
@@ -22,6 +21,8 @@ use StatusCode;
 use filter::{FilterContext, ResponseFilter};
 use filter::ResponseAction as Action;
 use log::Log;
+
+use Global;
 
 ///The result of a response action.
 #[derive(Debug)]
@@ -142,7 +143,7 @@ pub struct Response<'a, 'b> {
     writer: Option<HttpWriter<&'a mut (io::Write + 'a)>>,
     filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
     log: &'b (Log + 'b),
-    global: &'b Any,
+    global: &'b Global,
     filter_storage: Option<AnyMap>
 }
 
@@ -151,7 +152,7 @@ impl<'a, 'b> Response<'a, 'b> {
         response: hyper::server::response::Response<'a>,
         filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
         log: &'b Log,
-        global: &'b Any
+        global: &'b Global
     ) -> Response<'a, 'b> {
         let (version, writer, status, headers) = response.deconstruct();
         Response {
@@ -302,7 +303,7 @@ pub struct ResponseWriter<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
     filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
     log: &'b (Log + 'b),
-    global: &'b Any,
+    global: &'b Global,
     filter_storage: AnyMap
 }
 

@@ -53,6 +53,7 @@ pub mod cache;
 use std::path::Path;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::str::FromStr;
+use std::any::Any;
 
 ///HTTP or HTTPS.
 pub enum Scheme<'a> {
@@ -143,5 +144,36 @@ impl FromStr for Host {
 
     fn from_str(s: &str) -> Result<Host, Self::Err> {
         s.parse().map(|s| Host(s))
+    }
+}
+
+///Globally accessible data.
+///
+///This structure can currently only hold either one item or nothing.
+///A future version will be able to hold multiple items.
+pub enum Global {
+    None,
+    One(Box<Any + Send + Sync>),
+}
+
+impl Global {
+    ///Borrow a value of type `T` if the there is one.
+    pub fn get<T: Any + Send + Sync>(&self) -> Option<&T> {
+        match self {
+            &Global::None => None,
+            &Global::One(ref a) => (a as &Any).downcast_ref(),
+        }
+    }
+}
+
+impl<T: Any + Send + Sync> From<Box<T>> for Global {
+    fn from(data: Box<T>) -> Global {
+        Global::One(data)
+    }
+}
+
+impl Default for Global {
+    fn default() -> Global {
+        Global::None
     }
 }

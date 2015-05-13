@@ -1,7 +1,5 @@
 //!Request and context filters.
 
-use std::any::Any;
-
 use anymap::AnyMap;
 
 use StatusCode;
@@ -11,6 +9,8 @@ use context::Context;
 use log::Log;
 
 use response::Data;
+
+use Global;
 
 ///Contextual tools for filters.
 pub struct FilterContext<'a> {
@@ -23,14 +23,7 @@ pub struct FilterContext<'a> {
     pub log: &'a Log,
 
     ///Globally accessible data.
-    pub global: &'a Any,
-}
-
-impl<'a> FilterContext<'a> {
-    ///Convenience method for downcasting the `global` field.
-    pub fn global<T: Any>(&self) -> Option<&T> {
-        self.global.downcast_ref()
-    }
+    pub global: &'a Global,
 }
 
 ///A trait for context filters.
