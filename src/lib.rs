@@ -161,7 +161,7 @@ impl Global {
     pub fn get<T: Any + Send + Sync>(&self) -> Option<&T> {
         match self {
             &Global::None => None,
-            &Global::One(ref a) => (a as &Any).downcast_ref(),
+            &Global::One(ref a) => (&**a as &Any).downcast_ref(),
         }
     }
 }
