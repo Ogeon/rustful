@@ -10,6 +10,8 @@ use log::Log;
 
 use response::Data;
 
+use Global;
+
 ///Contextual tools for filters.
 pub struct FilterContext<'a> {
     ///Shared storage for filters. It is local to the current request and
@@ -18,7 +20,10 @@ pub struct FilterContext<'a> {
     pub storage: &'a mut AnyMap,
 
     ///Log for notes, errors and warnings.
-    pub log: &'a Log
+    pub log: &'a Log,
+
+    ///Globally accessible data.
+    pub global: &'a Global,
 }
 
 ///A trait for context filters.

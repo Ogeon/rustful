@@ -30,6 +30,7 @@ use header::HttpDate;
 
 use Scheme;
 use Host;
+use Global;
 
 use utils;
 
@@ -80,6 +81,9 @@ pub struct Server<'s, R> {
     ///Tool for printing to a log. The default is to print to standard output.
     pub log: Box<Log + Send + Sync>,
 
+    ///Globally accessible data.
+    pub global: Global,
+
     ///The context filter stack.
     pub context_filters: Vec<Box<ContextFilter + Send + Sync>>,
 
@@ -120,8 +124,9 @@ impl<'s, R, H> Server<'s, R>
                 vec![(hyper::mime::Attr::Charset, hyper::mime::Value::Utf8)]
             ),
             log: Box::new(StdOut),
+            global: Global::default(),
             context_filters: Vec::new(),
-            response_filters: Vec::new()
+            response_filters: Vec::new(),
         }
     }
 
@@ -151,6 +156,7 @@ impl<'s, R, H> Server<'s, R>
             log: self.log,
             context_filters: self.context_filters,
             response_filters: self.response_filters,
+            global: self.global,
         },
         self.scheme)
     }
@@ -195,7 +201,9 @@ pub struct ServerInstance<R> {
     log: Box<Log + Send + Sync>,
 
     context_filters: Vec<Box<ContextFilter + Send + Sync>>,
-    response_filters: Vec<Box<ResponseFilter + Send + Sync>>
+    response_filters: Vec<Box<ResponseFilter + Send + Sync>>,
+
+    global: Global
 }
 
 impl<R> ServerInstance<R> {
@@ -208,7 +216,8 @@ impl<R> ServerInstance<R> {
                 ContextAction::Next => {
                     let filter_context = FilterContext {
                         storage: filter_storage,
-                        log: &*self.log
+                        log: &*self.log,
+                        global: &self.global,
                     };
                     filter.modify(filter_context, context)
                 },
@@ -236,7 +245,7 @@ impl<R, H> HyperHandler for ServerInstance<R>
             request_reader
         ) = request.deconstruct();
 
-        let mut response = Response::new(writer, &self.response_filters, &*self.log);
+        let mut response = Response::new(writer, &self.response_filters, &*self.log, &self.global);
         response.set_header(Date(HttpDate(time::now_utc())));
         response.set_header(ContentType(self.content_type.clone()));
         response.set_header(hyper::header::Server(self.server.clone()));
@@ -269,6 +278,7 @@ impl<R, H> HyperHandler for ServerInstance<R>
                     query: query,
                     fragment: fragment,
                     log: &*self.log,
+                    global: &self.global,
                     body_reader: context::BodyReader::from_reader(request_reader)
                 };
 
