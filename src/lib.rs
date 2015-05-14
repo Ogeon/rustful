@@ -147,12 +147,25 @@ impl FromStr for Host {
     }
 }
 
-///Globally accessible data.
+///Container for globally accessible data.
 ///
-///This structure can currently only hold either one item or nothing.
-///A future version will be able to hold multiple items.
+///It should only be created using `Global::default()`/`Default::default()` or
+///`Box::new(v).into()`.
+///
+///```
+///# use rustful::Global;
+///let g: Global = Box::new(5).into();
+///assert_eq!(g.get(), Some(&5));
+///```
+///
+///Direct manipulation of its variants may cause an undesired state.
+///
+///_Note: This structure can currently only hold either one item or nothing.
+///A future version will be able to hold multiple items._
 pub enum Global {
+    #[doc(hidden)]
     None,
+    #[doc(hidden)]
     One(Box<Any + Send + Sync>),
 }
 
