@@ -2,6 +2,7 @@ Rustful
 =======
 
 [![Build Status](https://travis-ci.org/Ogeon/rustful.png?branch=master)](https://travis-ci.org/Ogeon/rustful)
+[![Windows Build status](https://ci.appveyor.com/api/projects/status/6a95paoex0eptbgn/branch/master?svg=true)](https://ci.appveyor.com/project/Ogeon/rustful/branch/master)
 
 A light web micro-framework for Rust. The main purpose of rustful is
 to create a simple, modular and non-intrusive foundation for HTTP
