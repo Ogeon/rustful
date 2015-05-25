@@ -128,12 +128,14 @@ impl<'a> Hypermedia<'a> {
 }
 
 ///A hyperlink.
+#[derive(PartialEq, Eq, Debug)]
 pub struct Link<'a> {
     ///A relative path from the current location.
     pub path: Vec<LinkSegment<'a>>
 }
 
 ///A segment of a hyperlink path.
+#[derive(PartialEq, Eq, Debug)]
 pub enum LinkSegment<'a> {
     ///A static part of a path.
     Static(&'a str),
