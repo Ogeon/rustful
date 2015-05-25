@@ -93,7 +93,56 @@ use handler::Handler;
 
 use self::Branch::{Static, Variable, Wildcard};
 
-pub type RouterResult<'a, T> = Option<(&'a T, HashMap<String, String>)>;
+///API endpoint data.
+pub struct Endpoint<'a, T: 'a> {
+    ///A request handler, if found.
+    pub handler: Option<&'a T>,
+    ///Path variables for the matching endpoint. May be empty, depending on
+    ///the router implementation.
+    pub variables: HashMap<String, String>,
+    ///Any associated hypermedia, such as links.
+    pub hypermedia: Hypermedia<'a>
+}
+
+impl<'a, T> From<Option<&'a T>> for Endpoint<'a, T> {
+    fn from(handler: Option<&'a T>) -> Endpoint<'a, T> {
+        Endpoint {
+            handler: handler,
+            variables: HashMap::new(),
+            hypermedia: Hypermedia::new()
+        }
+    }
+}
+
+///Hypermedia connected to an API endpoint.
+pub struct Hypermedia<'a> {
+    ///Forward links from the current endpoint to other endpoints.
+    pub links: Vec<Link<'a>>
+}
+
+impl<'a> Hypermedia<'a> {
+    pub fn new() -> Hypermedia<'a> {
+        Hypermedia {
+            links: vec![]
+        }
+    }
+}
+
+///A hyperlink.
+pub struct Link<'a> {
+    ///A relative path from the current location.
+    pub path: Vec<LinkSegment<'a>>
+}
+
+///A segment of a hyperlink path.
+pub enum LinkSegment<'a> {
+    ///A static part of a path.
+    Static(&'a str),
+    ///A dynamic part of a path. Can be substituted with anything.
+    Variable(&'a str),
+    ///A recursive wildcard. Will recursively match anything.
+    RecursiveWildcard
+}
 
 ///A common trait for routers.
 ///
@@ -106,14 +155,14 @@ pub trait Router {
     fn insert<'r, R: Route<'r> + ?Sized>(&mut self, method: Method, route: &'r R, handler: Self::Handler);
 
     ///Find and return the matching handler and variable values.
-    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, method: &Method, route: &'r R) -> RouterResult<'a, Self::Handler>;
+    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, method: &Method, route: &'r R) -> Endpoint<'a, Self::Handler>;
 }
 
 impl<H: Handler> Router for H {
     type Handler = H;
 
-    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, _method: &Method, _route: &'r R) -> RouterResult<'a, H> {
-        Some((self, HashMap::new()))
+    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, _method: &Method, _route: &'r R) -> Endpoint<'a, H> {
+        Some(self).into()
     }
 
     fn insert<'r, R: Route<'r> + 'r + ?Sized>(&mut self, _method: Method, _route: &'r R, _handler: H) {}
@@ -326,14 +375,14 @@ impl<T> TreeRouter<T> {
 impl<T> Router for TreeRouter<T> {
     type Handler = T;
 
-    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, method: &Method, route: &'r R) -> RouterResult<'a, T> {
+    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, method: &Method, route: &'r R) -> Endpoint<'a, T> {
         let path = route.segments().collect::<Vec<_>>();
         let method_str = method.to_string();
 
         if path.len() == 0 {
             match self.items.get(&method_str) {
-                Some(&(ref item, _)) => Some((item, HashMap::new())),
-                None => None
+                Some(&(ref item, _)) => Some(item).into(),
+                None => None.into()
             }
         } else {
             let mut variables: Vec<_> = ::std::iter::repeat(false).take(path.len()).collect();
@@ -358,7 +407,11 @@ impl<T> Router for TreeRouter<T> {
                                 (key.clone(), value.to_owned())
                             });
 
-                            return Some((item, var_map.collect()))
+                            return Endpoint {
+                                handler: Some(item),
+                                variables: var_map.collect(),
+                                hypermedia: Hypermedia::new()
+                            }
                         },
                         None => continue
                     }
@@ -396,7 +449,7 @@ impl<T> Router for TreeRouter<T> {
                 }
             }
 
-            None
+            None.into()
         }
     }
 
@@ -480,39 +533,30 @@ mod test {
     use router::Router;
     #[cfg(feature = "nightly")]
     use test::Bencher;
-    use super::TreeRouter;
+    use super::{TreeRouter, Endpoint};
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
-    use std::collections::HashMap;
     use std::vec::Vec;
 
-    fn check_variable(result: Option<(& &'static str, HashMap<String, String>)>, expected: Option<&str>) {
-        assert!(match result {
-            Some((_, mut variables)) => match expected {
-                Some(expected) => {
-                    let keys = vec!("a", "b", "c");
-                    let result = keys.into_iter().filter_map(|key| {
-                        match variables.remove(key) {
-                            Some(value) => Some(value),
-                            None => None
-                        }
-                    }).collect::<Vec<String>>().connect(", ");
+    fn check_variable(mut result: Endpoint<&str>, expected: Option<&str>) {
+        assert_eq!(result.handler.is_some(), expected.is_some());
 
-                    expected.to_string() == result
-                },
-                None => false
-            },
-            None => expected.is_none()
-        });
+        if let Some(expected) = expected {
+            let keys = vec!("a", "b", "c");
+            let result = keys.into_iter().filter_map(|key| {
+                match result.variables.remove(key) {
+                    Some(value) => Some(value),
+                    None => None
+                }
+            }).collect::<Vec<String>>().connect(", ");
+
+            assert_eq!(&result, expected);
+        } else {
+            assert!(result.variables.len() == 0);
+        }
     }
 
-    fn check(result: Option<(& &'static str, HashMap<String, String>)>, expected: Option<&str>) {
-        assert!(match result {
-            Some((result, _)) => match expected {
-                Some(expected) => result.to_string() == expected.to_string(),
-                None => false
-            },
-            None => expected.is_none()
-        });
+    fn check(result: Endpoint<&str>, expected: Option<&str>) {
+        assert_eq!(result.handler.map(|&v| v), expected);
     }
 
     #[test]

@@ -22,7 +22,7 @@ use StatusCode;
 
 use context::{self, Context};
 use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
-use router::Router;
+use router::{Router, Endpoint, Hypermedia};
 use handler::Handler;
 use response::Response;
 use log::{Log, StdOut};
@@ -275,6 +275,7 @@ impl<R, H> HyperHandler for ServerInstance<R>
                     method: request_method,
                     address: request_addr,
                     path: lossy_utf8_percent_decode(&path),
+                    hypermedia: Hypermedia::new(),
                     variables: HashMap::new(),
                     query: query,
                     fragment: fragment,
@@ -288,15 +289,18 @@ impl<R, H> HyperHandler for ServerInstance<R>
                 match self.modify_context(&mut filter_storage, &mut context) {
                     ContextAction::Next => {
                         *response.filter_storage() = filter_storage;
-                        match self.handlers.find(&context.method, &context.path) {
-                            Some((handler, variables)) => {
-                                context.variables = variables;
-                                handler.handle_request(context, response);
-                            },
-                            None => {
-                                response.set_header(ContentLength(0));
-                                response.set_status(StatusCode::NotFound);
-                            }
+                        let Endpoint {
+                            handler,
+                            variables,
+                            hypermedia
+                        } = self.handlers.find(&context.method, &context.path);
+                        if let Some(handler) = handler {
+                            context.hypermedia = hypermedia;
+                            context.variables = variables;
+                            handler.handle_request(context, response);
+                        } else {
+                            response.set_header(ContentLength(0));
+                            response.set_status(StatusCode::NotFound);
                         }
                     },
                     ContextAction::Abort(status) => {

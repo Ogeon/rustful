@@ -15,6 +15,7 @@ use HttpVersion;
 use Method;
 use header::Headers;
 use log::Log;
+use router::Hypermedia;
 
 use Global;
 
@@ -37,6 +38,8 @@ pub struct Context<'a, 'b: 'a, 's> {
 
     ///The requested path.
     pub path: String,
+
+    pub hypermedia: Hypermedia<'s>,
 
     ///Route variables.
     pub variables: HashMap<String, String>,
