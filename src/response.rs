@@ -135,7 +135,7 @@ impl<'a> Into<Data<'a>> for &'a str {
 
 ///An interface for setting HTTP status code and response headers, before data gets written to the client.
 pub struct Response<'a, 'b> {
-    headers: Option<Headers>,
+    headers: Option<&'a mut Headers>,
 
     status: Option<StatusCode>,
 
@@ -219,8 +219,8 @@ impl<'a, 'b> Response<'a, 'b> {
                     };
 
                     match filter_res {
-                        (status, headers, Action::Abort(e)) => (status, headers, Action::Abort(e)),
-                        (status, headers, result) => {
+                        (status, Action::Abort(e)) => (status, headers, Action::Abort(e)),
+                        (status, result) => {
                             let mut error = None;
                             
                             write_queue = write_queue.into_iter().filter_map(|action| match action {

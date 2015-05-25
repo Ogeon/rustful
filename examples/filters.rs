@@ -120,7 +120,7 @@ struct JsonpFn(String);
 struct Jsonp;
 
 impl ResponseFilter for Jsonp {
-    fn begin(&self, ctx: FilterContext, status: StatusCode, headers: Headers) -> (StatusCode, Headers, ResponseAction) {
+    fn begin(&self, ctx: FilterContext, status: StatusCode, _headers: &mut Headers) -> (StatusCode, ResponseAction) {
         //Check if a JSONP function is defined and write the beginning of the call
         let output = if let Some(&JsonpFn(ref function)) = ctx.storage.get() {
             Some(format!("{}(", function))
@@ -128,7 +128,7 @@ impl ResponseFilter for Jsonp {
             None
         };
 
-        (status, headers, ResponseAction::next(output))
+        (status, ResponseAction::next(output))
     }
 
     fn write<'a>(&'a self, _ctx: FilterContext, bytes: Option<Data<'a>>) -> ResponseAction {

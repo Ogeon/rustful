@@ -31,6 +31,7 @@ use header::HttpDate;
 use Scheme;
 use Host;
 use Global;
+use HttpResult;
 
 use utils;
 
@@ -131,7 +132,7 @@ impl<'s, R, H> Server<'s, R>
     }
 
     ///Start the server.
-    pub fn run(self) -> hyper::HttpResult<Listening> {
+    pub fn run(self) -> HttpResult<Listening> {
         let threads = self.threads;
         let (server, scheme) = self.build();
         let host = server.host;

@@ -59,8 +59,8 @@ impl<'a> ContextAction {
 ///They are able to modify headers and data before it gets written in the response.
 pub trait ResponseFilter {
     ///Set or modify headers before they are sent to the client and maybe initiate the body.
-    fn begin(&self, context: FilterContext, status: StatusCode, headers: Headers) ->
-        (StatusCode, Headers, ResponseAction);
+    fn begin(&self, context: FilterContext, status: StatusCode, headers: &mut Headers) ->
+        (StatusCode, ResponseAction);
 
     ///Handle content before writing it to the body.
     fn write<'a>(&'a self, context: FilterContext, content: Option<Data<'a>>) -> ResponseAction;
