@@ -45,7 +45,7 @@ enum Branch {
 ///`true`.
 #[derive(Clone)]
 pub struct TreeRouter<T> {
-    items: HashMap<String, (T, Vec<String>)>,
+    items: HashMap<Method, (T, Vec<String>)>,
     static_routes: HashMap<String, TreeRouter<T>>,
     variable_route: Option<Box<TreeRouter<T>>>,
     wildcard_route: Option<Box<TreeRouter<T>>>,
@@ -142,7 +142,6 @@ impl<T> Router for TreeRouter<T> {
 
     fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, method: &Method, route: &'r R) -> Endpoint<'a, T> {
         let path = route.segments().collect::<Vec<_>>();
-        let method_str = method.to_string();
 
         let mut variables: Vec<_> = ::std::iter::repeat(false).take(path.len()).collect();
 
@@ -154,7 +153,7 @@ impl<T> Router for TreeRouter<T> {
             let (current, branch, index) = stack.pop().unwrap();
 
             if index == path.len() && result.handler.is_none() {
-                if let Some(&(ref item, ref variable_names)) = current.items.get(&method_str) {
+                if let Some(&(ref item, ref variable_names)) = current.items.get(&method) {
                     let values = path.iter().zip(variables.iter()).filter_map(|(v, keep)| {
                         if *keep {
                             Some(v.clone())
@@ -176,21 +175,34 @@ impl<T> Router for TreeRouter<T> {
                     continue;
                 }
 
+                //Only register hyperlinks on the first pass.
                 if branch == Static {
+                    for (other_method, _) in &current.items {
+                        if other_method != method {
+                            result.hypermedia.links.push(Link {
+                                method: Some(other_method.clone()),
+                                path: vec![]
+                            });
+                        }
+                    }
+
                     for (segment, _next) in &current.static_routes {
                         result.hypermedia.links.push(Link {
+                            method: None,
                             path: vec![LinkSegment::Static(&segment)]
                         });
                     }
 
                     if let Some(ref _next) = current.variable_route {
                         result.hypermedia.links.push(Link {
+                            method: None,
                             path: vec![LinkSegment::Variable("")]
                         });
                     }
 
                     if let Some(ref _next) = current.wildcard_route {
                         result.hypermedia.links.push(Link {
+                            method: None,
                             path: vec![LinkSegment::RecursiveWildcard]
                         });
                     }
@@ -252,7 +264,7 @@ impl<T> Router for TreeRouter<T> {
 
         );
 
-        endpoint.items.insert(method.to_string().to_owned(), (item, variable_names));
+        endpoint.items.insert(method, (item, variable_names));
     }
 }
 
@@ -322,6 +334,15 @@ mod test {
     use router::{TreeRouter, Endpoint, LinkSegment};
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
     use std::vec::Vec;
+    use Method;
+
+    #[derive(Debug)]
+    enum LinkType<'a> {
+        SelfLink(Method),
+        ForwardLink(LinkSegment<'a>)
+    }
+
+    pub use self::LinkType::{SelfLink, ForwardLink};
 
     fn check_variable(mut result: Endpoint<&str>, expected: Option<&str>) {
         assert_eq!(result.handler.is_some(), expected.is_some());
@@ -341,13 +362,20 @@ mod test {
         }
     }
 
-    fn check(mut result: Endpoint<&str>, expected: Option<&str>, links: Vec<LinkSegment>) {
+    fn check(mut result: Endpoint<&str>, expected: Option<&str>, links: Vec<LinkType>) {
         println!("found {:?} and expected {:?}", result.hypermedia.links, links);
         assert_eq!(result.handler.map(|&v| v), expected);
         for link in links {
-            let index = result.hypermedia.links.iter()
-                                               .filter_map(|link| link.path.first())
-                                               .position(|other| &link == other);
+            let index = result
+                        .hypermedia
+                        .links
+                        .iter()
+                        .map(|link| (link.method.as_ref(), link.path.first()))
+                        .position(|other| match (other, &link) {
+                           ((Some(other_method), None), &SelfLink(ref method)) => other_method == method,
+                           ((None, Some(other_link)), &ForwardLink(ref link)) => other_link == link,
+                           _ => false
+                        });
             if let Some(index) = index {
                 result.hypermedia.links.swap_remove(index);
             } else {
@@ -365,7 +393,7 @@ mod test {
         router.find_hyperlinks = true;
 
         check(router.find(&Get, "path/to/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, "path/to"), None, vec![LinkSegment::Static("test1")]);
+        check(router.find(&Get, "path/to"), None, vec![ForwardLink(LinkSegment::Static("test1"))]);
         check(router.find(&Get, "path/to/test1/nothing"), None, vec![]);
     }
 
@@ -380,10 +408,10 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, ""), Some("test 1"), vec![LinkSegment::Static("path")]);
+        check(router.find(&Get, ""), Some("test 1"), vec![ForwardLink(LinkSegment::Static("path"))]);
         check(router.find(&Get, "path/to/test/no2"), Some("test 2"), vec![]);
         check(router.find(&Get, "path/to/test1/no/test3"), Some("test 3"), vec![]);
-        check(router.find(&Get, "path/to/test1/no"), None, vec![LinkSegment::Static("test3")]);
+        check(router.find(&Get, "path/to/test1/no"), None, vec![ForwardLink(LinkSegment::Static("test3"))]);
     }
 
     #[test]
@@ -427,8 +455,8 @@ mod test {
         check(router.find(&Get, "path/to/test1"), Some("test 1"), vec![]);
         check(router.find(&Get, "path/to/same/test1"), Some("test 1"), vec![]);
         check(router.find(&Get, "path/to/the/same/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, "path/to"), None, vec![LinkSegment::RecursiveWildcard]);
-        check(router.find(&Get, "path"), None, vec![LinkSegment::Static("to")]);
+        check(router.find(&Get, "path/to"), None, vec![ForwardLink(LinkSegment::RecursiveWildcard)]);
+        check(router.find(&Get, "path"), None, vec![ForwardLink(LinkSegment::Static("to"))]);
     }
 
 
@@ -442,8 +470,8 @@ mod test {
         check(router.find(&Get, "path/to/test1"), Some("test 1"), vec![]);
         check(router.find(&Get, "path/to/same/test1"), Some("test 1"), vec![]);
         check(router.find(&Get, "path/to/the/same/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, "path/to"), None, vec![LinkSegment::Static("test1")]);
-        check(router.find(&Get, "path"), None, vec![LinkSegment::RecursiveWildcard]);
+        check(router.find(&Get, "path/to"), None, vec![ForwardLink(LinkSegment::Static("test1"))]);
+        check(router.find(&Get, "path"), None, vec![ForwardLink(LinkSegment::RecursiveWildcard)]);
     }
 
     #[test]
@@ -458,7 +486,7 @@ mod test {
         check(router.find(&Get, "path/to/the/same/test1"), Some("test 1"), vec![]);
         check(router.find(&Get, "path/to"), Some("test 1"), vec![]);
         check(router.find(&Get, "path"), Some("test 1"), vec![]);
-        check(router.find(&Get, ""), None, vec![LinkSegment::RecursiveWildcard]);
+        check(router.find(&Get, ""), None, vec![ForwardLink(LinkSegment::RecursiveWildcard)]);
     }
 
     #[test]
@@ -472,11 +500,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, "path/to/test1"), Some("test 1"), vec![LinkSegment::RecursiveWildcard]);
+        check(router.find(&Get, "path/to/test1"), Some("test 1"), vec![ForwardLink(LinkSegment::RecursiveWildcard)]);
         check(router.find(&Get, "path/for/test/no2"), Some("test 2"), vec![]);
         check(router.find(&Get, "path/to/test1/no/test3"), Some("test 3"), vec![]);
         check(router.find(&Get, "path/to/test1/no/test3/again"), Some("test 3"), vec![]);
-        check(router.find(&Get, "path/to"), None, vec![LinkSegment::RecursiveWildcard, LinkSegment::Static("test")]);
+        check(router.find(&Get, "path/to"), None, vec![ForwardLink(LinkSegment::RecursiveWildcard), ForwardLink(LinkSegment::Static("test"))]);
     }
 
     #[test]
@@ -508,9 +536,9 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, ""), Some("test 1"), vec![LinkSegment::Static("path")]);
+        check(router.find(&Get, ""), Some("test 1"), vec![ForwardLink(LinkSegment::Static("path"))]);
         check(router.find(&Get, "path/to/test/no2/"), Some("test 2"), vec![]);
-        check(router.find(&Get, "path/to/test3"), Some("test 3"), vec![LinkSegment::Static("again")]);
+        check(router.find(&Get, "path/to/test3"), Some("test 3"), vec![ForwardLink(LinkSegment::Static("again"))]);
         check(router.find(&Get, "/path/to/test3/again"), Some("test 3"), vec![]);
         check(router.find(&Get, "//path/to/test3"), None, vec![]);
     }
@@ -527,12 +555,20 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
+        let links = vec![SelfLink(Post), SelfLink(Delete), SelfLink(Put)];
+        check(router.find(&Get, "/"), Some("get"), links);
 
-        check(router.find(&Get, "/"), Some("get"), vec![]);
-        check(router.find(&Post, "/"), Some("post"), vec![]);
-        check(router.find(&Delete, "/"), Some("delete"), vec![]);
-        check(router.find(&Put, "/"), Some("put"), vec![]);
-        check(router.find(&Head, "/"), None, vec![]);
+        let links = vec![SelfLink(Get), SelfLink(Delete), SelfLink(Put)];
+        check(router.find(&Post, "/"), Some("post"), links);
+
+        let links = vec![SelfLink(Get), SelfLink(Post), SelfLink(Put)];
+        check(router.find(&Delete, "/"), Some("delete"), links);
+
+        let links = vec![SelfLink(Get), SelfLink(Post), SelfLink(Delete)];
+        check(router.find(&Put, "/"), Some("put"), links);
+
+        let links = vec![SelfLink(Get), SelfLink(Post), SelfLink(Delete), SelfLink(Put)];
+        check(router.find(&Head, "/"), None, links);
     }
 
     #[test]
@@ -555,12 +591,12 @@ mod test {
 
         router1.insert_router("path/to", router2);
 
-        check(router1.find(&Get, ""), Some("test 1"), vec![LinkSegment::Static("path")]);
+        check(router1.find(&Get, ""), Some("test 1"), vec![ForwardLink(LinkSegment::Static("path"))]);
         check(router1.find(&Get, "path/to/test/no2"), Some("test 2"), vec![]);
-        check(router1.find(&Get, "path/to/test1/no/test3"), Some("test 3"), vec![]);
-        check(router1.find(&Post, "path/to/test1/no/test3"), Some("test 3 post"), vec![]);
+        check(router1.find(&Get, "path/to/test1/no/test3"), Some("test 3"), vec![SelfLink(Post)]);
+        check(router1.find(&Post, "path/to/test1/no/test3"), Some("test 3 post"), vec![SelfLink(Get)]);
         check(router1.find(&Get, "path/to/test/no5"), Some("test 5"), vec![]);
-        check(router1.find(&Get, "path/to"), Some("test 1"), vec![LinkSegment::Static("test"), LinkSegment::Static("test1")]);
+        check(router1.find(&Get, "path/to"), Some("test 1"), vec![ForwardLink(LinkSegment::Static("test")), ForwardLink(LinkSegment::Static("test1"))]);
     }
 
 
@@ -595,7 +631,7 @@ mod test {
         check(router1.find(&Get, "path/to/same/test1"), Some("test 1"), vec![]);
         check(router1.find(&Get, "path/to/the/same/test1"), Some("test 1"), vec![]);
         check(router1.find(&Get, "path/to"), Some("test 2"), vec![]);
-        check(router1.find(&Get, "path"), None, vec![LinkSegment::Static("to"), LinkSegment::RecursiveWildcard]);
+        check(router1.find(&Get, "path"), None, vec![ForwardLink(LinkSegment::Static("to")), ForwardLink(LinkSegment::RecursiveWildcard)]);
     }
 
     

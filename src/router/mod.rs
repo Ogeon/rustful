@@ -130,6 +130,9 @@ impl<'a> Hypermedia<'a> {
 ///A hyperlink.
 #[derive(PartialEq, Eq, Debug)]
 pub struct Link<'a> {
+    ///The HTTP method for which an endpoint is available. It can be left
+    ///unspecified if the method doesn't matter.
+    pub method: Option<Method>,
     ///A relative path from the current location.
     pub path: Vec<LinkSegment<'a>>
 }
