@@ -38,6 +38,9 @@ pub struct Context<'a, 'b: 'a, 's> {
     ///The requested path.
     pub path: String,
 
+    ///Hypermedia from the current endpoint.
+    pub hypermedia: Hypermedia<'s>,
+
     ///Route variables.
     pub variables: HashMap<String, String>,
 
@@ -105,4 +108,40 @@ impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
         try!(self.read_to_end(&mut buf));
         Ok(utils::parse_parameters(&buf))
     }
+}
+
+///Hypermedia connected to an API endpoint.
+pub struct Hypermedia<'a> {
+    ///Forward links from the current endpoint to other endpoints.
+    pub links: Vec<Link<'a>>
+}
+
+impl<'a> Hypermedia<'a> {
+    ///Create an empty `Hypermedia` structure.
+    pub fn new() -> Hypermedia<'a> {
+        Hypermedia {
+            links: vec![]
+        }
+    }
+}
+
+///A hyperlink.
+#[derive(PartialEq, Eq, Debug)]
+pub struct Link<'a> {
+    ///The HTTP method for which an endpoint is available. It can be left
+    ///unspecified if the method doesn't matter.
+    pub method: Option<Method>,
+    ///A relative path from the current location.
+    pub path: Vec<LinkSegment<'a>>
+}
+
+///A segment of a hyperlink path.
+#[derive(PartialEq, Eq, Debug)]
+pub enum LinkSegment<'a> {
+    ///A static part of a path.
+    Static(&'a str),
+    ///A dynamic part of a path. Can be substituted with anything.
+    Variable(&'a str),
+    ///A recursive wildcard. Will recursively match anything.
+    RecursiveWildcard
 }

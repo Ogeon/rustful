@@ -120,15 +120,13 @@ mod test {
     use Response;
     use tempdir;
 
-    fn handler(_c: Context, _w: Response) {}
-
     #[test]
     fn log_to_file() {
         let dir = tempdir::TempDir::new("log_to_file").unwrap();
         let file = fs::File::create(&dir.path().join("test.log")).unwrap();
         Server {
             log: Box::new(log::File::new(file)),
-            ..Server::new(handler)
+            ..Server::new(|_: Context, _: Response| {})
         }.build();
     }
 }

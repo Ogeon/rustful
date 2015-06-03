@@ -20,9 +20,9 @@ use anymap::AnyMap;
 
 use StatusCode;
 
-use context::{self, Context};
+use context::{self, Context, Hypermedia};
 use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
-use router::Router;
+use router::{Router, Endpoint};
 use handler::Handler;
 use response::Response;
 use log::{Log, StdOut};
@@ -57,9 +57,14 @@ use utils;
 ///    Err(e) => println!("could not start server: {}", e.description())
 ///}
 ///```
-pub struct Server<'s, R> {
+pub struct Server<'s, R: Router> {
     ///One or several response handlers.
     pub handlers: R,
+
+    ///A fallback handler for when none is found in `handlers`. Leaving this
+    ///unspecified will cause an empty `404` response to be automatically sent
+    ///instead.
+    pub fallback_handler: Option<R::Handler>,
 
     ///The host address and port where the server will listen for requests.
     ///Default is `0.0.0.0:80`.
@@ -103,9 +108,9 @@ impl<'s, R, H> Server<'s, R>
     ///```no_run
     ///# use std::error::Error;
     ///# use rustful::{Server, Handler, Context, Response};
-    ///fn handler(context: Context, response: Response) {
+    ///let handler = |context: Context, response: Response| {
     ///    //...
-    ///}
+    ///};
     ///
     ///let server_result = Server {
     ///    host: 8080.into(),
@@ -115,6 +120,7 @@ impl<'s, R, H> Server<'s, R>
     pub fn new(handlers: R) -> Server<'s, R> {
         Server {
             handlers: handlers,
+            fallback_handler: None,
             host: 80.into(),
             scheme: Scheme::Http,
             threads: None,
@@ -151,6 +157,7 @@ impl<'s, R, H> Server<'s, R>
     pub fn build(self) -> (ServerInstance<R>, Scheme<'s>) {
         (ServerInstance {
             handlers: self.handlers,
+            fallback_handler: self.fallback_handler,
             host: self.host.into(),
             server: self.server,
             content_type: self.content_type,
@@ -191,8 +198,9 @@ impl<'s, R, H> Default for Server<'s, R> where
 ///    ..Server::default()
 ///}.build();
 ///```
-pub struct ServerInstance<R> {
+pub struct ServerInstance<R: Router> {
     handlers: R,
+    fallback_handler: Option<R::Handler>,
 
     host: SocketAddr,
 
@@ -207,7 +215,7 @@ pub struct ServerInstance<R> {
     global: Global
 }
 
-impl<R> ServerInstance<R> {
+impl<R: Router> ServerInstance<R> {
 
     fn modify_context(&self, filter_storage: &mut AnyMap, context: &mut Context) -> ContextAction {
         let mut result = ContextAction::Next;
@@ -275,6 +283,7 @@ impl<R, H> HyperHandler for ServerInstance<R>
                     method: request_method,
                     address: request_addr,
                     path: lossy_utf8_percent_decode(&path),
+                    hypermedia: Hypermedia::new(),
                     variables: HashMap::new(),
                     query: query,
                     fragment: fragment,
@@ -288,15 +297,18 @@ impl<R, H> HyperHandler for ServerInstance<R>
                 match self.modify_context(&mut filter_storage, &mut context) {
                     ContextAction::Next => {
                         *response.filter_storage() = filter_storage;
-                        match self.handlers.find(&context.method, &context.path) {
-                            Some((handler, variables)) => {
-                                context.variables = variables;
-                                handler.handle_request(context, response);
-                            },
-                            None => {
-                                response.set_header(ContentLength(0));
-                                response.set_status(StatusCode::NotFound);
-                            }
+                        let Endpoint {
+                            handler,
+                            variables,
+                            hypermedia
+                        } = self.handlers.find(&context.method, &context.path);
+                        if let Some(handler) = handler.or(self.fallback_handler.as_ref()) {
+                            context.hypermedia = hypermedia;
+                            context.variables = variables;
+                            handler.handle_request(context, response);
+                        } else {
+                            response.set_header(ContentLength(0));
+                            response.set_status(StatusCode::NotFound);
                         }
                     },
                     ContextAction::Abort(status) => {
