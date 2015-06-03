@@ -141,7 +141,7 @@ pub struct Response<'a, 'b> {
 
     version: Option<HttpVersion>,
     writer: Option<HttpWriter<&'a mut (io::Write + 'a)>>,
-    filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
+    filters: &'b Vec<Box<ResponseFilter>>,
     log: &'b (Log + 'b),
     global: &'b Global,
     filter_storage: Option<AnyMap>
@@ -150,7 +150,7 @@ pub struct Response<'a, 'b> {
 impl<'a, 'b> Response<'a, 'b> {
     pub fn new(
         response: hyper::server::response::Response<'a>,
-        filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
+        filters: &'b Vec<Box<ResponseFilter>>,
         log: &'b Log,
         global: &'b Global
     ) -> Response<'a, 'b> {
@@ -301,7 +301,7 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 ///An interface for writing to the response body.
 pub struct ResponseWriter<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
-    filters: &'b Vec<Box<ResponseFilter + Send + Sync>>,
+    filters: &'b Vec<Box<ResponseFilter>>,
     log: &'b (Log + 'b),
     global: &'b Global,
     filter_storage: AnyMap

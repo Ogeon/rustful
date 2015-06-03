@@ -29,7 +29,7 @@ pub struct FilterContext<'a> {
 ///A trait for context filters.
 ///
 ///They are able to modify and react to a `Context` before it's sent to the handler.
-pub trait ContextFilter {
+pub trait ContextFilter: Send + Sync {
     ///Try to modify the handler `Context`.
     fn modify(&self, context: FilterContext, request_context: &mut Context) -> ContextAction;
 }
@@ -57,7 +57,7 @@ impl<'a> ContextAction {
 ///A trait for response filters.
 ///
 ///They are able to modify headers and data before it gets written in the response.
-pub trait ResponseFilter {
+pub trait ResponseFilter: Send + Sync {
     ///Set or modify headers before they are sent to the client and maybe initiate the body.
     fn begin(&self, context: FilterContext, status: StatusCode, headers: &mut Headers) ->
         (StatusCode, ResponseAction);

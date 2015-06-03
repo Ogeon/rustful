@@ -6,6 +6,7 @@ use hyper::method::Method;
 
 use router::{Router, Route, Endpoint};
 use context::{Link, LinkSegment};
+use handler::Handler;
 
 use self::Branch::{Static, Variable, Wildcard};
 
@@ -138,7 +139,7 @@ impl<T> TreeRouter<T> {
     }
 }
 
-impl<T> Router for TreeRouter<T> {
+impl<T: Handler> Router for TreeRouter<T> {
     type Handler = T;
 
     fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, method: &Method, route: &'r R) -> Endpoint<'a, T> {
@@ -269,7 +270,7 @@ impl<T> Router for TreeRouter<T> {
     }
 }
 
-impl<'r, T, R: Route<'r> + 'r + ?Sized> FromIterator<(Method, &'r R, T)> for TreeRouter<T> {
+impl<'r, T: Handler, R: Route<'r> + 'r + ?Sized> FromIterator<(Method, &'r R, T)> for TreeRouter<T> {
     ///Create a `TreeRouter` from a collection of routes.
     ///
     ///```
@@ -329,14 +330,30 @@ impl<T> Default for TreeRouter<T> {
 
 #[cfg(test)]
 mod test {
+    use super::TreeRouter;
     use router::Router;
     #[cfg(feature = "nightly")]
     use test::Bencher;
-    use router::{TreeRouter, Endpoint};
-    use context::{LinkSegment};
+    use router::{Endpoint};
+    use context::{Context, LinkSegment};
+    use response::Response;
+    use handler::Handler;
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
     use std::vec::Vec;
     use Method;
+
+    #[derive(PartialEq, Debug, Clone, Copy)]
+    struct TestHandler(&'static str);
+
+    impl From<&'static str> for TestHandler {
+        fn from(s: &'static str) -> TestHandler {
+            TestHandler(s)
+        }
+    }
+
+    impl Handler for TestHandler {
+        fn handle_request(&self, _: Context, _: Response) {}
+    }
 
     #[derive(Debug)]
     enum LinkType<'a> {
@@ -346,7 +363,7 @@ mod test {
 
     pub use self::LinkType::{SelfLink, ForwardLink};
 
-    fn check_variable(mut result: Endpoint<&str>, expected: Option<&str>) {
+    fn check_variable(mut result: Endpoint<TestHandler>, expected: Option<&str>) {
         assert_eq!(result.handler.is_some(), expected.is_some());
 
         if let Some(expected) = expected {
@@ -364,7 +381,8 @@ mod test {
         }
     }
 
-    fn check(mut result: Endpoint<&str>, expected: Option<&str>, links: Vec<LinkType>) {
+    fn check(mut result: Endpoint<TestHandler>, expected: Option<&'static str>, links: Vec<LinkType>) {
+        let expected = expected.map(|e| e.into());
         println!("found {:?} and expected {:?}", result.hypermedia.links, links);
         assert_eq!(result.handler.map(|&v| v), expected);
         for link in links {
@@ -389,7 +407,7 @@ mod test {
 
     #[test]
     fn one_static_route() {
-        let routes = vec![(Get, "path/to/test1", "test 1")];
+        let routes = vec![(Get, "path/to/test1", "test 1".into())];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
@@ -402,9 +420,9 @@ mod test {
     #[test]
     fn several_static_routes() {
         let routes = vec![
-            (Get, "", "test 1"),
-            (Get, "path/to/test/no2", "test 2"),
-            (Get, "path/to/test1/no/test3", "test 3")
+            (Get, "", "test 1".into()),
+            (Get, "path/to/test/no2", "test 2".into()),
+            (Get, "path/to/test1/no/test3", "test 3".into())
         ];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
@@ -418,7 +436,7 @@ mod test {
 
     #[test]
     fn one_variable_route() {
-        let routes = vec![(Get, "path/:a/test1", "test_var")];
+        let routes = vec![(Get, "path/:a/test1", "test_var".into())];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
@@ -431,10 +449,10 @@ mod test {
     #[test]
     fn several_variable_routes() {
         let routes = vec![
-            (Get, "path/to/test1", "test_var"),
-            (Get, "path/:a/test/no2", "test_var"),
-            (Get, "path/to/:b/:c/:a", "test_var"),
-            (Post, "path/to/:c/:a/:b", "test_var")
+            (Get, "path/to/test1", "test_var".into()),
+            (Get, "path/:a/test/no2", "test_var".into()),
+            (Get, "path/to/:b/:c/:a", "test_var".into()),
+            (Post, "path/to/:c/:a/:b", "test_var".into())
         ];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
@@ -449,7 +467,7 @@ mod test {
 
     #[test]
     fn one_wildcard_end_route() {
-        let routes = vec![(Get, "path/to/*", "test 1")];
+        let routes = vec![(Get, "path/to/*", "test 1".into())];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
@@ -464,7 +482,7 @@ mod test {
 
     #[test]
     fn one_wildcard_middle_route() {
-        let routes = vec![(Get, "path/*/test1", "test 1")];
+        let routes = vec![(Get, "path/*/test1", "test 1".into())];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
@@ -478,7 +496,7 @@ mod test {
 
     #[test]
     fn one_universal_wildcard_route() {
-        let routes = vec![(Get, "*", "test 1")];
+        let routes = vec![(Get, "*", "test 1".into())];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
@@ -494,9 +512,9 @@ mod test {
     #[test]
     fn several_wildcards_routes() {
         let routes = vec![
-            (Get, "path/to/*", "test 1"),
-            (Get, "path/*/test/no2", "test 2"),
-            (Get, "path/to/*/*/*", "test 3")
+            (Get, "path/to/*", "test 1".into()),
+            (Get, "path/*/test/no2", "test 2".into()),
+            (Get, "path/to/*/*/*", "test 3".into())
         ];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
@@ -512,9 +530,9 @@ mod test {
     #[test]
     fn several_wildcards_routes_no_hyperlinks() {
         let routes = vec![
-            (Get, "path/to/*", "test 1"),
-            (Get, "path/*/test/no2", "test 2"),
-            (Get, "path/to/*/*/*", "test 3")
+            (Get, "path/to/*", "test 1".into()),
+            (Get, "path/*/test/no2", "test 2".into()),
+            (Get, "path/to/*/*/*", "test 3".into())
         ];
 
         let router = routes.into_iter().collect::<TreeRouter<_>>();
@@ -529,10 +547,10 @@ mod test {
     #[test]
     fn route_formats() {
         let routes = vec![
-            (Get, "/", "test 1"),
-            (Get, "/path/to/test/no2", "test 2"),
-            (Get, "path/to/test3/", "test 3"),
-            (Get, "/path/to/test3/again/", "test 3")
+            (Get, "/", "test 1".into()),
+            (Get, "/path/to/test/no2", "test 2".into()),
+            (Get, "path/to/test3/", "test 3".into()),
+            (Get, "/path/to/test3/again/", "test 3".into())
         ];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
@@ -548,10 +566,10 @@ mod test {
     #[test]
     fn http_methods() {
         let routes = vec![
-            (Get, "/", "get"),
-            (Post, "/", "post"),
-            (Delete, "/", "delete"),
-            (Put, "/", "put")
+            (Get, "/", "get".into()),
+            (Post, "/", "post".into()),
+            (Delete, "/", "delete".into()),
+            (Put, "/", "put".into())
         ];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
@@ -576,15 +594,15 @@ mod test {
     #[test]
     fn merge_routers() {
         let routes1 = vec![
-            (Get, "", "test 1"),
-            (Get, "path/to/test/no2", "test 2"),
-            (Get, "path/to/test1/no/test3", "test 3")
+            (Get, "", "test 1".into()),
+            (Get, "path/to/test/no2", "test 2".into()),
+            (Get, "path/to/test1/no/test3", "test 3".into())
         ];
 
         let routes2 = vec![
-            (Get, "", "test 1"),
-            (Get, "test/no5", "test 5"),
-            (Post, "test1/no/test3", "test 3 post")
+            (Get, "", "test 1".into()),
+            (Get, "test/no5", "test 5".into()),
+            (Post, "test1/no/test3", "test 3 post".into())
         ];
 
         let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
@@ -604,8 +622,8 @@ mod test {
 
     #[test]
     fn merge_routers_variables() {
-        let routes1 = vec![(Get, ":a/:b/:c", "test 2")];
-        let routes2 = vec![(Get, ":b/:c/test", "test 1")];
+        let routes1 = vec![(Get, ":a/:b/:c", "test 2".into())];
+        let routes2 = vec![(Get, ":b/:c/test", "test 1".into())];
 
         let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
         router1.find_hyperlinks = true;
@@ -620,8 +638,8 @@ mod test {
 
     #[test]
     fn merge_routers_wildcard() {
-        let routes1 = vec![(Get, "path/to", "test 2")];
-        let routes2 = vec![(Get, "*/test1", "test 1")];
+        let routes1 = vec![(Get, "path/to", "test 2".into())];
+        let routes2 = vec![(Get, "*/test1", "test 1".into())];
 
         let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
         router1.find_hyperlinks = true;
@@ -641,17 +659,17 @@ mod test {
     #[cfg(feature = "nightly")]
     fn search_speed(b: &mut Bencher) {
         let routes = vec![
-            (Get, "path/to/test1", "test 1"),
-            (Get, "path/to/test/no2", "test 1"),
-            (Get, "path/to/test1/no/test3", "test 1"),
-            (Get, "path/to/other/test1", "test 1"),
-            (Get, "path/to/test/no2/again", "test 1"),
-            (Get, "other/path/to/test1/no/test3", "test 1"),
-            (Get, "path/to/test1", "test 1"),
-            (Get, "path/:a/test/no2", "test 1"),
-            (Get, "path/to/:b/:c/:a", "test 1"),
-            (Get, "path/to/*", "test 1"),
-            (Get, "path/to/*/other", "test 1")
+            (Get, "path/to/test1", "test 1".into()),
+            (Get, "path/to/test/no2", "test 1".into()),
+            (Get, "path/to/test1/no/test3", "test 1".into()),
+            (Get, "path/to/other/test1", "test 1".into()),
+            (Get, "path/to/test/no2/again", "test 1".into()),
+            (Get, "other/path/to/test1/no/test3", "test 1".into()),
+            (Get, "path/to/test1", "test 1".into()),
+            (Get, "path/:a/test/no2", "test 1".into()),
+            (Get, "path/to/:b/:c/:a", "test 1".into()),
+            (Get, "path/to/*", "test 1".into()),
+            (Get, "path/to/*/other", "test 1".into())
         ];
 
         let paths = [
@@ -669,7 +687,7 @@ mod test {
             "path/to/test1/nothing/at/all"
         ];
 
-        let router = routes.into_iter().collect::<TreeRouter<_>>();
+        let router = routes.into_iter().collect::<TreeRouter<TestHandler>>();
         let mut counter = 0;
 
         b.iter(|| {
@@ -683,7 +701,7 @@ mod test {
     #[cfg(feature = "nightly")]
     fn wildcard_speed(b: &mut Bencher) {
         let routes = vec![
-            (Get, "*/to/*/*/a", "test 1")
+            (Get, "*/to/*/*/a", "test 1".into())
         ];
 
         let paths = [
@@ -701,7 +719,7 @@ mod test {
             "path/to/test1/nothing/at/all/and/all/and/all/and/a"
         ];
 
-        let router = routes.into_iter().collect::<TreeRouter<_>>();
+        let router = routes.into_iter().collect::<TreeRouter<TestHandler>>();
         let mut counter = 0;
 
         b.iter(|| {

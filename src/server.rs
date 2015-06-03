@@ -85,23 +85,19 @@ pub struct Server<'s, R: Router> {
     pub content_type: Mime,
 
     ///Tool for printing to a log. The default is to print to standard output.
-    pub log: Box<Log + Send + Sync>,
+    pub log: Box<Log>,
 
     ///Globally accessible data.
     pub global: Global,
 
     ///The context filter stack.
-    pub context_filters: Vec<Box<ContextFilter + Send + Sync>>,
+    pub context_filters: Vec<Box<ContextFilter>>,
 
     ///The response filter stack.
-    pub response_filters: Vec<Box<ResponseFilter + Send + Sync>>
+    pub response_filters: Vec<Box<ResponseFilter>>
 }
 
-impl<'s, R, H> Server<'s, R>
-    where
-    R: Router<Handler=H> + Send + Sync + 'static,
-    H: Handler + Send + Sync + 'static
-{
+impl<'s, R: Router> Server<'s, R> {
     ///Set up a new standard server. This can be useful when `handlers`
     ///doesn't implement `Default`:
     ///
@@ -170,10 +166,7 @@ impl<'s, R, H> Server<'s, R>
     }
 }
 
-impl<'s, R, H> Default for Server<'s, R> where
-    R: Router<Handler=H> + Default + Send + Sync + 'static,
-    H: Handler + Send + Sync + 'static
-{
+impl<'s, R: Router + Default> Default for Server<'s, R> {
     fn default() -> Server<'s, R> {
         Server::new(R::default())
     }
@@ -207,10 +200,10 @@ pub struct ServerInstance<R: Router> {
     server: String,
     content_type: Mime,
 
-    log: Box<Log + Send + Sync>,
+    log: Box<Log>,
 
-    context_filters: Vec<Box<ContextFilter + Send + Sync>>,
-    response_filters: Vec<Box<ResponseFilter + Send + Sync>>,
+    context_filters: Vec<Box<ContextFilter>>,
+    response_filters: Vec<Box<ResponseFilter>>,
 
     global: Global
 }
@@ -239,11 +232,7 @@ impl<R: Router> ServerInstance<R> {
 
 }
 
-impl<R, H> HyperHandler for ServerInstance<R>
-    where
-    R: Router<Handler=H> + Send + Sync,
-    H: Handler + Send + Sync
-{
+impl<R: Router> HyperHandler for ServerInstance<R> {
     fn handle(&self, request: hyper::server::request::Request, writer: hyper::server::response::Response) {
         let (
             request_addr,

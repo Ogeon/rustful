@@ -7,7 +7,7 @@ use std::sync::Mutex;
 pub type Result = io::Result<()>;
 
 ///Common trait for log tools.
-pub trait Log {
+pub trait Log: Send + Sync {
     ///Print a note to the log or return eventual errors.
     fn try_note(&self, message: &str) -> Result;
     ///Print a warning to the log or return eventual errors.
