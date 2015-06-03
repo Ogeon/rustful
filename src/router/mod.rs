@@ -87,6 +87,7 @@ use std::ops::Deref;
 use hyper::method::Method;
 
 use handler::Handler;
+use context::Hypermedia;
 
 pub use self::tree_router::TreeRouter;
 
@@ -111,41 +112,6 @@ impl<'a, T> From<Option<&'a T>> for Endpoint<'a, T> {
             hypermedia: Hypermedia::new()
         }
     }
-}
-
-///Hypermedia connected to an API endpoint.
-pub struct Hypermedia<'a> {
-    ///Forward links from the current endpoint to other endpoints.
-    pub links: Vec<Link<'a>>
-}
-
-impl<'a> Hypermedia<'a> {
-    pub fn new() -> Hypermedia<'a> {
-        Hypermedia {
-            links: vec![]
-        }
-    }
-}
-
-///A hyperlink.
-#[derive(PartialEq, Eq, Debug)]
-pub struct Link<'a> {
-    ///The HTTP method for which an endpoint is available. It can be left
-    ///unspecified if the method doesn't matter.
-    pub method: Option<Method>,
-    ///A relative path from the current location.
-    pub path: Vec<LinkSegment<'a>>
-}
-
-///A segment of a hyperlink path.
-#[derive(PartialEq, Eq, Debug)]
-pub enum LinkSegment<'a> {
-    ///A static part of a path.
-    Static(&'a str),
-    ///A dynamic part of a path. Can be substituted with anything.
-    Variable(&'a str),
-    ///A recursive wildcard. Will recursively match anything.
-    RecursiveWildcard
 }
 
 ///A common trait for routers.

@@ -20,9 +20,9 @@ use anymap::AnyMap;
 
 use StatusCode;
 
-use context::{self, Context};
+use context::{self, Context, Hypermedia};
 use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
-use router::{Router, Endpoint, Hypermedia};
+use router::{Router, Endpoint};
 use handler::Handler;
 use response::Response;
 use log::{Log, StdOut};

@@ -4,7 +4,8 @@ use std::borrow::ToOwned;
 use std::iter::{Iterator, IntoIterator, FromIterator};
 use hyper::method::Method;
 
-use router::{Router, Route, Endpoint, Link, LinkSegment};
+use router::{Router, Route, Endpoint};
+use context::{Link, LinkSegment};
 
 use self::Branch::{Static, Variable, Wildcard};
 
@@ -331,7 +332,8 @@ mod test {
     use router::Router;
     #[cfg(feature = "nightly")]
     use test::Bencher;
-    use router::{TreeRouter, Endpoint, LinkSegment};
+    use router::{TreeRouter, Endpoint};
+    use context::{LinkSegment};
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
     use std::vec::Vec;
     use Method;
