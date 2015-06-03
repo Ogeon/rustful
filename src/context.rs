@@ -38,6 +38,7 @@ pub struct Context<'a, 'b: 'a, 's> {
     ///The requested path.
     pub path: String,
 
+    ///Hypermedia from the current endpoint.
     pub hypermedia: Hypermedia<'s>,
 
     ///Route variables.
@@ -116,6 +117,7 @@ pub struct Hypermedia<'a> {
 }
 
 impl<'a> Hypermedia<'a> {
+    ///Create an empty `Hypermedia` structure.
     pub fn new() -> Hypermedia<'a> {
         Hypermedia {
             links: vec![]
