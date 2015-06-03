@@ -4,11 +4,10 @@
 
 #![doc(html_root_url = "http://ogeon.github.io/docs/rustful/master/")]
 
-#![cfg_attr(feature = "nightly", feature(fs_time, path_ext, std_misc))]
-#![cfg_attr(test, cfg_attr(feature = "nightly", feature(test)))]
+#![cfg_attr(test, cfg_attr(feature = "benchmark", feature(test)))]
 
 #[cfg(test)]
-#[cfg(feature = "nightly")]
+#[cfg(feature = "benchmark")]
 extern crate test;
 
 #[cfg(test)]
@@ -46,9 +45,6 @@ pub mod context;
 pub mod response;
 pub mod filter;
 pub mod log;
-
-#[cfg(feature = "nightly")]
-pub mod cache;
 
 use std::path::Path;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};

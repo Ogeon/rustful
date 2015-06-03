@@ -332,7 +332,7 @@ impl<T> Default for TreeRouter<T> {
 mod test {
     use super::TreeRouter;
     use router::Router;
-    #[cfg(feature = "nightly")]
+    #[cfg(feature = "benchmark")]
     use test::Bencher;
     use router::{Endpoint};
     use context::{Context, LinkSegment};
@@ -656,7 +656,7 @@ mod test {
 
     
     #[bench]
-    #[cfg(feature = "nightly")]
+    #[cfg(feature = "benchmark")]
     fn search_speed(b: &mut Bencher) {
         let routes = vec![
             (Get, "path/to/test1", "test 1".into()),
@@ -698,7 +698,7 @@ mod test {
 
     
     #[bench]
-    #[cfg(feature = "nightly")]
+    #[cfg(feature = "benchmark")]
     fn wildcard_speed(b: &mut Bencher) {
         let routes = vec![
             (Get, "*/to/*/*/a", "test 1".into())

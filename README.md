@@ -30,8 +30,6 @@ Add the following lines to your `Cargo.toml` file:
 rustful = "0.1"
 ```
 
-There is also a `nightly` feature for additional compatibility with the future.
-
 ##Write Your Server
 Here is a simple example of what a simple project could look like. Visit
 `http://localhost:8080` or `http://localhost:8080/Olivia` (if your name is

@@ -1,13 +1,12 @@
 language: rust
 rust:
-  - nightly
   - 1.0.0
 os:
   - linux
   - osx
 script:
-  - sh scripts/cargo.sh build -v
-  - sh scripts/cargo.sh test -v
-  - sh scripts/cargo.sh doc --no-deps
+  - cargo build -v
+  - cargo test -v
+  - cargo doc
 after_success:
   - sh scripts/upload_doc.sh

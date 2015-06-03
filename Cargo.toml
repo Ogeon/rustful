@@ -15,7 +15,7 @@ name = "rustful"
 path = "src/lib.rs"
 
 [features]
-nightly = ["hyper/nightly", "anymap/nightly"]
+benchmark = []
 
 [dependencies]
 hyper = "0.5"
