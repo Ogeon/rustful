@@ -6,6 +6,7 @@ os:
   - osx
 script:
   - cargo build -v
+  - cargo build -v --no-default-features
   - cargo test -v
   - cargo doc
 after_success:

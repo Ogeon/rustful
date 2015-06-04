@@ -13,6 +13,9 @@ extern crate test;
 #[cfg(test)]
 extern crate tempdir;
 
+#[cfg(feature = "rustc-serialize")]
+extern crate rustc_serialize;
+
 extern crate url;
 extern crate time;
 extern crate hyper;

@@ -4,6 +4,11 @@ use std::collections::HashMap;
 use std::io::{self, Read};
 use std::net::SocketAddr;
 
+#[cfg(feature = "rustc_json_body")]
+use rustc_serialize::json;
+#[cfg(feature = "rustc_json_body")]
+use rustc_serialize::Decodable;
+
 use hyper::http::HttpReader;
 use hyper::net::NetworkStream;
 use hyper::buffer::BufReader;
@@ -92,6 +97,35 @@ impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
         let mut buf = Vec::new();
         try!(self.read_to_end(&mut buf));
         Ok(utils::parse_parameters(&buf))
+    }
+}
+
+///`BodyReader` extension for reading and parsing a JSON body.
+///
+///It is available by default and can be toggled using the `rustc_json_body`
+///feature.
+#[cfg(feature = "rustc_json_body")]
+pub trait ExtJsonBody {
+    ///Read the body into a JSON structure.
+    fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError>;
+
+    ///Parse and decode the body as some type `T`.
+    fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T>;
+}
+
+#[cfg(feature = "rustc_json_body")]
+impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
+    fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError> {
+        json::Json::from_reader(self)
+    }
+
+    fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T> {
+        let mut buf = String::new();
+        try!(self.read_to_string(&mut buf).map_err(|e| {
+            let parse_err = json::ParserError::IoError(e);
+            json::DecoderError::ParseError(parse_err)
+        }));
+        json::decode(&buf)
     }
 }
 

@@ -30,6 +30,12 @@ Add the following lines to your `Cargo.toml` file:
 rustful = "0.1"
 ```
 
+###Cargo Features
+
+Some parts of Rustful can be toggled using Cargo features:
+
+ * `rustc_json_body` - Parse the request body as JSON. Enabled by default.
+
 ##Write Your Server
 Here is a simple example of what a simple project could look like. Visit
 `http://localhost:8080` or `http://localhost:8080/Olivia` (if your name is
