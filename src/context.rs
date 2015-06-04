@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::io::{self, Read};
 use std::net::SocketAddr;
-use std::ops::{Deref, DerefMut};
 
 use hyper::http::HttpReader;
 use hyper::net::NetworkStream;
@@ -57,21 +56,7 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub global: &'s Global,
 
     ///A reader for the request body.
-    pub body_reader: BodyReader<'a, 'b>,
-}
-
-impl<'a, 'b, 's> Deref for Context<'a, 'b, 's> {
-    type Target = BodyReader<'a, 'b>;
-
-    fn deref<'r>(&'r self) -> &'r BodyReader<'a, 'b> {
-        &self.body_reader
-    }
-}
-
-impl<'a, 'b, 's> DerefMut for Context<'a, 'b, 's> {
-    fn deref_mut<'r>(&'r mut self) -> &'r mut BodyReader<'a, 'b> {
-        &mut self.body_reader
-    }
+    pub body: BodyReader<'a, 'b>,
 }
 
 ///A reader for a request body.

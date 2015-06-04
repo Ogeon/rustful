@@ -15,7 +15,7 @@ use rustful::StatusCode::{InternalServerError, BadRequest};
 fn say_hello(mut context: Context, mut response: Response) {
     response.set_header(ContentType(content_type!("text", "html", ("charset", "UTF-8"))));
 
-    let mut body = match context.read_query_body() {
+    let mut body = match context.body.read_query_body() {
         Ok(body) => body,
         Err(_) => {
             //Oh no! Could not read the body

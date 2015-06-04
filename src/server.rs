@@ -278,7 +278,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     fragment: fragment,
                     log: &*self.log,
                     global: &self.global,
-                    body_reader: context::BodyReader::from_reader(request_reader)
+                    body: context::BodyReader::from_reader(request_reader)
                 };
 
                 let mut filter_storage = AnyMap::new();
