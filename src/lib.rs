@@ -36,7 +36,9 @@ pub use self::log::Log;
 pub use self::router::TreeRouter;
 
 mod utils;
-#[macro_use] mod macros;
+#[macro_use]
+#[doc(hidden)]
+pub mod macros;
 
 pub mod server;
 pub mod router;

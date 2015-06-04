@@ -9,7 +9,6 @@ use std::error::Error;
 
 use rustful::{Server, Context, Response, Handler, TreeRouter};
 use rustful::Method::Get;
-use rustful::header::ContentType;
 
 fn main() {
     println!("Visit http://localhost:8080 to try this example.");
@@ -43,6 +42,7 @@ fn main() {
     let server_result = Server {
         host: 8080.into(),
         handlers: router,
+        content_type: content_type!(Text / Html; Charset = Utf8),
         ..Server::default()
     }.run();
 
@@ -77,14 +77,12 @@ struct Counter {
 }
 
 impl Handler for Counter {
-    fn handle_request(&self, _context: Context, mut response: Response) {
+    fn handle_request(&self, _context: Context, response: Response) {
         self.operation.map(|op| {
             //Lock the value for writing and update it
             let mut value = self.value.write().unwrap();
             *value = op(*value);
         });
-
-        response.set_header(ContentType(content_type!("text", "html", ("charset", "UTF-8"))));
 
         //Insert the value into the page and write it to the response
         let count = self.value.read().unwrap().to_string();

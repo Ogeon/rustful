@@ -90,7 +90,7 @@ macro_rules! insert_routes {
         {
             use $crate::Router;
             let mut router = $router;
-            __insert_internal!(router, [], $($paths)+);
+            __rustful_insert_internal!(router, [], $($paths)+);
             router
         }
     }
@@ -99,22 +99,22 @@ macro_rules! insert_routes {
 //Internal stuff. Only meant to be used through `insert_routes!`.
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __insert_internal {
+macro_rules! __rustful_insert_internal {
     ($router:ident, [$($steps:expr),*], $path:expr => {$($paths:tt)+}, $($next:tt)*) => {
         {
-            __insert_internal!($router, [$($steps,)* $path], $($paths)*);
-            __insert_internal!($router, [$($steps),*], $($next)*);
+            __rustful_insert_internal!($router, [$($steps,)* $path], $($paths)*);
+            __rustful_insert_internal!($router, [$($steps),*], $($next)*);
         }
     };
     ($router:ident, [$($steps:expr),*], $path:expr => {$($paths:tt)+}) => {
         {
-            __insert_internal!($router, [$($steps,)* $path], $($paths)*);
+            __rustful_insert_internal!($router, [$($steps,)* $path], $($paths)*);
         }
     };
     ($router:ident, [$($steps:expr),*], $path:expr => $method:path: $handler:expr, $($next:tt)*) => {
         {
             $router.insert($method, &[$($steps,)* $path][..], $handler);
-            __insert_internal!($router, [$($steps),*], $($next)*)
+            __rustful_insert_internal!($router, [$($steps),*], $($next)*)
         }
     };
     ($router:ident, [$($steps:expr),*], $path:expr => $method:path: $handler:expr) => {
@@ -125,19 +125,19 @@ macro_rules! __insert_internal {
 }
 
 /**
-A macro for assigning content types.
+A macro for making content types.
 
 It takes a main type, a sub type and a parameter list. Instead of this:
 
 ```rust
 use rustful::header::ContentType;
-use rustful::mime::Mime;
+use rustful::mime::{Mime, TopLevel, SubLevel, Attr, Value};
 
 ContentType(
     Mime (
-        std::str::FromStr::from_str("text").unwrap(),
-        std::str::FromStr::from_str("html").unwrap(),
-        vec![(std::str::FromStr::from_str("charset").unwrap(), std::str::FromStr::from_str("UTF-8").unwrap())]
+        TopLevel::Text,
+        SubLevel::Html,
+        vec![(Attr::Charset, Value::Utf8)]
     )
 );
 ```
@@ -150,12 +150,13 @@ extern crate rustful;
 use rustful::header::ContentType;
 
 # fn main() {
-ContentType(content_type!("text", "html", ("charset", "UTF-8")));
+ContentType(content_type!(Text / Html; Charset = Utf8));
 # }
 ```
 
-The `"charset": "UTF-8"` part defines the parameter list for the content type.
-It may contain more than one parameter, or be omitted:
+The `Charset = Utf8` part defines the parameter list for the content type and
+may contain more than one parameter, or be omitted. Here are some more
+examples showing that and how strings can be used for more exotic values:
 
 ```
 #[macro_use]
@@ -163,7 +164,7 @@ extern crate rustful;
 use rustful::header::ContentType;
 
 # fn main() {
-ContentType(content_type!("application", "octet-stream", ("type", "image/gif"), ("padding", "4")));
+ContentType(content_type!(Application / "octet-stream"; "type" = "image/gif"; "padding" = "4"));
 # }
 ```
 
@@ -173,25 +174,106 @@ extern crate rustful;
 use rustful::header::ContentType;
 
 # fn main() {
-ContentType(content_type!("image", "png"));
+ContentType(content_type!(Image / Png));
 # }
 ```
 **/
 #[macro_export]
 macro_rules! content_type {
-    ($main_type:expr, $sub_type:expr) => ({
+    ($main_type:tt / $sub_type:tt) => ({
+        use $crate::macros::MimeHelper;
         $crate::mime::Mime (
-            ::std::str::FromStr::from_str($main_type).unwrap(),
-            ::std::str::FromStr::from_str($sub_type).unwrap(),
+            {
+                #[allow(unused_imports)]
+                use $crate::mime::TopLevel::*;
+                MimeHelper::from(__rustful_to_expr!($main_type)).convert()
+            },
+            {
+                #[allow(unused_imports)]
+                use $crate::mime::SubLevel::*;
+                MimeHelper::from(__rustful_to_expr!($sub_type)).convert()
+            },
             Vec::new()
         )
     });
 
-    ($main_type:expr, $sub_type:expr, $(($param:expr, $value:expr)),+) => ({
+    ($main_type:tt / $sub_type:tt; $($param:tt = $value:tt);+) => ({
+        use $crate::macros::MimeHelper;
         $crate::mime::Mime (
-            ::std::str::FromStr::from_str($main_type).unwrap(),
-            ::std::str::FromStr::from_str($sub_type).unwrap(),
-            vec!( $( (::std::str::FromStr::from_str($param).unwrap(), ::std::str::FromStr::from_str($value).unwrap()) ),+ )
+            {
+                #[allow(unused_imports)]
+                use $crate::mime::TopLevel::*;
+                MimeHelper::from(__rustful_to_expr!($main_type)).convert()
+            },
+            {
+                #[allow(unused_imports)]
+                use $crate::mime::SubLevel::*;
+                MimeHelper::from(__rustful_to_expr!($sub_type)).convert()
+            },
+            vec![ $( ({
+                #[allow(unused_imports)]
+                use $crate::mime::Attr::*;
+                MimeHelper::from(__rustful_to_expr!($param)).convert()
+            }, {
+                #[allow(unused_imports)]
+                use $crate::mime::Value::*;
+                MimeHelper::from(__rustful_to_expr!($value)).convert()
+            })),+ ]
         )
     });
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __rustful_to_expr {
+    ($e: expr) => ($e)
+}
+
+use std::str::FromStr;
+use std::fmt::Debug;
+use mime::{TopLevel, SubLevel, Attr, Value};
+
+#[doc(hidden)]
+pub enum MimeHelper<'a, T> {
+    Str(&'a str),
+    Target(T)
+}
+
+impl<'a, T: FromStr> MimeHelper<'a, T> where <T as FromStr>::Err: Debug {
+    pub fn convert(self) -> T {
+        match self {
+            MimeHelper::Str(s) => s.parse().unwrap(),
+            MimeHelper::Target(t) => t
+        }
+    }
+}
+
+impl<'a, T: FromStr> From<&'a str> for MimeHelper<'a, T> {
+    fn from(s: &'a str) -> MimeHelper<'a, T> {
+        MimeHelper::Str(s)
+    }
+}
+
+impl<'a> From<TopLevel> for MimeHelper<'a, TopLevel> {
+    fn from(t: TopLevel) -> MimeHelper<'a, TopLevel> {
+        MimeHelper::Target(t)
+    }
+}
+
+impl<'a> From<SubLevel> for MimeHelper<'a, SubLevel> {
+    fn from(t: SubLevel) -> MimeHelper<'a, SubLevel> {
+        MimeHelper::Target(t)
+    }
+}
+
+impl<'a> From<Attr> for MimeHelper<'a, Attr> {
+    fn from(t: Attr) -> MimeHelper<'a, Attr> {
+        MimeHelper::Target(t)
+    }
+}
+
+impl<'a> From<Value> for MimeHelper<'a, Value> {
+    fn from(t: Value) -> MimeHelper<'a, Value> {
+        MimeHelper::Target(t)
+    }
 }

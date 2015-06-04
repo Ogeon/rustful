@@ -9,12 +9,9 @@ use std::error::Error;
 
 use rustful::{Server, Context, Response, Log, Handler};
 use rustful::context::ExtQueryBody;
-use rustful::header::ContentType;
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
 fn say_hello(mut context: Context, mut response: Response) {
-    response.set_header(ContentType(content_type!("text", "html", ("charset", "UTF-8"))));
-
     let mut body = match context.body.read_query_body() {
         Ok(body) => body,
         Err(_) => {
@@ -67,6 +64,7 @@ fn main() {
     let server_result = Server {
         host: 8080.into(),
         global: Box::new(files).into(),
+        content_type: content_type!(Text / Html; Charset = Utf8),
         ..Server::new(HandlerFn(say_hello))
     }.run();
 
