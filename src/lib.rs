@@ -17,6 +17,7 @@ extern crate url;
 extern crate time;
 extern crate hyper;
 extern crate anymap;
+extern crate unicase as uni;
 
 pub use hyper::mime;
 pub use hyper::method::Method;
@@ -25,6 +26,9 @@ pub use hyper::header;
 pub use hyper::Result as HttpResult;
 pub use hyper::Error as HttpError;
 pub use hyper::version::HttpVersion;
+
+///Reexport `unicase` for convenience.
+pub use uni as unicase;
 
 pub use self::server::Server;
 pub use self::context::Context;
