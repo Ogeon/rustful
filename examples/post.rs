@@ -42,11 +42,7 @@ fn say_hello(mut context: Context, mut response: Response) {
 
     //Insert the content into the page and write it to the response
     let complete_page = files.page.replace("{}", &content);
-    if let Err(e) = response.into_writer().send(complete_page) {
-        //There is not much we can do now
-        context.log.note(&format!("could not send page: {}", e.description()));
-    }
-    
+    response.into_writer().send(complete_page);
 }
 
 //Dodge an ICE, related to functions as handlers.

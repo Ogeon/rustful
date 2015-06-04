@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
-use rustful::{Server, Context, Response, Handler, TreeRouter, Log};
+use rustful::{Server, Context, Response, Handler, TreeRouter};
 use rustful::Method::Get;
 use rustful::header::ContentType;
 
@@ -77,7 +77,7 @@ struct Counter {
 }
 
 impl Handler for Counter {
-    fn handle_request(&self, context: Context, mut response: Response) {
+    fn handle_request(&self, _context: Context, mut response: Response) {
         self.operation.map(|op| {
             //Lock the value for writing and update it
             let mut value = self.value.write().unwrap();
@@ -88,10 +88,6 @@ impl Handler for Counter {
 
         //Insert the value into the page and write it to the response
         let count = self.value.read().unwrap().to_string();
-
-        if let Err(e) = response.into_writer().send(self.page.replace("{}", &count[..])) {
-            //There is not much we can do now
-            context.log.note(&format!("could not send page: {}", e.description()));
-        }
+        response.into_writer().send(self.page.replace("{}", &count[..]));
     }
 }

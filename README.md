@@ -52,11 +52,8 @@ fn say_hello(context: Context, response: Response) {
         None => "stranger"
     };
 
-    //Use the value of the path variable to say hello.
-    if let Err(e) = response.into_writer().send(format!("Hello, {}!", person))  {
-        //There is not much we can do now
-        context.log.note(&format!("could not send hello: {}", e.description()));
-    }
+    //Use the name from the path variable to say hello.
+    response.into_writer().send(format!("Hello, {}!", person));
 }
 
 //Dodge an ICE, related to functions as handlers.

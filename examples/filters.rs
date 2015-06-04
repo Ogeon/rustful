@@ -22,8 +22,9 @@ fn say_hello(mut context: Context, mut response: Response) {
         None => "stranger"
     };
 
-    if let Err(e) = response.into_writer().send(format!("{{\"message\": \"Hello, {}!\"}}", person))  {
-        //There is not much we can do now
+    //Using `try_send` allows us to catch eventual errors from the filters.
+    //This example should not produce any errors, so this is only for show.
+    if let Err(e) = response.into_writer().try_send(format!("{{\"message\": \"Hello, {}!\"}}", person))  {
         context.log.note(&format!("could not send hello: {}", e.description()));
     }
 }

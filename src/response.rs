@@ -315,8 +315,18 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
         &mut self.filter_storage
     }
 
-    ///Writes response body data to the client.
-    pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<usize, Error> {
+    ///Write response body data to the client.
+    ///
+    ///Any errors that occures while writing the data will be ignored. Use
+    ///`try_send`, instead, to also get error information.
+    #[allow(unused_must_use)]
+    pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
+        self.try_send(content);
+    }
+
+    ///Write response body data to the client and receive the number of
+    ///written bytes, or any error that occured.
+    pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<usize, Error> {
         let mut writer = match self.writer {
             Some(Ok(ref mut writer)) => writer,
             None => return Err(Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),
@@ -365,7 +375,8 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
     ///Finish writing the response and collect eventual errors.
     ///
-    ///This is optional and will happen when the writer drops out of scope.
+    ///This is optional and will happen silently when the writer drops out of
+    ///scope.
     pub fn end(mut self) -> Result<(), Error> {
         self.finish()
     }
@@ -431,7 +442,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
 impl<'a, 'b> Write for ResponseWriter<'a, 'b> {
     fn write(&mut self, content: &[u8]) -> io::Result<usize> {
-        response_to_io_result(self.send(content))
+        response_to_io_result(self.try_send(content))
     }
 
     fn write_all(&mut self, content: &[u8]) -> io::Result<()> {
