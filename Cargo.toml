@@ -23,7 +23,7 @@ rustc_json_body = ["rustc-serialize"]
 hyper = "0.5"
 time = "0.1"
 url = "0.2"
-anymap = "0.10"
+anymap = "0.11"
 unicase = "0.1"
 
 [dependencies.rustc-serialize]

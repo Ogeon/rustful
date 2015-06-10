@@ -58,7 +58,10 @@ pub mod log;
 use std::path::Path;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::str::FromStr;
-use std::any::Any;
+use std::any::TypeId;
+
+use anymap::Map;
+use anymap::any::{Any, UncheckedAnyExt};
 
 ///HTTP or HTTPS.
 pub enum Scheme<'a> {
@@ -152,46 +155,145 @@ impl FromStr for Host {
     }
 }
 
-///Container for globally accessible data.
+///A somewhat lazy container for globally accessible data.
 ///
-///It should only be created using `Global::default()`/`Default::default()` or
-///`Box::new(v).into()`.
+///It will try to be as simple as possible and allocate as little as possible,
+///depending on the number of stored values.
+///
+/// * No value: Nothing is allocated and nothing is searched for during
+///access.
+///
+/// * One value: One `Box` is allocated. Searching for a value will only
+///consist of a comparison of `TypeId` and a downcast.
+///
+/// * Multiple values: An `AnyMap` is created, as well as a `Box` for each
+///value. Searching for a value has the full overhead of `AnyMap`.
+///
+///`Global` can be created from a boxed value, from tuples or using the
+///`Default` trait. More values can then be added using `insert(value)`.
 ///
 ///```
 ///# use rustful::Global;
-///let g: Global = Box::new(5).into();
-///assert_eq!(g.get(), Some(&5));
+///let mut g1: Global = Box::new(5).into();
+///assert_eq!(g1.get(), Some(&5));
+///assert_eq!(g1.get::<&str>(), None);
+///
+///let old = g1.insert(10);
+///assert_eq!(old, Some(5));
+///assert_eq!(g1.get(), Some(&10));
+///
+///g1.insert("cat");
+///assert_eq!(g1.get(), Some(&10));
+///assert_eq!(g1.get(), Some(&"cat"));
+///
+///let g2: Global = (5, "cat").into();
+///assert_eq!(g2.get(), Some(&5));
+///assert_eq!(g2.get(), Some(&"cat"));
 ///```
-///
-///Direct manipulation of its variants may cause an undesired state.
-///
-///_Note: This structure can currently only hold either one item or nothing.
-///A future version will be able to hold multiple items._
-pub enum Global {
-    #[doc(hidden)]
-    None,
-    #[doc(hidden)]
-    One(Box<Any + Send + Sync>),
-}
+pub struct Global(GlobalState);
 
 impl Global {
     ///Borrow a value of type `T` if the there is one.
     pub fn get<T: Any + Send + Sync>(&self) -> Option<&T> {
-        match self {
-            &Global::None => None,
-            &Global::One(ref a) => (&**a as &Any).downcast_ref(),
+        match self.0 {
+            GlobalState::None => None,
+            GlobalState::One(id, ref a) => if id == TypeId::of::<T>() {
+                //Here be dragons!
+                unsafe { Some(a.downcast_ref_unchecked()) }
+            } else {
+                None
+            },
+            GlobalState::Many(ref map) => map.get()
+        }
+    }
+
+    ///Insert a new value, returning the previous value of the same type, if
+    ///any.
+    pub fn insert<T: Any + Send + Sync>(&mut self, value: T) -> Option<T> {
+        match self.0 {
+            GlobalState::None => {
+                *self = Box::new(value).into();
+                None
+            },
+            GlobalState::One(id, _) => if id == TypeId::of::<T>() {
+                if let GlobalState::One(_, ref mut previous_value) = self.0 {
+                    let mut v = Box::new(value) as Box<Any + Send + Sync>;
+                    std::mem::swap(previous_value, &mut v);
+                    Some(unsafe { *v.downcast_unchecked() })
+                } else {
+                    unreachable!()
+                }
+            } else {
+                //Here be more dragons!
+                let mut other = GlobalState::Many(Map::new());
+                std::mem::swap(&mut self.0, &mut other);
+                if let GlobalState::Many(ref mut map) = self.0 {
+                    if let GlobalState::One(id, previous_value) = other {
+                        let mut raw = map.as_mut();
+                        unsafe { raw.insert(id, previous_value); }
+                    }
+
+                    map.insert(value)
+                } else {
+                    unreachable!()
+                }
+            },
+            GlobalState::Many(ref mut map) => {
+                map.insert(value)
+            }
         }
     }
 }
 
 impl<T: Any + Send + Sync> From<Box<T>> for Global {
     fn from(data: Box<T>) -> Global {
-        Global::One(data)
+        Global(GlobalState::One(TypeId::of::<T>(), data))
     }
 }
 
+macro_rules! from_tuple {
+    ($first: ident, $($t: ident),+) => (
+        impl<$first: Any + Send + Sync, $($t: Any + Send + Sync),+> From<($first, $($t),+)> for Global {
+            #[allow(non_snake_case)]
+            fn from(tuple: ($first, $($t),+))-> Global {
+                let ($first, $($t),+) = tuple;
+                let mut map = Map::new();
+                map.insert($first);
+                $(
+                    map.insert($t);
+                )+
+
+                Global(GlobalState::Many(map))
+            }
+        }
+
+        from_tuple!($($t),+);
+    );
+    ($ty: ident) => (
+        impl<$ty: Any + Send + Sync> From<($ty,)> for Global {
+            fn from(tuple: ($ty,)) -> Global {
+                Box::new(tuple.0).into()
+            }
+        }
+    );
+}
+
+impl From<()> for Global {
+    fn from(_: ()) -> Global {
+        Global(GlobalState::None)
+    }
+}
+
+from_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+
 impl Default for Global {
     fn default() -> Global {
-        Global::None
+        Global(GlobalState::None)
     }
+}
+
+enum GlobalState {
+    None,
+    One(TypeId, Box<Any + Send + Sync>),
+    Many(Map<Any + Send + Sync>),
 }
