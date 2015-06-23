@@ -12,7 +12,7 @@ install:
   - cmd: SET PATH=%PATH%;%RUST_INSTALL_DIR%\bin;C:\MINGW\bin\
   - rustc --version
   - cargo --version
-  - ps: Start-FileDownload "http://slproweb.com/download/Win32OpenSSL-1_0_2a.exe"
+  - ps: Start-FileDownload "http://slproweb.com/download/Win32OpenSSL-1_0_2c.exe"
   - cmd: Win32OpenSSL-1_0_2a.exe /silent /verysilent /sp- /suppressmsgboxes
   - cmd: SET OPENSSL_LIB_DIR=C:\OpenSSL-Win32
   - cmd: SET OPENSSL_INCLUDE_DIR=C:\OpenSSL-Win32\include
