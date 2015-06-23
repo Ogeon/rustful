@@ -42,7 +42,7 @@ Here is a simple example of what a simple project could look like. Visit
 Olivia) to try it.
 
 ```rust
-//Include macros to be able to use `inser_routes!`.
+//Include macros to be able to use `insert_routes!`.
 #[macro_use]
 extern crate rustful;
 

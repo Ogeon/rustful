@@ -1,4 +1,4 @@
-//Include macros to be able to use `inser_routes!`.
+//Include macros to be able to use `insert_routes!`.
 #[macro_use]
 extern crate rustful;
 
