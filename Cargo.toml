@@ -1,13 +1,13 @@
 [package]
 name = "rustful"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Erik Hedvall <hello@erikhedvall.nu>"]
-exclude = ["scripts/*", "examples/*", ".travis.yml", ".gitignore"]
-description = "A light web micro-framework with the ambition of being simple, modular and non-intrusive."
+exclude = ["scripts/*", "examples/*", ".travis.yml", "appveyor.yml", ".gitignore"]
+description = "A light web micro-framework with some REST-like features and the ambition of being simple, modular and non-intrusive."
 documentation = "http://ogeon.github.io/docs/rustful/master/rustful/index.html"
 repository = "https://github.com/Ogeon/rustful"
 readme = "README.md"
-keywords = ["web", "micro", "framework", "http", "routing"]
+keywords = ["web", "rest", "framework", "http", "routing"]
 license = "MIT"
 
 [lib]
