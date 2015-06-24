@@ -7,8 +7,16 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
-use rustful::{Server, Context, Response, Handler, TreeRouter};
+use rustful::{
+    Server,
+    Context,
+    Response,
+    Handler,
+    TreeRouter,
+    StatusCode
+};
 use rustful::Method::Get;
+use rustful::file_loader::{self, FileLoader};
 
 fn main() {
     println!("Visit http://localhost:8080 to try this example.");
@@ -21,21 +29,22 @@ fn main() {
 
     let router = insert_routes!{
         TreeRouter::new() => {
-            "/" => Get: Counter{
+            "/" => Get: Api::Counter {
                 page: page.clone(),
                 value: value.clone(),
                 operation: None
             },
-            "/add" => Get: Counter{
+            "/add" => Get: Api::Counter {
                 page: page.clone(),
                 value: value.clone(),
                 operation: Some(add)
             },
-            "/sub" => Get: Counter{
+            "/sub" => Get: Api::Counter {
                 page: page.clone(),
                 value: value.clone(),
                 operation: Some(sub)
-            }
+            },
+            "/res/:file" => Get: Api::File
         }
     };
 
@@ -68,24 +77,52 @@ fn read_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 }
 
 
-struct Counter {
-    //We are using the handler to preload the page in this exmaple
-    page: Arc<String>,
+enum Api {
+    Counter {
+        //We are using the handler to preload the page in this exmaple
+        page: Arc<String>,
 
-    value: Arc<RwLock<i32>>,
-    operation: Option<fn(i32) -> i32>
+        value: Arc<RwLock<i32>>,
+        operation: Option<fn(i32) -> i32>
+    },
+    File
 }
 
-impl Handler for Counter {
-    fn handle_request(&self, _context: Context, response: Response) {
-        self.operation.map(|op| {
-            //Lock the value for writing and update it
-            let mut value = self.value.write().unwrap();
-            *value = op(*value);
-        });
+impl Handler for Api {
+    fn handle_request(&self, context: Context, mut response: Response) {
+        match *self {
+            Api::Counter { ref page, ref value, ref operation }  => {
+                operation.map(|op| {
+                    //Lock the value for writing and update it
+                    let mut value = value.write().unwrap();
+                    *value = op(*value);
+                });
 
-        //Insert the value into the page and write it to the response
-        let count = self.value.read().unwrap().to_string();
-        response.into_writer().send(self.page.replace("{}", &count[..]));
+                //Insert the value into the page and write it to the response
+                let count = value.read().unwrap().to_string();
+                response.into_writer().send(page.replace("{}", &count[..]));
+            },
+            Api::File => {
+                if let Some(file) = context.variables.get("file") {
+                    //Make a full path from the file name and send it
+                    let path = format!("examples/handler_storage/{}", file);
+                    let res = FileLoader::new().send_file(&path, response);
+
+                    //Check if file could be opened
+                    if let Err(file_loader::Error::Open(e, mut response)) = res {
+                        if let io::ErrorKind::NotFound = e.kind() {
+                            response.set_status(StatusCode::NotFound);
+                        } else {
+                            //Something went horribly wrong
+                            context.log.error(&format!("failed to open '{}': {}", file, e.description()));
+                            response.set_status(StatusCode::InternalServerError);
+                        }
+                    }
+                } else {
+                    //No file name was specified
+                    response.set_status(StatusCode::Forbidden);
+                }
+            }
+        }
     }
 }
