@@ -5,14 +5,14 @@ use std::path::Path;
 use response::{Response, ResponseWriter};
 
 pub struct FileLoader {
-    ///The size, in bytes, of the file chunks. Default is 1024.
+    ///The size, in bytes, of the file chunks. Default is 1048576 (1 megabyte).
     pub chunk_size: usize
 }
 
 impl FileLoader {
     pub fn new() -> FileLoader {
         FileLoader {
-            chunk_size: 1024
+            chunk_size: 1048576
         }
     }
 
