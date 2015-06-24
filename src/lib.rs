@@ -21,6 +21,7 @@ extern crate time;
 extern crate hyper;
 extern crate anymap;
 extern crate unicase as uni;
+extern crate phf;
 
 pub use hyper::mime;
 pub use hyper::method::Method;
