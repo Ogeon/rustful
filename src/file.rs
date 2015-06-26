@@ -1,3 +1,5 @@
+//!File related utilities.
+
 use std::io::{self, Read};
 use std::fs::File;
 use std::path::Path;
@@ -58,6 +60,8 @@ impl<'a> Into<SubLevel> for &'a Sub {
     }
 }
 
+///A utility for loading files from the file system and sending them to the
+///client.
 pub struct Loader {
     ///The size, in bytes, of the file chunks. Default is 1048576 (1 megabyte).
     pub chunk_size: usize
@@ -70,6 +74,12 @@ impl Loader {
         }
     }
 
+    ///Send a file to the client.
+    ///
+    ///A MIME type is automatically applied to the response, based on the file
+    ///extension, and `application/octet-stream` is used as a fallback if the
+    ///extension is unknown. See [`ext_to_mime`](fn.ext_to_mime.html) for more
+    ///information.
     pub fn send_file<'a, 'b, P: AsRef<Path>>(&self, path: P, mut response: Response<'a, 'b>) -> Result<(), Error<'a, 'b>> {
         let path: &Path = path.as_ref();
         let mime = path
@@ -98,8 +108,11 @@ impl Loader {
     }
 }
 
+///Error types from `Loader`.
 pub enum Error<'a, 'b> {
+    ///Failed to open the file.
     Open(io::Error, Response<'a, 'b>),
+    ///Failed while reading the file.
     Read(io::Error, ResponseWriter<'a, 'b>)
 }
 
