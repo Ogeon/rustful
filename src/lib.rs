@@ -55,7 +55,7 @@ pub mod context;
 pub mod response;
 pub mod filter;
 pub mod log;
-pub mod file_loader;
+pub mod file;
 
 use std::path::Path;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};

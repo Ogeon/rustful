@@ -8,7 +8,23 @@ use header::ContentType;
 
 include!(concat!(env!("OUT_DIR"), "/mime.rs"));
 
-fn mime(ext: &str) -> Option<Mime> {
+///Returns the MIME type from a given file extension, if known.
+///
+///The file extension to MIME type mapping is based on [data from the Apache
+///server][apache].
+///
+///```
+///use rustful::file::ext_to_mime;
+///use rustful::mime::Mime;
+///use rustful::mime::TopLevel::Image;
+///use rustful::mime::SubLevel::Jpeg;
+///
+///let mime = ext_to_mime("jpg");
+///assert_eq!(mime, Some(Mime(Image, Jpeg, vec![])));
+///```
+///
+///[apache]: http://svn.apache.org/viewvc/httpd/httpd/trunk/docs/conf/mime.types?view=markup
+pub fn ext_to_mime(ext: &str) -> Option<Mime> {
     MIME.get(ext).map(|&(ref top, ref sub)| {
         Mime(top.into(), sub.into(), vec![])
     })
@@ -42,14 +58,14 @@ impl<'a> Into<SubLevel> for &'a Sub {
     }
 }
 
-pub struct FileLoader {
+pub struct Loader {
     ///The size, in bytes, of the file chunks. Default is 1048576 (1 megabyte).
     pub chunk_size: usize
 }
 
-impl FileLoader {
-    pub fn new() -> FileLoader {
-        FileLoader {
+impl Loader {
+    pub fn new() -> Loader {
+        Loader {
             chunk_size: 1048576
         }
     }
@@ -58,7 +74,7 @@ impl FileLoader {
         let path: &Path = path.as_ref();
         let mime = path
             .extension()
-            .and_then(|ext| mime(&ext.to_string_lossy()))
+            .and_then(|ext| ext_to_mime(&ext.to_string_lossy()))
             .unwrap_or(Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
 
         let mut file = match File::open(path) {

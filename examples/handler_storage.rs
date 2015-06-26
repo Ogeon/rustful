@@ -16,7 +16,7 @@ use rustful::{
     StatusCode
 };
 use rustful::Method::Get;
-use rustful::file_loader::{self, FileLoader};
+use rustful::file::{self, Loader};
 
 fn main() {
     println!("Visit http://localhost:8080 to try this example.");
@@ -106,10 +106,10 @@ impl Handler for Api {
                 if let Some(file) = context.variables.get("file") {
                     //Make a full path from the file name and send it
                     let path = format!("examples/handler_storage/{}", file);
-                    let res = FileLoader::new().send_file(&path, response);
+                    let res = Loader::new().send_file(&path, response);
 
                     //Check if file could be opened
-                    if let Err(file_loader::Error::Open(e, mut response)) = res {
+                    if let Err(file::Error::Open(e, mut response)) = res {
                         if let io::ErrorKind::NotFound = e.kind() {
                             response.set_status(StatusCode::NotFound);
                         } else {
