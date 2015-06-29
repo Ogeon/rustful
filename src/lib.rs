@@ -21,6 +21,7 @@ extern crate time;
 extern crate hyper;
 extern crate anymap;
 extern crate unicase as uni;
+extern crate phf;
 
 pub use hyper::mime;
 pub use hyper::method::Method;
@@ -54,6 +55,7 @@ pub mod context;
 pub mod response;
 pub mod filter;
 pub mod log;
+pub mod file;
 
 use std::path::Path;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};

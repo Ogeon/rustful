@@ -1,0 +1,35 @@
+html {
+	height: 100%;
+}
+
+body {
+	font-size: 500%;
+	height: 100%;
+	margin: 0;
+}
+
+div {
+	display: table;
+	height: 100%;
+	width: 100%;
+}
+
+span {
+	display: table-cell;
+	vertical-align: middle;
+	text-align: center;
+}
+
+a {
+	display: inline-block;
+	color: gray;
+	text-decoration: none;
+	width: 1.3em;
+	height: 1.3em;
+	padding: 0.2em;
+	border: 1px solid gray;
+}
+
+a:hover {
+	background: lightgray;
+}
