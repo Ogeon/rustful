@@ -1,6 +1,8 @@
 Rustful
 =======
 
+[![Join the chat at https://gitter.im/Ogeon/rustful](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/Ogeon/rustful?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 [![Build Status](https://travis-ci.org/Ogeon/rustful.png?branch=master)](https://travis-ci.org/Ogeon/rustful)
 [![Windows Build status](https://ci.appveyor.com/api/projects/status/6a95paoex0eptbgn/branch/master?svg=true)](https://ci.appveyor.com/project/Ogeon/rustful/branch/master)
 
