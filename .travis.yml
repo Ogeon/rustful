@@ -4,6 +4,10 @@ rust:
 os:
   - linux
   - osx
+branches:
+  only:
+    - master
+    - auto
 script:
   - cargo build -v
   - cargo build -v --no-default-features
