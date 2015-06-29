@@ -13,6 +13,7 @@ use hyper::server::Handler as HyperHandler;
 use hyper::header::{Date, ContentType, ContentLength};
 use hyper::mime::Mime;
 use hyper::uri::RequestUri;
+use hyper::net::Openssl;
 
 pub use hyper::server::Listening;
 
@@ -138,14 +139,24 @@ impl<'s, R: Router> Server<'s, R> {
         let threads = self.threads;
         let (server, scheme) = self.build();
         let host = server.host;
-        let http = match scheme {
-            Scheme::Http => hyper::server::Server::http(server),
-            Scheme::Https {cert, key} => hyper::server::Server::https(server, cert, key)
-        };
-
-        match threads {
-            Some(threads) => http.listen_threads(host, threads),
-            None => http.listen(host)
+        match scheme {
+            Scheme::Http => hyper::server::Server::http(host).and_then(|http| {
+                if let Some(threads) = threads {
+                    http.handle_threads(server, threads)
+                } else {
+                    http.handle(server)
+                }
+            }),
+            Scheme::Https {cert, key} => {
+                let ssl = try!(Openssl::with_cert_and_key(cert, key));
+                hyper::server::Server::https(host, ssl).and_then(|https| {
+                    if let Some(threads) = threads {
+                        https.handle_threads(server, threads)
+                    } else {
+                        https.handle(server)
+                    }
+                })
+            }
         }
     }
 

@@ -11,7 +11,7 @@ use std::string::{FromUtf8Error};
 use hyper;
 use hyper::header::{Headers, Header, HeaderFormat};
 use hyper::net::Fresh;
-use hyper::http::HttpWriter;
+use hyper::http::h1::HttpWriter;
 use hyper::version::HttpVersion;
 
 use anymap::AnyMap;

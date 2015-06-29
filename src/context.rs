@@ -9,7 +9,7 @@ use rustc_serialize::json;
 #[cfg(feature = "rustc_json_body")]
 use rustc_serialize::Decodable;
 
-use hyper::http::HttpReader;
+use hyper::http::h1::HttpReader;
 use hyper::net::NetworkStream;
 use hyper::buffer::BufReader;
 
