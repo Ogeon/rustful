@@ -32,33 +32,33 @@ pub fn gen() {
         let mut mime_type = or_continue!(parts.next()).split('/');
 
         let top: Cow<_> = match or_continue!(mime_type.next()) {
-            "*" => "Top::Known(::mime::TopLevel::Star)".into(),
-            "text" => "Top::Known(::mime::TopLevel::Text)".into(),
-            "image" => "Top::Known(::mime::TopLevel::Image)".into(),
-            "audio" => "Top::Known(::mime::TopLevel::Audio)".into(),
-            "video" => "Top::Known(::mime::TopLevel::Image)".into(),
-            "application" => "Top::Known(::mime::TopLevel::Application)".into(),
-            "multipart" => "Top::Known(::mime::TopLevel::Multipart)".into(),
-            "message" => "Top::Known(::mime::TopLevel::Message)".into(),
-            "model" => "Top::Known(::mime::TopLevel::Model)".into(),
-            top => format!("Top::Unknown(\"{}\")", top).into()
+            "*" => "MaybeKnown::Known(::mime::TopLevel::Star)".into(),
+            "text" => "MaybeKnown::Known(::mime::TopLevel::Text)".into(),
+            "image" => "MaybeKnown::Known(::mime::TopLevel::Image)".into(),
+            "audio" => "MaybeKnown::Known(::mime::TopLevel::Audio)".into(),
+            "video" => "MaybeKnown::Known(::mime::TopLevel::Image)".into(),
+            "application" => "MaybeKnown::Known(::mime::TopLevel::Application)".into(),
+            "multipart" => "MaybeKnown::Known(::mime::TopLevel::Multipart)".into(),
+            "message" => "MaybeKnown::Known(::mime::TopLevel::Message)".into(),
+            "model" => "MaybeKnown::Known(::mime::TopLevel::Model)".into(),
+            top => format!("MaybeKnown::Unknown(\"{}\")", top).into()
         };
 
         let sub: Cow<_> = match or_continue!(mime_type.next()) {
-            "*" => "Sub::Known(::mime::SubLevel::Star)".into(),
-            "plain" => "Sub::Known(::mime::SubLevel::Plain)".into(),
-            "html" => "Sub::Known(::mime::SubLevel::Html)".into(),
-            "xml" => "Sub::Known(::mime::SubLevel::Xml)".into(),
-            "javascript" => "Sub::Known(::mime::SubLevel::Javascript)".into(),
-            "css" => "Sub::Known(::mime::SubLevel::Css)".into(),
-            "json" => "Sub::Known(::mime::SubLevel::Json)".into(),
-            "www-form-url-encoded" => "Sub::Known(::mime::SubLevel::WwwFormUrlEncoded)".into(),
-            "form-data" => "Sub::Known(::mime::SubLevel::FormData)".into(),
-            "png" => "Sub::Known(::mime::SubLevel::Png)".into(),
-            "gif" => "Sub::Known(::mime::SubLevel::Gif)".into(),
-            "bmp" => "Sub::Known(::mime::SubLevel::Bmp)".into(),
-            "jpeg" => "Sub::Known(::mime::SubLevel::Jpeg)".into(),
-            sub => format!("Sub::Unknown(\"{}\")", sub).into()
+            "*" => "MaybeKnown::Known(::mime::SubLevel::Star)".into(),
+            "plain" => "MaybeKnown::Known(::mime::SubLevel::Plain)".into(),
+            "html" => "MaybeKnown::Known(::mime::SubLevel::Html)".into(),
+            "xml" => "MaybeKnown::Known(::mime::SubLevel::Xml)".into(),
+            "javascript" => "MaybeKnown::Known(::mime::SubLevel::Javascript)".into(),
+            "css" => "MaybeKnown::Known(::mime::SubLevel::Css)".into(),
+            "json" => "MaybeKnown::Known(::mime::SubLevel::Json)".into(),
+            "www-form-url-encoded" => "MaybeKnown::Known(::mime::SubLevel::WwwFormUrlEncoded)".into(),
+            "form-data" => "MaybeKnown::Known(::mime::SubLevel::FormData)".into(),
+            "png" => "MaybeKnown::Known(::mime::SubLevel::Png)".into(),
+            "gif" => "MaybeKnown::Known(::mime::SubLevel::Gif)".into(),
+            "bmp" => "MaybeKnown::Known(::mime::SubLevel::Bmp)".into(),
+            "jpeg" => "MaybeKnown::Known(::mime::SubLevel::Jpeg)".into(),
+            sub => format!("MaybeKnown::Unknown(\"{}\")", sub).into()
         };
 
         for ext in or_continue!(parts.next()).split(' ') {
@@ -66,7 +66,7 @@ pub fn gen() {
         }
     }
 
-    write!(&mut output, "static MIME: ::phf::Map<&'static str, (Top, Sub)> = ").unwrap();
+    write!(&mut output, "static MIME: ::phf::Map<&'static str, (MaybeKnown<TopLevel>, MaybeKnown<SubLevel>)> = ").unwrap();
     let mut mimes = ::phf_codegen::Map::new();
     for (ext, ty) in &types {
         mimes.entry(&ext[..], ty);

@@ -32,30 +32,25 @@ pub fn ext_to_mime(ext: &str) -> Option<Mime> {
     })
 }
 
-enum Top {
-    Known(TopLevel),
+enum MaybeKnown<T> {
+    Known(T),
     Unknown(&'static str)
 }
 
-impl<'a> Into<TopLevel> for &'a Top {
+impl<'a> Into<TopLevel> for &'a MaybeKnown<TopLevel> {
     fn into(self) -> TopLevel {
         match *self {
-            Top::Known(ref t) => t.clone(),
-            Top::Unknown(t) => TopLevel::Ext(t.into())
+            MaybeKnown::Known(ref t) => t.clone(),
+            MaybeKnown::Unknown(t) => TopLevel::Ext(t.into())
         }
     }
 }
 
-enum Sub {
-    Known(SubLevel),
-    Unknown(&'static str)
-}
-
-impl<'a> Into<SubLevel> for &'a Sub {
+impl<'a> Into<SubLevel> for &'a MaybeKnown<SubLevel> {
     fn into(self) -> SubLevel {
         match *self {
-            Sub::Known(ref s) => s.clone(),
-            Sub::Unknown(s) => SubLevel::Ext(s.into())
+            MaybeKnown::Known(ref s) => s.clone(),
+            MaybeKnown::Unknown(s) => SubLevel::Ext(s.into())
         }
     }
 }
