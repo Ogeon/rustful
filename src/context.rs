@@ -333,7 +333,8 @@ impl<'a, 'b> Read for BodyReader<'a, 'b> {
 
 ///Hypermedia connected to an API endpoint.
 pub struct Hypermedia<'a> {
-    ///Forward links from the current endpoint to other endpoints.
+    ///Forward links from the current endpoint to other endpoints. These may
+    ///include endpoints with the same path, but different method.
     pub links: Vec<Link<'a>>
 }
 
