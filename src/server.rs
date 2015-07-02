@@ -13,6 +13,7 @@ use hyper::server::Handler as HyperHandler;
 use hyper::header::{Date, ContentType, ContentLength};
 use hyper::mime::Mime;
 use hyper::uri::RequestUri;
+#[cfg(feature = "ssl")]
 use hyper::net::Openssl;
 
 pub use hyper::server::Listening;
@@ -58,7 +59,7 @@ use utils;
 ///    Err(e) => println!("could not start server: {}", e.description())
 ///}
 ///```
-pub struct Server<'s, R: Router> {
+pub struct Server<R: Router> {
     ///One or several response handlers.
     pub handlers: R,
 
@@ -72,7 +73,7 @@ pub struct Server<'s, R: Router> {
     pub host: Host,
 
     ///Use good old HTTP or the more secure HTTPS. Default is HTTP.
-    pub scheme: Scheme<'s>,
+    pub scheme: Scheme,
 
     ///The number of threads to be used in the server thread pool. The default
     ///(`None`) will cause the server to use a value based on recommendations
@@ -98,7 +99,7 @@ pub struct Server<'s, R: Router> {
     pub response_filters: Vec<Box<ResponseFilter>>
 }
 
-impl<'s, R: Router> Server<'s, R> {
+impl<R: Router> Server<R> {
     ///Set up a new standard server. This can be useful when `handlers`
     ///doesn't implement `Default`:
     ///
@@ -114,7 +115,7 @@ impl<'s, R: Router> Server<'s, R> {
     ///    ..Server::new(handler)
     ///};
     ///```
-    pub fn new(handlers: R) -> Server<'s, R> {
+    pub fn new(handlers: R) -> Server<R> {
         Server {
             handlers: handlers,
             fallback_handler: None,
@@ -135,6 +136,7 @@ impl<'s, R: Router> Server<'s, R> {
     }
 
     ///Start the server.
+    #[cfg(feature = "ssl")]
     pub fn run(self) -> HttpResult<Listening> {
         let threads = self.threads;
         let (server, scheme) = self.build();
@@ -160,8 +162,22 @@ impl<'s, R: Router> Server<'s, R> {
         }
     }
 
+    #[cfg(not(feature = "ssl"))]
+    pub fn run(self) -> HttpResult<Listening> {
+        let threads = self.threads;
+        let (server, _scheme) = self.build();
+        let host = server.host;
+        hyper::server::Server::http(host).and_then(|http| {
+            if let Some(threads) = threads {
+                http.handle_threads(server, threads)
+            } else {
+                http.handle(server)
+            }
+        })
+    }
+
     ///Build a runnable instance of the server.
-    pub fn build(self) -> (ServerInstance<R>, Scheme<'s>) {
+    pub fn build(self) -> (ServerInstance<R>, Scheme) {
         (ServerInstance {
             handlers: self.handlers,
             fallback_handler: self.fallback_handler,
@@ -177,8 +193,8 @@ impl<'s, R: Router> Server<'s, R> {
     }
 }
 
-impl<'s, R: Router + Default> Default for Server<'s, R> {
-    fn default() -> Server<'s, R> {
+impl<R: Router + Default> Default for Server<R> {
+    fn default() -> Server<R> {
         Server::new(R::default())
     }
 }
