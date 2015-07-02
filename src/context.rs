@@ -154,10 +154,7 @@ use log::Log;
 
 use Global;
 
-///A container for things like request data and cache.
-///
-///A `Context` can be dereferenced to a `BodyReader`, allowing direct access to
-///the underlying read methods.
+///A container for handler input, like request data and utilities.
 pub struct Context<'a, 'b: 'a, 's> {
     ///Headers from the HTTP request.
     pub headers: Headers,
