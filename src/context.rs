@@ -77,21 +77,37 @@ impl<'a, 'b> BodyReader<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Read for BodyReader<'a, 'b> {
-    ///Read the request body.
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.request.read(buf)
-    }
-}
-
 ///`BodyReader` extension for reading and parsing a query string.
+///
+///Examples and more information can be found in [the documentation for
+///`BodyReader`][body_reader].
+///
+///[body_reader]: struct.BodyReader.html
 pub trait ExtQueryBody {
     fn read_query_body(&mut self) -> io::Result<HashMap<String, String>>;
 }
 
 impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
-    ///Read and parse the request body as a query string.
-    ///The body will be decoded as UTF-8 and plain '+' characters will be replaced with spaces.
+    ///Read and parse the request body as a query string. The body will be
+    ///decoded as UTF-8 and plain '+' characters will be replaced with spaces.
+    ///
+    ///A simplified example of how to parse `a=number&b=number`:
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///use rustful::context::ExtQueryBody;
+    ///
+    ///fn my_handler(mut context: Context, response: Response) {
+    ///    //Parse the request body as a query string
+    ///    let query = context.body.read_query_body().unwrap();
+    ///
+    ///    //Find "a" and "b" and assume that they are numbers
+    ///    let a: f64 = query.get("a").and_then(|number| number.parse().ok()).unwrap();
+    ///    let b: f64 = query.get("b").and_then(|number| number.parse().ok()).unwrap();
+    ///
+    ///    response.into_writer().send(format!("{} + {} = {}", a, b, a + b));
+    ///}
+    ///```
     #[inline]
     fn read_query_body(&mut self) -> io::Result<HashMap<String, String>> {
         let mut buf = Vec::new();
@@ -103,22 +119,72 @@ impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
 ///`BodyReader` extension for reading and parsing a JSON body.
 ///
 ///It is available by default and can be toggled using the `rustc_json_body`
-///feature.
+///feature. Examples and more information can be found in [the documentation
+///for `BodyReader`][body_reader].
+///
+///[body_reader]: struct.BodyReader.html
 #[cfg(feature = "rustc_json_body")]
 pub trait ExtJsonBody {
-    ///Read the body into a JSON structure.
+    ///Read the request body into a JSON structure.
     fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError>;
 
-    ///Parse and decode the body as some type `T`.
+    ///Parse and decode the request body as some type `T`.
     fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T>;
 }
 
 #[cfg(feature = "rustc_json_body")]
 impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
+    ///Read the request body into a generic JSON structure. This structure can
+    ///then be navigated and parsed freely.
+    ///
+    ///A simplified example of how to parse `{ "a": number, "b": number }`:
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///use rustful::context::ExtJsonBody;
+    ///
+    ///fn my_handler(mut context: Context, response: Response) {
+    ///    //Parse the request body as JSON
+    ///    let json = context.body.read_json_body().unwrap();
+    ///
+    ///    //Find "a" and "b" in the root object and assume that they are numbers
+    ///    let a = json.find("a").and_then(|number| number.as_f64()).unwrap();
+    ///    let b = json.find("b").and_then(|number| number.as_f64()).unwrap();
+    ///
+    ///    response.into_writer().send(format!("{} + {} = {}", a, b, a + b));
+    ///}
+    ///```
     fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError> {
         json::Json::from_reader(self)
     }
 
+    ///Read and decode a request body as a type `T`. The target type must
+    ///implement `rustc_serialize::Decodable`.
+    ///
+    ///A simplified example of how to parse `{ "a": number, "b": number }`:
+    ///
+    ///```
+    ///extern crate rustful;
+    ///extern crate rustc_serialize;
+    ///
+    ///use rustful::{Context, Response};
+    ///use rustful::context::ExtJsonBody;
+    ///
+    ///#[derive(RustcDecodable)]
+    ///struct Foo {
+    ///    a: f64,
+    ///    b: f64
+    ///}
+    ///
+    ///fn my_handler(mut context: Context, response: Response) {
+    ///    //Decode a JSON formatted request body into Foo
+    ///    let foo: Foo = context.body.decode_json_body().unwrap();
+    ///
+    ///    let res = format!("{} + {} = {}", foo.a, foo.b, foo.a + foo.b);
+    ///    response.into_writer().send(res);
+    ///}
+    ///# fn main() {}
+    ///```
     fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T> {
         let mut buf = String::new();
         try!(self.read_to_string(&mut buf).map_err(|e| {
@@ -126,6 +192,13 @@ impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
             json::DecoderError::ParseError(parse_err)
         }));
         json::decode(&buf)
+    }
+}
+
+impl<'a, 'b> Read for BodyReader<'a, 'b> {
+    ///Read the request body.
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.request.read(buf)
     }
 }
 
