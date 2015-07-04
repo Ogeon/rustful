@@ -83,11 +83,11 @@ fn main() {
         handlers: insert_routes!{
             TreeRouter::new() => {
                 //Handle requests for root...
-                "/" => Get: HandlerFn(say_hello),
+                Get: HandlerFn(say_hello),
 
                 //...and one level below.
                 //`:person` is a path variable and it will be accessible in the handler.
-                "/:person" => Get: HandlerFn(say_hello)
+                ":person" => Get: HandlerFn(say_hello)
             }
         },
 

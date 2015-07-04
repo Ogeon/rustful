@@ -25,11 +25,11 @@
 ///# let show_welcome = DummyHandler;
 ///let router = insert_routes! {
 ///    TreeRouter::new() => {
+///        "/" => Get: show_welcome,
 ///        "/about" => Get: about_us,
 ///        "/user/:user" => Get: show_user,
 ///        "/product/:name" => Get: show_product,
-///        "/*" => Get: show_error,
-///        "/" => Get: show_welcome
+///        "/*" => Get: show_error
 ///    }
 ///};
 ///# }
@@ -62,20 +62,21 @@
 ///
 ///insert_routes! {
 ///    &mut router => {
-///        "/" => Get: show_home,
+///        Get: show_home,
+///
 ///        "home" => Get: show_home,
 ///        "user/:username" => {
-///            "/" => Get: show_user,
-///            "/" => Post: save_user
+///            Get: show_user,
+///            Post: save_user
 ///        },
 ///        "product" => {
-///            "/" => Get: show_all_products,
+///            Get: show_all_products,
 ///
 ///            "json" => Get: send_all_product_data,
 ///            ":id" => {
-///                "/" => Get: show_product,
-///                "/" => Post: edit_product,
-///                "/" => Delete: edit_product,
+///                Get: show_product,
+///                Post: edit_product,
+///                Delete: edit_product,
 ///
 ///                "json" => Get: send_product_data
 ///            }
@@ -106,22 +107,44 @@ macro_rules! __rustful_insert_internal {
             __rustful_insert_internal!($router, [$($steps),*], $($next)*);
         }
     };
-    ($router:ident, [$($steps:expr),*], $path:expr => {$($paths:tt)+}) => {
+    ($router:ident, [$($steps:expr),*], $path:tt => {$($paths:tt)+}) => {
         {
-            __rustful_insert_internal!($router, [$($steps,)* $path], $($paths)*);
+            __rustful_insert_internal!($router, [$($steps,)* __rustful_to_expr!($path)], $($paths)*);
         }
     };
-    ($router:ident, [$($steps:expr),*], $path:expr => $method:path: $handler:expr, $($next:tt)*) => {
+    ($router:ident, [$($steps:expr),*], $($method:tt)::+: $handler:expr, $($next:tt)*) => {
         {
-            $router.insert($method, &[$($steps,)* $path][..], $handler);
+            let path = __rustful_route_expr!($($steps),*);
+            $router.insert(__rustful_to_path!($($method)::+), path, $handler);
             __rustful_insert_internal!($router, [$($steps),*], $($next)*)
         }
     };
-    ($router:ident, [$($steps:expr),*], $path:expr => $method:path: $handler:expr) => {
+    ($router:ident, [$($steps:expr),*], $path:tt => $method:path: $handler:expr, $($next:tt)*) => {
         {
-            $router.insert($method, &[$($steps,)* $path][..], $handler);
+            let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
+            $router.insert($method, path, $handler);
+            __rustful_insert_internal!($router, [$($steps),*], $($next)*)
         }
     };
+    ($router:ident, [$($steps:expr),*], $($method:tt)::+: $handler:expr) => {
+        {
+            let path = __rustful_route_expr!($($steps),*);
+            $router.insert(__rustful_to_path!($($method)::+), path, $handler);
+        }
+    };
+    ($router:ident, [$($steps:expr),*], $path:tt => $method:path: $handler:expr) => {
+        {
+            let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
+            $router.insert($method, path, $handler);
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __rustful_route_expr {
+    () => ("");
+    ($($path:expr),+) => (&[$($path),+][..]);
 }
 
 /**
@@ -227,6 +250,12 @@ macro_rules! content_type {
 #[macro_export]
 macro_rules! __rustful_to_expr {
     ($e: expr) => ($e)
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __rustful_to_path {
+    ($e: path) => ($e)
 }
 
 use std::str::FromStr;

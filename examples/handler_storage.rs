@@ -29,22 +29,22 @@ fn main() {
 
     let router = insert_routes!{
         TreeRouter::new() => {
-            "/" => Get: Api::Counter {
+            Get: Api::Counter {
                 page: page.clone(),
                 value: value.clone(),
                 operation: None
             },
-            "/add" => Get: Api::Counter {
+            "add" => Get: Api::Counter {
                 page: page.clone(),
                 value: value.clone(),
                 operation: Some(add)
             },
-            "/sub" => Get: Api::Counter {
+            "sub" => Get: Api::Counter {
                 page: page.clone(),
                 value: value.clone(),
                 operation: Some(sub)
             },
-            "/res/:file" => Get: Api::File
+            "res/:file" => Get: Api::File
         }
     };
 

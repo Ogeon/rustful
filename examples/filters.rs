@@ -46,7 +46,7 @@ fn main() {
     insert_routes!{
         &mut router => {
             "print" => {
-                "/" => Get: HandlerFn(say_hello),
+                Get: HandlerFn(say_hello),
                 ":person" => Get: HandlerFn(say_hello)
             }
         }
