@@ -101,6 +101,7 @@ macro_rules! insert_routes {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __rustful_insert_internal {
+    ($router:ident, [$($steps:expr),*],$(,)*) => {{}};
     ($router:ident, [$($steps:expr),*], $path:expr => {$($paths:tt)+}, $($next:tt)*) => {
         {
             __rustful_insert_internal!($router, [$($steps,)* $path], $($paths)*);
