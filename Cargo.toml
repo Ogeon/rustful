@@ -1,6 +1,6 @@
 [package]
 name = "rustful"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Erik Hedvall <hello@erikhedvall.nu>"]
 exclude = ["scripts/*", "examples/*", ".travis.yml", "appveyor.yml", ".gitignore"]
 description = "A light web micro-framework with some REST-like features and the ambition of being simple, modular and non-intrusive."
