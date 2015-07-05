@@ -51,7 +51,6 @@ extern crate rustful;
 use std::error::Error;
 
 use rustful::{Server, Context, Response, TreeRouter, Handler};
-use rustful::Method::Get;
 
 fn say_hello(context: Context, response: Response) {
     //Get the value of the path variable `:person`, from below.

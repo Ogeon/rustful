@@ -15,7 +15,6 @@ use rustful::{
     TreeRouter,
     StatusCode
 };
-use rustful::Method::Get;
 use rustful::file::{self, Loader};
 
 fn main() {

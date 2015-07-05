@@ -10,8 +10,8 @@
 ///```rust
 ///#[macro_use]
 ///extern crate rustful;
-///use rustful::Method::Get;
-///# use rustful::{Handler, Context, Response, TreeRouter};
+///use rustful::TreeRouter;
+///# use rustful::{Handler, Context, Response};
 ///
 ///# struct DummyHandler;
 ///# impl Handler for DummyHandler {
@@ -40,8 +40,8 @@
 ///```rust
 ///#[macro_use]
 ///extern crate rustful;
-///use rustful::Method::{Get, Post, Delete};
-///# use rustful::{Handler, Context, Response, TreeRouter};
+///use rustful::TreeRouter;
+///# use rustful::{Handler, Context, Response};
 ///
 ///# #[derive(Clone, Copy)]
 ///# struct DummyHandler;
@@ -114,28 +114,48 @@ macro_rules! __rustful_insert_internal {
     };
     ($router:ident, [$($steps:expr),*], $($method:tt)::+: $handler:expr, $($next:tt)*) => {
         {
+            let method = {
+                #[allow(unused_imports)]
+                use $crate::Method::*;
+                __rustful_to_path!($($method)::+)
+            };
             let path = __rustful_route_expr!($($steps),*);
-            $router.insert(__rustful_to_path!($($method)::+), path, $handler);
+            $router.insert(method, path, $handler);
             __rustful_insert_internal!($router, [$($steps),*], $($next)*)
         }
     };
     ($router:ident, [$($steps:expr),*], $path:tt => $method:path: $handler:expr, $($next:tt)*) => {
         {
+            let method = {
+                #[allow(unused_imports)]
+                use $crate::Method::*;
+                $method
+            };
             let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
-            $router.insert($method, path, $handler);
+            $router.insert(method, path, $handler);
             __rustful_insert_internal!($router, [$($steps),*], $($next)*)
         }
     };
     ($router:ident, [$($steps:expr),*], $($method:tt)::+: $handler:expr) => {
         {
+            let method = {
+                #[allow(unused_imports)]
+                use $crate::Method::*;
+                __rustful_to_path!($($method)::+)
+            };
             let path = __rustful_route_expr!($($steps),*);
-            $router.insert(__rustful_to_path!($($method)::+), path, $handler);
+            $router.insert(method, path, $handler);
         }
     };
     ($router:ident, [$($steps:expr),*], $path:tt => $method:path: $handler:expr) => {
         {
+            let method = {
+                #[allow(unused_imports)]
+                use $crate::Method::*;
+                $method
+            };
             let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
-            $router.insert($method, path, $handler);
+            $router.insert(method, path, $handler);
         }
     };
 }

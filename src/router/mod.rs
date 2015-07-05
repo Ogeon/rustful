@@ -8,7 +8,6 @@
 //!```
 //!#[macro_use]
 //!extern crate rustful;
-//!use rustful::Method::Get;
 //!use rustful::TreeRouter;
 //!# use rustful::{Handler, Context, Response};
 //!
