@@ -57,7 +57,6 @@ pub mod filter;
 pub mod log;
 pub mod file;
 
-use std::path::Path;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::str::FromStr;
 use std::any::TypeId;
@@ -66,17 +65,18 @@ use anymap::Map;
 use anymap::any::{Any, UncheckedAnyExt};
 
 ///HTTP or HTTPS.
-pub enum Scheme<'a> {
+pub enum Scheme {
     ///Standard HTTP.
     Http,
 
     ///HTTP with SSL encryption.
+    #[cfg(feature = "ssl")]
     Https {
         ///Path to SSL certificate.
-        cert: &'a Path,
+        cert: std::path::PathBuf,
 
         ///Path to key file.
-        key: &'a Path
+        key: std::path::PathBuf
     }
 }
 
