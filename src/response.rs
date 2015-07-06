@@ -9,10 +9,7 @@ use std::str::{from_utf8, Utf8Error};
 use std::string::{FromUtf8Error};
 
 use hyper;
-use hyper::header::{Headers, Header, HeaderFormat};
-use hyper::net::Fresh;
-use hyper::http::h1::HttpWriter;
-use hyper::version::HttpVersion;
+use hyper::header::{Header, HeaderFormat};
 
 use anymap::AnyMap;
 
@@ -135,12 +132,7 @@ impl<'a> Into<Data<'a>> for &'a str {
 
 ///An interface for setting HTTP status code and response headers, before data gets written to the client.
 pub struct Response<'a, 'b> {
-    headers: Option<&'a mut Headers>,
-
-    status: Option<StatusCode>,
-
-    version: Option<HttpVersion>,
-    writer: Option<HttpWriter<&'a mut (io::Write + 'a)>>,
+    writer: Option<hyper::server::response::Response<'a>>,
     filters: &'b Vec<Box<ResponseFilter>>,
     log: &'b (Log + 'b),
     global: &'b Global,
@@ -154,12 +146,8 @@ impl<'a, 'b> Response<'a, 'b> {
         log: &'b Log,
         global: &'b Global
     ) -> Response<'a, 'b> {
-        let (version, writer, status, headers) = response.deconstruct();
         Response {
-            headers: Some(headers),
-            status: Some(status),
-            version: Some(version),
-            writer: Some(writer),
+            writer: Some(response),
             filters: filters,
             log: log,
             global: global,
@@ -169,19 +157,21 @@ impl<'a, 'b> Response<'a, 'b> {
 
     ///Set HTTP status code. Ok (200) is default.
     pub fn set_status(&mut self, status: StatusCode) {
-        self.status = Some(status);
+        if let Some(ref mut writer) = self.writer {
+            *writer.status_mut() = status;
+        }
     }
 
     ///Set a HTTP response header. Date, content type (text/plain) and server is automatically set.
     pub fn set_header<H: Header + HeaderFormat>(&mut self, header: H) {
-        if let Some(ref mut headers) = self.headers {
-            headers.set(header);
+        if let Some(ref mut writer) = self.writer {
+            writer.headers_mut().set(header);
         }
     }
 
     ///Get a HTTP response header if set.
     pub fn get_header<H: Header + HeaderFormat>(&self) -> Option<&H> {
-        self.headers.as_ref().and_then(|h| h.get::<H>())
+        self.writer.as_ref().and_then(|w| w.headers().get())
     }
 
     ///Mutably borrow the filter storage. It can be used to communicate with
@@ -200,13 +190,14 @@ impl<'a, 'b> Response<'a, 'b> {
 
     fn make_writer(&mut self) -> ResponseWriter<'a, 'b> {
         let mut write_queue = Vec::new();
-        let mut header_result = (self.status.take().unwrap(), self.headers.take().unwrap(), Action::Next(None));
+        let mut writer = self.writer.take().expect("response used after drop");
+        let mut header_result = (writer.status(), Action::Next(None));
 
         for filter in self.filters {
             header_result = match header_result {
-                (_, _, Action::SilentAbort) => break,
-                (_, _, Action::Abort(_)) => break,
-                (status, headers, r) => {
+                (_, Action::SilentAbort) => break,
+                (_, Action::Abort(_)) => break,
+                (status, r) => {
                     write_queue.push(r);
 
                     let filter_res = {
@@ -215,11 +206,11 @@ impl<'a, 'b> Response<'a, 'b> {
                             log: self.log,
                             global: self.global,
                         };
-                        filter.begin(filter_context, status, headers)
+                        filter.begin(filter_context, status, writer.headers_mut())
                     };
 
                     match filter_res {
-                        (status, Action::Abort(e)) => (status, headers, Action::Abort(e)),
+                        (status, Action::Abort(e)) => (status, Action::Abort(e)),
                         (status, result) => {
                             let mut error = None;
                             
@@ -240,8 +231,8 @@ impl<'a, 'b> Response<'a, 'b> {
                             }).collect();
 
                             match error {
-                                Some(e) => (status, headers, Action::Abort(e)),
-                                None => (status, headers, result)
+                                Some(e) => (status, Action::Abort(e)),
+                                None => (status, result)
                             }
                         }
                     }
@@ -250,14 +241,12 @@ impl<'a, 'b> Response<'a, 'b> {
         }
 
         let writer = match header_result {
-            (_, _, Action::Abort(e)) => Err(Error::Filter(e)),
-            (status, headers, last_result) => {
+            (_, Action::Abort(e)) => Err(Error::Filter(e)),
+            (status, last_result) => {
                 write_queue.push(last_result);
 
-                let version = self.version.take().unwrap();
-                let writer = self.writer.take().unwrap();
-                let writer = hyper::server::response::Response::<Fresh>::construct(version, writer, status, headers).start();
-                let mut writer = match writer {
+                *writer.status_mut() = status;
+                let mut writer = match writer.start() {
                     Ok(writer) => Ok(writer),
                     Err(e) => Err(Error::Io(e))
                 };
