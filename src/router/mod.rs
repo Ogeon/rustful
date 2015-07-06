@@ -3,12 +3,11 @@
 //!Rustful provides a tree structured all-round router called `TreeRouter`,
 //!but any other type of router can be used, as long as it implements the
 //!`Router` trait. This will also make it possible to initialize it using the
-//!`insert_routes!` macro:
+//![`insert_routes!`][insert_routes] macro:
 //!
 //!```
 //!#[macro_use]
 //!extern crate rustful;
-//!use rustful::Method::Get;
 //!use rustful::TreeRouter;
 //!# use rustful::{Handler, Context, Response};
 //!
@@ -24,19 +23,19 @@
 //!# let list_products = DummyHandler;
 //!# let show_error = DummyHandler;
 //!# let show_welcome = DummyHandler;
-//!let router = insert_routes!{
+//!let router = insert_routes! {
 //!    TreeRouter::new() => {
-//!        "/about" => Get: about_us,
-//!        "/users" => {
-//!            "/" => Get: list_users,
+//!        Get: show_welcome,
+//!        "about" => Get: about_us,
+//!        "users" => {
+//!            Get: list_users,
 //!            ":id" => Get: show_user
 //!        },
-//!        "/products" => {
-//!            "/" => Get: list_products,
+//!        "products" => {
+//!            Get: list_products,
 //!            ":id" => Get: show_product
 //!        },
-//!        "/*" => Get: show_error,
-//!        "/" => Get: show_welcome
+//!        "*" => Get: show_error
 //!    }
 //!};
 //!# }
@@ -69,15 +68,17 @@
 //!# let show_welcome = DummyHandler;
 //!let mut router = TreeRouter::new();
 //!
+//!router.insert(Get, "/", show_welcome);
 //!router.insert(Get, "/about", about_us);
 //!router.insert(Get, "/users", list_users);
 //!router.insert(Get, "/users/:id", show_user);
 //!router.insert(Get, "/products", list_products);
 //!router.insert(Get, "/products/:id", show_product);
 //!router.insert(Get, "/*", show_error);
-//!router.insert(Get, "/", show_welcome);
 //!# }
 //!```
+//!
+//![insert_routes]: ../macro.insert_routes!.html
 
 use std::collections::HashMap;
 use std::iter::{Iterator, FlatMap};

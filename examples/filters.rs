@@ -7,7 +7,6 @@ use std::error::Error;
 use rustful::{Server, TreeRouter, Context, Response, Log, Handler};
 use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilter, ContextAction};
 use rustful::response::Data;
-use rustful::Method::Get;
 use rustful::StatusCode;
 use rustful::header::Headers;
 
@@ -46,7 +45,7 @@ fn main() {
     insert_routes!{
         &mut router => {
             "print" => {
-                "/" => Get: HandlerFn(say_hello),
+                Get: HandlerFn(say_hello),
                 ":person" => Get: HandlerFn(say_hello)
             }
         }
