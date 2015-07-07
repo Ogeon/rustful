@@ -19,10 +19,9 @@
 //!
 //!fn my_handler(context: Context, response: Response) {
 //!    if let Some(&UserAgent(ref user_agent)) = context.headers.get() {
-//!        let res = format!("got user agent string \"{}\"", user_agent);
-//!        response.into_writer().send(res);
+//!        response.send_only(format!("got user agent string \"{}\"", user_agent));
 //!    } else {
-//!        response.into_writer().send("no user agent string provided");
+//!        response.send_only("no user agent string provided");
 //!    }
 //!}
 //!```
@@ -38,12 +37,11 @@
 //!
 //!fn my_handler(context: Context, response: Response) {
 //!    if let Some(id) = context.variables.get("id") {
-//!        let res = format!("asking for product with id \"{}\"", id);
-//!        response.into_writer().send(res);
+//!        response.send_only(format!("asking for product with id \"{}\"", id));
 //!    } else {
 //!        //This will usually not happen, unless the handler is also
 //!        //assigned to a path without the `id` variable
-//!        response.into_writer().send("no id provided");
+//!        response.send_only("no id provided");
 //!    }
 //!}
 //!```
@@ -72,7 +70,7 @@
 //!
 //!fn my_handler(context: Context, mut response: Response) {
 //!    match something_that_may_fail() {
-//!        Ok(res) => response.into_writer().send(res),
+//!        Ok(res) => response.send_only(res),
 //!        Err(e) => {
 //!            context.log.error(&format!("it failed! {}", e));
 //!            response.set_status(InternalServerError);
@@ -96,8 +94,7 @@
 //!
 //!fn my_handler(context: Context, mut response: Response) {
 //!    if let Some(some_wise_words) = context.global.get::<&str>() {
-//!        let res = format!("food for thought: {}", some_wise_words);
-//!        response.into_writer().send(res);
+//!        response.send_only(format!("food for thought: {}", some_wise_words));
 //!    } else {
 //!        context.log.error("there should be a string literal in `global`");
 //!        response.set_status(InternalServerError);
@@ -234,7 +231,7 @@ impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
     ///    let a: f64 = query.get("a").and_then(|number| number.parse().ok()).unwrap();
     ///    let b: f64 = query.get("b").and_then(|number| number.parse().ok()).unwrap();
     ///
-    ///    response.into_writer().send(format!("{} + {} = {}", a, b, a + b));
+    ///    response.send_only(format!("{} + {} = {}", a, b, a + b));
     ///}
     ///```
     #[inline]
@@ -280,7 +277,7 @@ impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
     ///    let a = json.find("a").and_then(|number| number.as_f64()).unwrap();
     ///    let b = json.find("b").and_then(|number| number.as_f64()).unwrap();
     ///
-    ///    response.into_writer().send(format!("{} + {} = {}", a, b, a + b));
+    ///    response.send_only(format!("{} + {} = {}", a, b, a + b));
     ///}
     ///```
     fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError> {
@@ -309,8 +306,7 @@ impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
     ///    //Decode a JSON formatted request body into Foo
     ///    let foo: Foo = context.body.decode_json_body().unwrap();
     ///
-    ///    let res = format!("{} + {} = {}", foo.a, foo.b, foo.a + foo.b);
-    ///    response.into_writer().send(res);
+    ///    response.send_only(format!("{} + {} = {}", foo.a, foo.b, foo.a + foo.b));
     ///}
     ///# fn main() {}
     ///```

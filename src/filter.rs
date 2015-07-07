@@ -35,6 +35,7 @@ pub trait ContextFilter: Send + Sync {
 }
 
 ///The result from a context filter.
+#[derive(Clone)]
 pub enum ContextAction {
     ///Continue to the next filter in the stack.
     Next,
@@ -70,6 +71,7 @@ pub trait ResponseFilter: Send + Sync {
 }
 
 ///The result from a response filter.
+#[derive(Clone)]
 pub enum ResponseAction<'a> {
     ///Continue to the next filter and maybe write data.
     Next(Option<Data<'a>>),

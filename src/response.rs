@@ -9,7 +9,8 @@ use std::str::{from_utf8, Utf8Error};
 use std::string::{FromUtf8Error};
 
 use hyper;
-use hyper::header::{Header, HeaderFormat};
+
+use header::{Headers, Header, HeaderFormat};
 
 use anymap::AnyMap;
 
@@ -63,6 +64,7 @@ impl error::Error for Error {
 }
 
 ///Unified representation of response data.
+#[derive(Clone)]
 pub enum Data<'a> {
     ///Data in byte form.
     Bytes(Cow<'a, [u8]>),
@@ -180,91 +182,115 @@ impl<'a, 'b> Response<'a, 'b> {
         self.filter_storage.as_mut().expect("response used after drop")
     }
 
+    ///Send data to the client and finish the response. This is the preferred
+    ///way if the length of the data is known, and it's more optimal than a
+    ///chunked response.
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    response.send_only("hello");
+    ///}
+    ///```
+    #[allow(unused_must_use)]
+    pub fn send_only<'d, Content: Into<Data<'d>>>(self, content: Content) {
+        self.try_send_only(content);
+    }
+
+    ///Try to send data to the client and finish the response. This is the
+    ///same as `send_only`, but errors are not ignored.
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///use rustful::response::Error;
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    if let Err(Error::Filter(e)) = response.try_send_only("hello") {
+    ///        context.log.note(&format!("a filter failed: {}", e));
+    ///    }
+    ///}
+    ///```
+    pub fn try_send_only<'d, Content: Into<Data<'d>>>(mut self, content: Content) -> Result<(), Error> {
+        self.send_sized(content)
+    }
+
+    fn send_sized<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<(), Error> {
+        let mut writer = self.writer.take().expect("response used after drop");
+        let mut filter_storage = self.filter_storage.take().expect("response used after drop");
+
+        if self.filters.is_empty() {
+            writer.send(content.into().as_bytes()).map_err(|e| e.into())
+        } else {
+            let mut buffer = vec![];
+
+            let (status, write_queue) = try!(filter_headers(
+                self.filters,
+                writer.status(),
+                writer.headers_mut(),
+                self.log,
+                self.global,
+                &mut filter_storage
+            ));
+            *writer.status_mut() = status;
+            for action in write_queue {
+                match action {
+                    Action::Next(Some(content)) => try!(buffer.write_all(content.as_bytes())),
+                    Action::Next(None) => {},
+                    Action::Abort(e) => return Err(Error::Filter(e)),
+                    Action::SilentAbort => break
+                }
+            }
+
+            let filter_result = filter_content(self.filters, content, self.log, self.global, &mut filter_storage);
+            match filter_result {
+                Action::Next(Some(content)) => try!(buffer.write_all(content.as_bytes())),
+                Action::Abort(e) => return Err(Error::Filter(e)),
+                _ => {}
+            }
+
+            let write_queue = try!(filter_end(self.filters, self.log, self.global, &mut filter_storage));
+            for action in write_queue {
+                match action {
+                    Action::Next(Some(content)) => try!(buffer.write_all(content.as_bytes())),
+                    Action::Next(None) => {},
+                    Action::Abort(e) => return Err(Error::Filter(e)),
+                    Action::SilentAbort => break
+                }
+            }
+            
+            writer.send(&buffer).map_err(|e| e.into())
+        }
+    }
+
     ///Turn the `Response` into a `ResponseWriter` to allow the response body to be written.
     ///
     ///Status code and headers will be written to the client and `ResponseFilter::begin()`
     ///will be called on the registered response filters.
     pub fn into_writer(mut self) -> ResponseWriter<'a, 'b> {
-        self.make_writer()
-    }
-
-    fn make_writer(&mut self) -> ResponseWriter<'a, 'b> {
-        let mut write_queue = Vec::new();
         let mut writer = self.writer.take().expect("response used after drop");
-        let mut header_result = (writer.status(), Action::Next(None));
+        let writer = filter_headers(
+            self.filters,
+            writer.status(),
+            writer.headers_mut(),
+            self.log,
+            self.global,
+            self.filter_storage()
+        ).and_then(|(status, write_queue)|{
+            *writer.status_mut() = status;
+            let mut writer = try!(writer.start());
 
-        for filter in self.filters {
-            header_result = match header_result {
-                (_, Action::SilentAbort) => break,
-                (_, Action::Abort(_)) => break,
-                (status, r) => {
-                    write_queue.push(r);
-
-                    let filter_res = {
-                        let filter_context = FilterContext {
-                            storage: self.filter_storage(),
-                            log: self.log,
-                            global: self.global,
-                        };
-                        filter.begin(filter_context, status, writer.headers_mut())
-                    };
-
-                    match filter_res {
-                        (status, Action::Abort(e)) => (status, Action::Abort(e)),
-                        (status, result) => {
-                            let mut error = None;
-                            
-                            write_queue = write_queue.into_iter().filter_map(|action| match action {
-                                Action::Next(content) => {
-                                    let filter_context = FilterContext {
-                                        storage: self.filter_storage(),
-                                        log: self.log,
-                                        global: self.global,
-                                    };
-                                    Some(filter.write(filter_context, content))
-                                },
-                                Action::SilentAbort => None,
-                                Action::Abort(e) => {
-                                    error = Some(e);
-                                    None
-                                }
-                            }).collect();
-
-                            match error {
-                                Some(e) => (status, Action::Abort(e)),
-                                None => (status, result)
-                            }
-                        }
-                    }
+            for action in write_queue {
+                match action {
+                    Action::Next(Some(content)) => try!(writer.write_all(content.as_bytes())),
+                    Action::Next(None) => {},
+                    Action::Abort(e) => return Err(Error::Filter(e)),
+                    Action::SilentAbort => break
                 }
             }
-        }
 
-        let writer = match header_result {
-            (_, Action::Abort(e)) => Err(Error::Filter(e)),
-            (status, last_result) => {
-                write_queue.push(last_result);
-
-                *writer.status_mut() = status;
-                let mut writer = match writer.start() {
-                    Ok(writer) => Ok(writer),
-                    Err(e) => Err(Error::Io(e))
-                };
-
-                for action in write_queue {
-                    writer = match (action, writer) {
-                        (Action::Next(Some(content)), Ok(mut writer)) => match writer.write_all(content.as_bytes()) {
-                            Ok(_) => Ok(writer),
-                            Err(e) => Err(Error::Io(e))
-                        },
-                        (Action::Abort(e), _) => Err(Error::Filter(e)),
-                        (_, writer) => writer
-                    };
-                }
-
-                writer
-            }
-        };
+            Ok(writer)
+        });
 
         ResponseWriter {
             writer: Some(writer),
@@ -281,7 +307,7 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
     ///Writes status code and headers and closes the connection.
     fn drop(&mut self) {
         if self.writer.is_some() {
-            self.make_writer();
+            self.send_sized(&[][..]);
         }
     }
 }
@@ -324,21 +350,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
             } else { unreachable!(); }
         };
 
-        let mut filter_result = Action::next(Some(content));
-
-        for filter in self.filters {
-            filter_result = match filter_result {
-                Action::Next(content) => {
-                    let filter_context = FilterContext {
-                        storage: &mut self.filter_storage,
-                        log: self.log,
-                        global: self.global,
-                    };
-                    filter.write(filter_context, content)
-                },
-                _ => break
-            }
-        }
+        let filter_result = filter_content(self.filters, content, self.log, self.global, &mut self.filter_storage);
 
         let write_result = match filter_result {
             Action::Next(Some(ref s)) => {
@@ -372,38 +384,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
 
     fn finish(&mut self) -> Result<(), Error> {
         let mut writer = try!(self.writer.take().expect("can only finish once"));
-        let mut write_queue: Vec<Action> = Vec::new();
-
-        for filter in self.filters {
-            let mut error = None;
-            write_queue = write_queue.into_iter().filter_map(|action| match action {
-                Action::Next(content) => {
-                    let filter_context = FilterContext {
-                        storage: &mut self.filter_storage,
-                        log: self.log,
-                        global: self.global,
-                    };
-                    Some(filter.write(filter_context, content))
-                },
-                Action::SilentAbort => None,
-                Action::Abort(e) => {
-                    error = Some(e);
-                    None
-                }
-            }).collect();
-
-            match error {
-                Some(e) => return Err(Error::Filter(e)),
-                None => {
-                    let filter_context = FilterContext {
-                        storage: &mut self.filter_storage,
-                        log: self.log,
-                        global: self.global,
-                    };
-                    write_queue.push(filter.end(filter_context))
-                }
-            }
-        }
+        let write_queue = try!(filter_end(self.filters, self.log, self.global, &mut self.filter_storage));
 
         for action in write_queue {
             try!{
@@ -460,4 +441,140 @@ fn response_to_io_result<T>(res:  Result<T, Error>) -> io::Result<T> {
         Err(Error::Io(e)) => Err(e),
         Err(e) => Err(io::Error::new(io::ErrorKind::Other, e))
     }
+}
+
+fn filter_headers<'a>(
+    filters: &'a [Box<ResponseFilter>],
+    status: StatusCode,
+    headers: &mut Headers,
+    log: &Log,
+    global: &Global,
+    filter_storage: &mut AnyMap
+) -> Result<(StatusCode, Vec<Action<'a>>), Error> {
+    let mut write_queue = Vec::new();
+    let mut header_result = (status, Action::Next(None));
+
+    for filter in filters {
+        header_result = match header_result {
+            (_, Action::SilentAbort) => break,
+            (_, Action::Abort(_)) => break,
+            (status, r) => {
+                write_queue.push(r);
+
+                let filter_res = {
+                    let filter_context = FilterContext {
+                        storage: filter_storage,
+                        log: log,
+                        global: global,
+                    };
+                    filter.begin(filter_context, status, headers)
+                };
+
+                match filter_res {
+                    (status, Action::Abort(e)) => (status, Action::Abort(e)),
+                    (status, result) => {
+                        let mut error = None;
+                        
+                        write_queue = write_queue.into_iter().filter_map(|action| match action {
+                            Action::Next(content) => {
+                                let filter_context = FilterContext {
+                                    storage: filter_storage,
+                                    log: log,
+                                    global: global,
+                                };
+                                Some(filter.write(filter_context, content))
+                            },
+                            Action::SilentAbort => None,
+                            Action::Abort(e) => {
+                                error = Some(e);
+                                None
+                            }
+                        }).collect();
+
+                        match error {
+                            Some(e) => (status, Action::Abort(e)),
+                            None => (status, result)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    match header_result {
+        (_, Action::Abort(e)) => Err(Error::Filter(e)),
+        (status, action) => {
+            write_queue.push(action);
+            Ok((status, write_queue))
+        }
+    }
+}
+
+fn filter_content<'a, 'd: 'a, Content: Into<Data<'d>>>(filters: &'a [Box<ResponseFilter>], content: Content, log: &Log, global: &Global, filter_storage: &mut AnyMap) -> Action<'a> {
+    let mut filter_result = Action::next(Some(content));
+
+    for filter in filters {
+        filter_result = match filter_result {
+            Action::Next(content) => {
+                let filter_context = FilterContext {
+                    storage: filter_storage,
+                    log: log,
+                    global: global,
+                };
+                filter.write(filter_context, content)
+            },
+            _ => break
+        }
+    }
+
+    filter_result
+}
+
+fn filter_end<'a>(filters: &'a [Box<ResponseFilter>], log: &Log, global: &Global, filter_storage: &mut AnyMap) -> Result<Vec<Action<'a>>, Error> {
+    let otuputs: Vec<_> = filters.into_iter()
+        .rev()
+        .map(|filter| {
+            let filter_context = FilterContext {
+                storage: filter_storage,
+                log: log,
+                global: global,
+            };
+
+            filter.end(filter_context)
+        })
+        .take_while(|a| if let &Action::Next(_) = a { true } else { false })
+        .map(|a| Some(a))
+        .collect();
+
+    let mut write_queue = vec![];
+
+    for (filter, action) in filters.into_iter().zip(otuputs.into_iter().chain(::std::iter::repeat(None))) {
+        let mut error = None;
+
+        write_queue = write_queue.into_iter().filter_map(|action| match action {
+            Action::Next(content) => {
+                let filter_context = FilterContext {
+                    storage: filter_storage,
+                    log: log,
+                    global: global,
+                };
+                Some(filter.write(filter_context, content))
+            },
+            Action::SilentAbort => None,
+            Action::Abort(e) => {
+                error = Some(e);
+                None
+            }
+        }).collect();
+
+        if let Some(e) = error {
+            return Err(Error::Filter(e))
+        }
+
+        if let Some(action) = action {
+            write_queue.push(action);
+        }
+    }
+
+    Ok(write_queue)
 }
