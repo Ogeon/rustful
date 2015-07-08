@@ -4,7 +4,7 @@ use std::io::{self, Read};
 use std::fs::File;
 use std::path::Path;
 
-use response::{Response, ResponseWriter};
+use response::{Response, Chunked};
 use mime::{Mime, TopLevel, SubLevel};
 use header::ContentType;
 
@@ -89,7 +89,7 @@ impl Loader {
 
         response.set_header(ContentType(mime));
 
-        let mut writer = response.into_writer();
+        let mut writer = response.into_chunked();
         let mut buffer = vec![0; self.chunk_size];
         loop {
             match file.read(&mut buffer) {
@@ -108,7 +108,7 @@ pub enum Error<'a, 'b> {
     ///Failed to open the file.
     Open(io::Error, Response<'a, 'b>),
     ///Failed while reading the file.
-    Read(io::Error, ResponseWriter<'a, 'b>)
+    Read(io::Error, Chunked<'a, 'b>)
 }
 
 impl<'a, 'b> Error<'a, 'b> {

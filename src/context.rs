@@ -116,7 +116,7 @@
 //!
 //!fn my_handler(context: Context, response: Response) {
 //!    let mut numbered_lines = BufReader::new(context.body).lines().enumerate();
-//!    let mut writer = response.into_writer();
+//!    let mut writer = response.into_chunked();
 //!
 //!    while let Some((line_no, Ok(line))) = numbered_lines.next() {
 //!        writer.send(format!("{}: {}", line_no + 1, line));

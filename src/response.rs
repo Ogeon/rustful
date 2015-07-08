@@ -263,11 +263,11 @@ impl<'a, 'b> Response<'a, 'b> {
         }
     }
 
-    ///Turn the `Response` into a `ResponseWriter` to allow the response body to be written.
+    ///Turn the `Response` into a `Chunked` response.
     ///
     ///Status code and headers will be written to the client and `ResponseFilter::begin()`
     ///will be called on the registered response filters.
-    pub fn into_writer(mut self) -> ResponseWriter<'a, 'b> {
+    pub fn into_chunked(mut self) -> Chunked<'a, 'b> {
         let mut writer = self.writer.take().expect("response used after drop");
         let writer = filter_headers(
             self.filters,
@@ -292,7 +292,7 @@ impl<'a, 'b> Response<'a, 'b> {
             Ok(writer)
         });
 
-        ResponseWriter {
+        Chunked {
             writer: Some(writer),
             filters: self.filters,
             log: self.log,
@@ -313,8 +313,8 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 }
 
 
-///An interface for writing to the response body.
-pub struct ResponseWriter<'a, 'b> {
+///An interface for writing a chunked response body.
+pub struct Chunked<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
     filters: &'b Vec<Box<ResponseFilter>>,
     log: &'b (Log + 'b),
@@ -322,8 +322,7 @@ pub struct ResponseWriter<'a, 'b> {
     filter_storage: AnyMap
 }
 
-impl<'a, 'b> ResponseWriter<'a, 'b> {
-
+impl<'a, 'b> Chunked<'a, 'b> {
     ///Mutably borrow the filter storage. It can be used to communicate with
     ///the response filters.
     pub fn filter_storage(&mut self) -> &mut AnyMap {
@@ -410,7 +409,7 @@ impl<'a, 'b> ResponseWriter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Write for ResponseWriter<'a, 'b> {
+impl<'a, 'b> Write for Chunked<'a, 'b> {
     fn write(&mut self, content: &[u8]) -> io::Result<usize> {
         response_to_io_result(self.try_send(content))
     }
@@ -426,7 +425,7 @@ impl<'a, 'b> Write for ResponseWriter<'a, 'b> {
 }
 
 #[allow(unused_must_use)]
-impl<'a, 'b> Drop for ResponseWriter<'a, 'b> {
+impl<'a, 'b> Drop for Chunked<'a, 'b> {
     ///Finishes writing and closes the connection.
     fn drop(&mut self) {
         if self.writer.is_some() {
