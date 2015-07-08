@@ -36,9 +36,9 @@ fn say_hello(mut context: Context, mut response: Response, format: &Format) {
         format!("Hello, {}!", person)
     };
 
-    //Using `try_send_only` allows us to catch eventual errors from the filters.
+    //Using `try_send` allows us to catch eventual errors from the filters.
     //This example should not produce any errors, so this is only for show.
-    if let Err(e) = response.try_send_only(message) {
+    if let Err(e) = response.try_send(message) {
         context.log.note(&format!("could not send hello: {}", e.description()));
     }
 }

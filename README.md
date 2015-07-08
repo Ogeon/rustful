@@ -61,7 +61,7 @@ fn say_hello(context: Context, response: Response) {
     };
 
     //Use the name from the path variable to say hello.
-    response.send_only(format!("Hello, {}!", person));
+    response.send(format!("Hello, {}!", person));
 }
 
 //Dodge an ICE, related to functions as handlers.

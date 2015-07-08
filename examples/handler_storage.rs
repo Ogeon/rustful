@@ -99,7 +99,7 @@ impl Handler for Api {
 
                 //Insert the value into the page and write it to the response
                 let count = value.read().unwrap().to_string();
-                response.send_only(page.replace("{}", &count[..]));
+                response.send(page.replace("{}", &count[..]));
             },
             Api::File => {
                 if let Some(file) = context.variables.get("file") {

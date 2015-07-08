@@ -190,28 +190,28 @@ impl<'a, 'b> Response<'a, 'b> {
     ///use rustful::{Context, Response};
     ///
     ///fn my_handler(context: Context, response: Response) {
-    ///    response.send_only("hello");
+    ///    response.send("hello");
     ///}
     ///```
     #[allow(unused_must_use)]
-    pub fn send_only<'d, Content: Into<Data<'d>>>(self, content: Content) {
-        self.try_send_only(content);
+    pub fn send<'d, Content: Into<Data<'d>>>(self, content: Content) {
+        self.try_send(content);
     }
 
     ///Try to send data to the client and finish the response. This is the
-    ///same as `send_only`, but errors are not ignored.
+    ///same as `send`, but errors are not ignored.
     ///
     ///```
     ///use rustful::{Context, Response};
     ///use rustful::response::Error;
     ///
     ///fn my_handler(context: Context, response: Response) {
-    ///    if let Err(Error::Filter(e)) = response.try_send_only("hello") {
+    ///    if let Err(Error::Filter(e)) = response.try_send("hello") {
     ///        context.log.note(&format!("a filter failed: {}", e));
     ///    }
     ///}
     ///```
-    pub fn try_send_only<'d, Content: Into<Data<'d>>>(mut self, content: Content) -> Result<(), Error> {
+    pub fn try_send<'d, Content: Into<Data<'d>>>(mut self, content: Content) -> Result<(), Error> {
         self.send_sized(content)
     }
 
