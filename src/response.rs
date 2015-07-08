@@ -269,6 +269,11 @@ impl<'a, 'b> Response<'a, 'b> {
     ///will be called on the registered response filters.
     pub fn into_chunked(mut self) -> Chunked<'a, 'b> {
         let mut writer = self.writer.take().expect("response used after drop");
+        
+        //Make sure it's chunked
+        writer.headers_mut().remove::<::header::ContentLength>();
+        writer.headers_mut().remove_raw("content-length");
+
         let writer = filter_headers(
             self.filters,
             writer.status(),
