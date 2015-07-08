@@ -305,6 +305,25 @@ impl<'a, 'b> Response<'a, 'b> {
             filter_storage: self.filter_storage.take().expect("response used after drop")
         }
     }
+
+    ///Turn the `Response` into a `Raw` response and bypass any response filters.
+    ///
+    ///`Raw` responses are streaming responses with a fixed content length,
+    ///which makes it impossible to allow filters to manipulate the content.
+    ///These are typically suited for transferring large files.
+    ///
+    ///__Unsafety__: The content length is set beforehand, which makes it
+    ///possible to send responses that are too short.
+    pub unsafe fn into_raw(mut self, content_length: u64) -> Raw<'a> {
+        let mut writer = self.writer.take().expect("response used after drop");
+
+        writer.headers_mut().remove_raw("content-length");
+        writer.headers_mut().set(::header::ContentLength(content_length));
+
+        Raw {
+            writer: Some(writer.start())
+        }
+    }
 }
 
 #[allow(unused_must_use)]
@@ -336,7 +355,7 @@ impl<'a, 'b> Chunked<'a, 'b> {
 
     ///Write response body data to the client.
     ///
-    ///Any errors that occures while writing the data will be ignored. Use
+    ///Any errors that occurs while writing the data will be ignored. Use
     ///`try_send`, instead, to also get error information.
     #[allow(unused_must_use)]
     pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
@@ -344,7 +363,7 @@ impl<'a, 'b> Chunked<'a, 'b> {
     }
 
     ///Write response body data to the client and receive the number of
-    ///written bytes, or any error that occured.
+    ///written bytes, or any error that occurred.
     pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<usize, Error> {
         let mut writer = match self.writer {
             Some(Ok(ref mut writer)) => writer,
@@ -436,6 +455,74 @@ impl<'a, 'b> Drop for Chunked<'a, 'b> {
         if self.writer.is_some() {
             self.finish();
         }
+    }
+}
+
+///A streaming fixed-size response.
+///
+///Everything is written directly to the network stream, without being
+///filtered, which makes `Raw` especially suitable for transferring files.
+///
+///__Unsafety__: The content length is set beforehand, which makes it possible
+///to send responses that are too short.
+pub struct Raw<'a> {
+    writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, io::Error>>
+}
+
+impl<'a> Raw<'a> {
+    ///Write response body data to the client.
+    ///
+    ///Any errors that occurs while writing the data will be ignored. Use
+    ///`try_send`, instead, to also get error information.
+    #[allow(unused_must_use)]
+    pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
+        self.try_send(content);
+    }
+
+    ///Write response body data to the client and receive the number of
+    ///written bytes, or any error that occurred.
+    pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> io::Result<()> {
+        self.write_all(content.into().as_bytes())
+    }
+
+    ///Finish writing the response and collect eventual errors.
+    ///
+    ///This is optional and will happen silently when the writer drops out of
+    ///scope.
+    pub fn end(mut self) -> io::Result<()> {
+        let writer = match self.writer.take() {
+            Some(Ok(writer)) => writer,
+            None => return Ok(()), //It has already ended
+            Some(Err(e)) => return Err(e)
+        };
+        writer.end()
+    }
+
+    fn borrow_writer(&mut self) -> io::Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>> {
+        match self.writer {
+            Some(Ok(ref mut writer)) => Ok(writer),
+            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "write after close")),
+            Some(Err(_)) => if let Some(Err(e)) = self.writer.take() {
+                Err(e)
+            } else { unreachable!(); }
+        }
+    }
+}
+
+impl<'a> Write for Raw<'a> {
+    fn write(&mut self, content: &[u8]) -> io::Result<usize> {
+        let mut writer = try!(self.borrow_writer());
+        writer.write(content)
+    }
+
+    fn write_all(&mut self, content: &[u8]) -> io::Result<()> {
+        let mut writer = try!(self.borrow_writer());
+        writer.write_all(content)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let mut writer = try!(self.borrow_writer());
+        writer.flush()
     }
 }
 
