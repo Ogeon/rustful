@@ -41,12 +41,11 @@ use std::string::{FromUtf8Error};
 
 use hyper;
 
-use header::{Headers, Header, HeaderFormat};
-
 use anymap::AnyMap;
 
 use StatusCode;
 
+use header::Headers;
 use filter::{FilterContext, ResponseFilter};
 use filter::ResponseAction as Action;
 use log::Log;
@@ -192,29 +191,37 @@ impl<'a, 'b> Response<'a, 'b> {
         }
     }
 
-    ///Set HTTP status code. Ok (200) is default.
+    ///Get the current status code.
+    pub fn status(&self) -> StatusCode {
+        self.writer.as_ref().expect("status accessed after drop").status()
+    }
+
+    ///Change the status code. `Ok (200)` is the default.
     pub fn set_status(&mut self, status: StatusCode) {
         if let Some(ref mut writer) = self.writer {
             *writer.status_mut() = status;
         }
     }
 
-    ///Set a HTTP response header. Date, content type (text/plain) and server is automatically set.
-    pub fn set_header<H: Header + HeaderFormat>(&mut self, header: H) {
-        if let Some(ref mut writer) = self.writer {
-            writer.headers_mut().set(header);
-        }
+    ///Get a reference to the headers.
+    pub fn headers(&self) -> &Headers {
+        self.writer.as_ref().expect("headers accessed after drop").headers()
     }
 
-    ///Get a HTTP response header if set.
-    pub fn get_header<H: Header + HeaderFormat>(&self) -> Option<&H> {
-        self.writer.as_ref().and_then(|w| w.headers().get())
+    ///Get a mutable reference to the headers.
+    pub fn headers_mut(&mut self) -> &mut Headers {
+        self.writer.as_mut().expect("headers mutably accessed after drop").headers_mut()
     }
 
-    ///Mutably borrow the filter storage. It can be used to communicate with
-    ///the response filters.
-    pub fn filter_storage(&mut self) -> &mut AnyMap {
-        self.filter_storage.as_mut().expect("response used after drop")
+    ///Get a reference to the filter storage.
+    pub fn filter_storage(&self) -> &AnyMap {
+        self.filter_storage.as_ref().expect("filter storage accessed after drop")
+    }
+
+    ///Get a mutable reference to the filter storage. It can be used to
+    ///communicate with the response filters.
+    pub fn filter_storage_mut(&mut self) -> &mut AnyMap {
+        self.filter_storage.as_mut().expect("filter storage mutably accessed after drop")
     }
 
     ///Send data to the client and finish the response, ignoring eventual
@@ -312,7 +319,7 @@ impl<'a, 'b> Response<'a, 'b> {
             writer.headers_mut(),
             self.log,
             self.global,
-            self.filter_storage()
+            self.filter_storage_mut()
         ).and_then(|(status, write_queue)|{
             *writer.status_mut() = status;
             let mut writer = try!(writer.start());
@@ -381,9 +388,14 @@ pub struct Chunked<'a, 'b> {
 }
 
 impl<'a, 'b> Chunked<'a, 'b> {
-    ///Mutably borrow the filter storage. It can be used to communicate with
-    ///the response filters.
-    pub fn filter_storage(&mut self) -> &mut AnyMap {
+    ///Get a reference to the filter storage.
+    pub fn filter_storage(&self) -> &AnyMap {
+        &self.filter_storage
+    }
+
+    ///Get a mutable reference to the filter storage. It can be used to
+    ///communicate with the response filters.
+    pub fn filter_storage_mut(&mut self) -> &mut AnyMap {
         &mut self.filter_storage
     }
 

@@ -91,7 +91,7 @@ impl Loader {
             Err(e) => return Err(Error::Open(e, response))
         };
 
-        response.set_header(ContentType(mime));
+        response.headers_mut().set(ContentType(mime));
 
         let mut writer = unsafe { response.into_raw(metadata.len()) };
         let mut buffer = vec![0; self.buffer_size];
