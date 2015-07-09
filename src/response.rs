@@ -1,4 +1,35 @@
 //!Response writers.
+//!
+//!The response writers are the output channel from the handlers to the
+//!client. These are used to set the response headers, as well as writing the
+//!response body. Rustful provides three different types of response writers
+//!with different purposes:
+//!
+//! * [`Response`][res] - It's used to write data with a known, fixed size,
+//!that is already stored in some kind of buffer.
+//! * [`Chunked`][chu] - A chunked response is a streaming response, where the final
+//!size can be unknown.
+//! * [`Raw`][raw] - This is also a streaming response, but with a fixed size. It is
+//!unsafe to create because of the risk of sending too short responses, but it
+//!can be very useful in cases where it's impractical to buffer the data, such as when
+//!sending large files.
+//!
+//!You will always start out with a `Response`, where you can set the status
+//!code and all the headers, and then transform it into one of the other
+//!types, if necessary. It is usually recommended to stick to `Response` as
+//!much as possible, since it has lower HTTP overhead than `Chunked` and has a
+//!builtin size check that guarantees that the `content-length` field is
+//!correct.
+//!
+//!|            | No extra overhead | Guaranteed correct `content-length` | Streaming |
+//!|------------|-------------------|-------------------------------------|-----------|
+//!| `Response` | &check;           | &check;                             | &cross;   |
+//!| `Raw`      | &check;           | &cross;                             | &check;   |
+//!| `Chunked`  | &cross;           | &check;                             | &check;   |
+//!
+//![res]: struct.Response.html
+//![chu]: struct.Chunked.html
+//![raw]: struct.Raw.html
 
 use std;
 use std::io::{self, Write};
@@ -63,7 +94,7 @@ impl error::Error for Error {
     }
 }
 
-///Unified representation of response data.
+///A unified representation of response data.
 #[derive(Clone)]
 pub enum Data<'a> {
     ///Data in byte form.
@@ -132,7 +163,11 @@ impl<'a> Into<Data<'a>> for &'a str {
 }
 
 
-///An interface for setting HTTP status code and response headers, before data gets written to the client.
+///An interface for sending data to the client.
+///
+///This is where the status code and response headers are set, as well as the
+///response body. The body can be directly written through the `Response` if
+///its size is known.
 pub struct Response<'a, 'b> {
     writer: Option<hyper::server::response::Response<'a>>,
     filters: &'b Vec<Box<ResponseFilter>>,
@@ -182,9 +217,8 @@ impl<'a, 'b> Response<'a, 'b> {
         self.filter_storage.as_mut().expect("response used after drop")
     }
 
-    ///Send data to the client and finish the response. This is the preferred
-    ///way if the length of the data is known, and it's more optimal than a
-    ///chunked response.
+    ///Send data to the client and finish the response, ignoring eventual
+    ///errors. Use `try_send` to get error information.
     ///
     ///```
     ///use rustful::{Context, Response};
@@ -263,10 +297,8 @@ impl<'a, 'b> Response<'a, 'b> {
         }
     }
 
-    ///Turn the `Response` into a `Chunked` response.
-    ///
-    ///Status code and headers will be written to the client and `ResponseFilter::begin()`
-    ///will be called on the registered response filters.
+    ///Write the status code and headers to the client and turn the `Response`
+    ///into a `Chunked` response.
     pub fn into_chunked(mut self) -> Chunked<'a, 'b> {
         let mut writer = self.writer.take().expect("response used after drop");
         
@@ -306,11 +338,9 @@ impl<'a, 'b> Response<'a, 'b> {
         }
     }
 
-    ///Turn the `Response` into a `Raw` response and bypass any response filters.
-    ///
-    ///`Raw` responses are streaming responses with a fixed content length,
-    ///which makes it impossible to allow filters to manipulate the content.
-    ///These are typically suited for transferring large files.
+    ///Write the status code and headers to the client and turn the `Response`
+    ///into a `Raw` response. Any eventual response filters are bypassed to
+    ///make sure that the data is not modified.
     ///
     ///__Unsafety__: The content length is set beforehand, which makes it
     ///possible to send responses that are too short.
@@ -338,6 +368,10 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 
 
 ///An interface for writing a chunked response body.
+///
+
+///This is useful for when the size of the data is unknown, but it comes with
+///an overhead for each time `send` or `try_send` is called (simply put).
 pub struct Chunked<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
     filters: &'b Vec<Box<ResponseFilter>>,
@@ -353,17 +387,48 @@ impl<'a, 'b> Chunked<'a, 'b> {
         &mut self.filter_storage
     }
 
-    ///Write response body data to the client.
+    ///Send a chunk of data to the client, ignoring any eventual errors. Use
+    ///`try_send` to get error information.
     ///
-    ///Any errors that occurs while writing the data will be ignored. Use
-    ///`try_send`, instead, to also get error information.
+    ///```
+    ///use rustful::{Context, Response};
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let count = context.variables.get("count")
+    ///        .and_then(|n| n.parse().ok())
+    ///        .unwrap_or(0u32);
+    ///    let mut chunked = response.into_chunked();
+    ///
+    ///    for i in 0..count {
+    ///        chunked.send(format!("chunk #{}", i + 1));
+    ///    }
+    ///}
+    ///```
     #[allow(unused_must_use)]
     pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
         self.try_send(content);
     }
 
-    ///Write response body data to the client and receive the number of
-    ///written bytes, or any error that occurred.
+    ///Send a chunk of data to the client. This is the same as `send`, but
+    ///errors are not ignored.
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///use rustful::response::Error;
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let count = context.variables.get("count")
+    ///        .and_then(|n| n.parse().ok())
+    ///        .unwrap_or(0u32);
+    ///    let mut chunked = response.into_chunked();
+    ///
+    ///    for i in 0..count {
+    ///        if let Err(Error::Filter(e)) = chunked.try_send(format!("chunk #{}", i + 1)) {
+    ///            context.log.note(&format!("a filter failed: {}", e));
+    ///        }
+    ///    }
+    ///}
+    ///```
     pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<usize, Error> {
         let mut writer = match self.writer {
             Some(Ok(ref mut writer)) => writer,
@@ -470,17 +535,48 @@ pub struct Raw<'a> {
 }
 
 impl<'a> Raw<'a> {
-    ///Write response body data to the client.
+    ///Send a piece of data to the client, ignoring any eventual errors. Use
+    ///`try_send` to get error information.
     ///
-    ///Any errors that occurs while writing the data will be ignored. Use
-    ///`try_send`, instead, to also get error information.
+    ///```
+    ///use rustful::{Context, Response};
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let count = context.variables.get("count")
+    ///        .and_then(|n| n.parse().ok())
+    ///        .unwrap_or(0u8);
+    ///    let mut raw = unsafe { response.into_raw(count as u64) };
+    ///
+    ///    for i in 0..count {
+    ///        raw.send([i].as_ref());
+    ///    }
+    ///}
+    ///```
     #[allow(unused_must_use)]
     pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
         self.try_send(content);
     }
 
-    ///Write response body data to the client and receive the number of
-    ///written bytes, or any error that occurred.
+    ///Send a piece of data to the client. This is the same as `send`, but
+    ///errors are not ignored.
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let count = context.variables.get("count")
+    ///        .and_then(|n| n.parse().ok())
+    ///        .unwrap_or(0u8);
+    ///    let mut raw = unsafe { response.into_raw(count as u64) };
+    ///
+    ///    for i in 0..count {
+    ///        if let Err(e) = raw.try_send([i].as_ref()) {
+    ///            context.log.note(&format!("failed to write: {}", e));
+    ///            break;
+    ///        }
+    ///    }
+    ///}
+    ///```
     pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> io::Result<()> {
         self.write_all(content.into().as_bytes())
     }
