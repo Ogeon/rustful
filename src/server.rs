@@ -10,7 +10,7 @@ use url::percent_encoding::lossy_utf8_percent_decode;
 
 use hyper;
 use hyper::server::Handler as HyperHandler;
-use hyper::header::{Date, ContentType, ContentLength};
+use hyper::header::{Date, ContentType};
 use hyper::mime::Mime;
 use hyper::uri::RequestUri;
 #[cfg(feature = "ssl")]
@@ -271,9 +271,9 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
         ) = request.deconstruct();
 
         let mut response = Response::new(writer, &self.response_filters, &*self.log, &self.global);
-        response.set_header(Date(HttpDate(time::now_utc())));
-        response.set_header(ContentType(self.content_type.clone()));
-        response.set_header(hyper::header::Server(self.server.clone()));
+        response.headers_mut().set(Date(HttpDate(time::now_utc())));
+        response.headers_mut().set(ContentType(self.content_type.clone()));
+        response.headers_mut().set(hyper::header::Server(self.server.clone()));
 
         let path_components = match request_uri {
             RequestUri::AbsoluteUri(url) => {
@@ -312,7 +312,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
 
                 match self.modify_context(&mut filter_storage, &mut context) {
                     ContextAction::Next => {
-                        *response.filter_storage() = filter_storage;
+                        *response.filter_storage_mut() = filter_storage;
                         let Endpoint {
                             handler,
                             variables,
@@ -323,19 +323,16 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                             context.variables = variables;
                             handler.handle_request(context, response);
                         } else {
-                            response.set_header(ContentLength(0));
                             response.set_status(StatusCode::NotFound);
                         }
                     },
                     ContextAction::Abort(status) => {
-                        *response.filter_storage() = filter_storage;
-                        response.set_header(ContentLength(0));
+                        *response.filter_storage_mut() = filter_storage;
                         response.set_status(status);
                     }
                 }
             },
             None => {
-                response.set_header(ContentLength(0));
                 response.set_status(StatusCode::BadRequest);
             }
         }

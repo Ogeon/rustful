@@ -39,7 +39,7 @@ fn say_hello(mut context: Context, mut response: Response) {
 
     //Insert the content into the page and write it to the response
     let complete_page = files.page.replace("{}", &content);
-    response.into_writer().send(complete_page);
+    response.send(complete_page);
 }
 
 //Dodge an ICE, related to functions as handlers.

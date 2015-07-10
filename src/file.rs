@@ -4,7 +4,7 @@ use std::io::{self, Read};
 use std::fs::File;
 use std::path::Path;
 
-use response::{Response, ResponseWriter};
+use response::Response;
 use mime::{Mime, TopLevel, SubLevel};
 use header::ContentType;
 
@@ -59,13 +59,13 @@ impl<'a> Into<SubLevel> for &'a MaybeKnown<SubLevel> {
 ///client.
 pub struct Loader {
     ///The size, in bytes, of the file chunks. Default is 1048576 (1 megabyte).
-    pub chunk_size: usize
+    pub buffer_size: usize
 }
 
 impl Loader {
     pub fn new() -> Loader {
         Loader {
-            chunk_size: 1048576
+            buffer_size: 1048576
         }
     }
 
@@ -86,16 +86,20 @@ impl Loader {
             Ok(file) => file,
             Err(e) => return Err(Error::Open(e, response))
         };
+        let metadata = match file.metadata() {
+            Ok(metadata) => metadata,
+            Err(e) => return Err(Error::Open(e, response))
+        };
 
-        response.set_header(ContentType(mime));
+        response.headers_mut().set(ContentType(mime));
 
-        let mut writer = response.into_writer();
-        let mut buffer = vec![0; self.chunk_size];
+        let mut writer = unsafe { response.into_raw(metadata.len()) };
+        let mut buffer = vec![0; self.buffer_size];
         loop {
             match file.read(&mut buffer) {
                 Ok(len) if len == 0 => break,
-                Ok(len) => writer.send(&buffer[..len]),
-                Err(e) => return Err(Error::Read(e, writer))
+                Ok(len) => try!(writer.try_send(&buffer[..len]).map_err(|e| Error::Transfer(e))),
+                Err(e) => return Err(Error::Read(e))
             }
         }
 
@@ -108,14 +112,17 @@ pub enum Error<'a, 'b> {
     ///Failed to open the file.
     Open(io::Error, Response<'a, 'b>),
     ///Failed while reading the file.
-    Read(io::Error, ResponseWriter<'a, 'b>)
+    Read(io::Error),
+    ///Failed while trasferring the file.
+    Transfer(io::Error)
 }
 
 impl<'a, 'b> Error<'a, 'b> {
     pub fn io_error(&self) -> &io::Error {
         match *self {
             Error::Open(ref e, _) => e,
-            Error::Read(ref e, _) => e
+            Error::Read(ref e) => e,
+            Error::Transfer(ref e) => e
         }
     }
 }
