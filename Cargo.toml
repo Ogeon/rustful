@@ -25,7 +25,6 @@ ssl = ["hyper/ssl"]
 time = "0.1"
 url = "0.2"
 anymap = "0.11"
-unicase = "0.1"
 phf = "0.7"
 
 [dependencies.hyper]
@@ -37,6 +36,7 @@ version = "0.3"
 optional = true
 
 [dev-dependencies]
+unicase = "0.1"
 tempdir = "0.3"
 
 [build-dependencies]
