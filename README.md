@@ -15,7 +15,7 @@ Some of the features are:
 
 * Generic response handlers. Just use a function or implement the Handler trait.
 * Unified log system to make sure everything is working together.
-* Some handy macros reduces risk for typos and makes life easier.
+* Some handy macros reduces the risk for typos and makes life easier.
 * Pluggable request and response filtering.
 * Variables and recursive wildcards in routes.
 
@@ -103,9 +103,29 @@ fn main() {
 ```
 
 ##Contributing
-Yes, please! You can always post an issue or (even better) fork the project,
-implement your idea or fix the bug you have found and send a pull request.
-Just remember to test it when you are done. Here is how:
 
-* Run `cargo test` to run unit, documentation and compile tests.
-* Run `cargo run --example example_name` to run an example and make sure it behaves as expected.
+Contributions are always welcome, even if it's a small typo fix (or maybe I
+should say "especially typo fixes"). You can fork the project and open a pull
+request with your changes, or create an issue if you just want to report or
+request something. Are you not sure about how to implement your change? Is it
+still a work in progress? Don't worry. You can still open a pull request where
+we can discuss it and do it step by step.
+
+New features are as welcome as fixes, so pull requests and and proposals with
+enhancements are very much appreciated, but please explain your feature and
+give a good motivation to why it should be included. It makes things much
+easier, both for reviewing the feature and for those who are not as familiar
+with how things work. You can always open an issue where we can discuss the
+feature and see if it should be included. Asking is better than assuming!
+
+###Testing
+
+Rustful is tested on Linux, using Travis, and on Windows, using AppVeyor and a
+pull request will not be approved unless it passes these tests. It is
+therefore a good idea to run tests locally, before pushing your changes, so here
+is a small list of useful commands:
+
+ * `cargo test` - Basic unit, documentation and compile tests.
+ * `cargo build --no-default-features` - Check if the most minimal version of Rustful builds.
+ * `cargo build --no-default-features --features "feature1 feature2"` - Check if Rustful with only `feature1` and `feature2` enabled builds.
+ * `cargo run --example example_name` - check if the example `example_name` behaves as expected (see the `example` directory).
