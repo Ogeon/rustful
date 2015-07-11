@@ -29,7 +29,7 @@ Add the following lines to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-rustful = "0.2"
+rustful = "0.3"
 ```
 
 ###Cargo Features
