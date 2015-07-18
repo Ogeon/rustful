@@ -292,7 +292,10 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
 
         match path_components {
             Some((path, query, fragment)) => {
-
+                let body = {
+                    let content_type = request_headers.get().map(|&ContentType(ref mime)| mime);
+                    context::BodyReader::from_reader(request_reader, content_type)
+                };
                 let mut context = Context {
                     headers: request_headers,
                     http_version: request_version,
@@ -305,7 +308,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     fragment: fragment,
                     log: &*self.log,
                     global: &self.global,
-                    body: context::BodyReader::from_reader(request_reader)
+                    body: body
                 };
 
                 let mut filter_storage = AnyMap::new();

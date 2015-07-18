@@ -142,11 +142,14 @@ use hyper::http::h1::HttpReader;
 use hyper::net::NetworkStream;
 use hyper::buffer::BufReader;
 
+use multipart::server::{HttpRequest, Multipart};
+
 use utils;
 
 use HttpVersion;
 use Method;
 use header::Headers;
+use mime::{Mime, TopLevel, SubLevel, Attr, Value};
 use log::Log;
 
 use Global;
@@ -192,14 +195,40 @@ pub struct Context<'a, 'b: 'a, 's> {
 
 ///A reader for a request body.
 pub struct BodyReader<'a, 'b: 'a> {
-    request: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>
+    reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>,
+    is_multipart: bool,
+    multipart_boundary: Option<String>
 }
 
 impl<'a, 'b> BodyReader<'a, 'b> {
-    pub fn from_reader(request: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>) -> BodyReader<'a, 'b> {
+    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, content_type: Option<&Mime>) -> BodyReader<'a, 'b> {
+        let (is_multipart, boundary) = match content_type {
+            Some(&Mime(TopLevel::Multipart, SubLevel::FormData, ref attrs)) => {
+                let boundary = attrs.iter()
+                    .find(|&&(ref attr, _)| attr == &Attr::Boundary)
+                    .and_then(|&(_, ref val)| if let Value::Ext(ref boundary) = *val {
+                        Some(boundary.clone())
+                    } else {
+                        None
+                    });
+                (true, boundary)
+            },
+            _ => (false, None)
+        };
+
         BodyReader {
-            request: request
+            reader: reader,
+            is_multipart: is_multipart,
+            multipart_boundary: boundary
         }
+    }
+
+    pub fn as_multipart(&mut self) -> Option<Multipart<MultipartRequest>> {
+        Multipart::from_request(MultipartRequest {
+            is_multipart: self.is_multipart,
+            boundary: self.multipart_boundary.as_ref().map(|boundary| &**boundary),
+            reader: &mut self.reader
+        }).ok()
     }
 }
 
@@ -323,7 +352,31 @@ impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
 impl<'a, 'b> Read for BodyReader<'a, 'b> {
     ///Read the request body.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.request.read(buf)
+        self.reader.read(buf)
+    }
+}
+
+///A specialized request representation for the multipart interface.
+pub struct MultipartRequest<'a> {
+    is_multipart: bool,
+    boundary: Option<&'a str>,
+    reader: &'a mut Read
+}
+
+impl<'a> HttpRequest for MultipartRequest<'a> {
+    fn is_multipart(&self) -> bool {
+        self.is_multipart
+    }
+
+    fn boundary(&self) -> Option<&str> {
+        self.boundary
+    }
+}
+
+impl<'a> Read for MultipartRequest<'a> {
+    ///Read the request body.
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.reader.read(buf)
     }
 }
 
