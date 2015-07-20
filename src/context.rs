@@ -142,6 +142,7 @@ use hyper::http::h1::HttpReader;
 use hyper::net::NetworkStream;
 use hyper::buffer::BufReader;
 
+#[cfg(feature = "multipart")]
 use multipart::server::{HttpRequest, Multipart};
 
 use utils;
@@ -149,7 +150,6 @@ use utils;
 use HttpVersion;
 use Method;
 use header::Headers;
-use mime::{Mime, TopLevel, SubLevel, Attr, Value};
 use log::Log;
 
 use Global;
@@ -196,14 +196,21 @@ pub struct Context<'a, 'b: 'a, 's> {
 ///A reader for a request body.
 pub struct BodyReader<'a, 'b: 'a> {
     reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>,
+
+    #[cfg(feature = "multipart")]
     is_multipart: bool,
+    #[cfg(feature = "multipart")]
     multipart_boundary: Option<String>
 }
 
+#[cfg(feature = "multipart")]
 impl<'a, 'b> BodyReader<'a, 'b> {
-    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, content_type: Option<&Mime>) -> BodyReader<'a, 'b> {
-        let (is_multipart, boundary) = match content_type {
-            Some(&Mime(TopLevel::Multipart, SubLevel::FormData, ref attrs)) => {
+    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, headers: &Headers) -> BodyReader<'a, 'b> {
+        use header::ContentType;
+        use mime::{Mime, TopLevel, SubLevel, Attr, Value};
+
+        let (is_multipart, boundary) = match headers.get() {
+            Some(&ContentType(Mime(TopLevel::Multipart, SubLevel::FormData, ref attrs))) => {
                 let boundary = attrs.iter()
                     .find(|&&(ref attr, _)| attr == &Attr::Boundary)
                     .and_then(|&(_, ref val)| if let Value::Ext(ref boundary) = *val {
@@ -229,6 +236,15 @@ impl<'a, 'b> BodyReader<'a, 'b> {
             boundary: self.multipart_boundary.as_ref().map(|boundary| &**boundary),
             reader: &mut self.reader
         }).ok()
+    }
+}
+
+#[cfg(not(feature = "multipart"))]
+impl<'a, 'b> BodyReader<'a, 'b> {
+    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, _headers: &Headers) -> BodyReader<'a, 'b> {
+        BodyReader {
+            reader: reader
+        }
     }
 }
 
@@ -357,12 +373,14 @@ impl<'a, 'b> Read for BodyReader<'a, 'b> {
 }
 
 ///A specialized request representation for the multipart interface.
+#[cfg(feature = "multipart")]
 pub struct MultipartRequest<'a> {
     is_multipart: bool,
     boundary: Option<&'a str>,
     reader: &'a mut Read
 }
 
+#[cfg(feature = "multipart")]
 impl<'a> HttpRequest for MultipartRequest<'a> {
     fn is_multipart(&self) -> bool {
         self.is_multipart
@@ -373,6 +391,7 @@ impl<'a> HttpRequest for MultipartRequest<'a> {
     }
 }
 
+#[cfg(feature = "multipart")]
 impl<'a> Read for MultipartRequest<'a> {
     ///Read the request body.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {

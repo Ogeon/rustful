@@ -292,10 +292,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
 
         match path_components {
             Some((path, query, fragment)) => {
-                let body = {
-                    let content_type = request_headers.get().map(|&ContentType(ref mime)| mime);
-                    context::BodyReader::from_reader(request_reader, content_type)
-                };
+                let body = context::BodyReader::from_reader(request_reader, &request_headers);
                 let mut context = Context {
                     headers: request_headers,
                     http_version: request_version,
