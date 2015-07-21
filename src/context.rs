@@ -198,8 +198,6 @@ pub struct BodyReader<'a, 'b: 'a> {
     reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>,
 
     #[cfg(feature = "multipart")]
-    is_multipart: bool,
-    #[cfg(feature = "multipart")]
     multipart_boundary: Option<String>
 }
 
@@ -209,33 +207,33 @@ impl<'a, 'b> BodyReader<'a, 'b> {
         use header::ContentType;
         use mime::{Mime, TopLevel, SubLevel, Attr, Value};
 
-        let (is_multipart, boundary) = match headers.get() {
+        let boundary = match headers.get() {
             Some(&ContentType(Mime(TopLevel::Multipart, SubLevel::FormData, ref attrs))) => {
-                let boundary = attrs.iter()
+                attrs.iter()
                     .find(|&&(ref attr, _)| attr == &Attr::Boundary)
                     .and_then(|&(_, ref val)| if let Value::Ext(ref boundary) = *val {
                         Some(boundary.clone())
                     } else {
                         None
-                    });
-                (true, boundary)
+                    })
             },
-            _ => (false, None)
+            _ => None
         };
 
         BodyReader {
             reader: reader,
-            is_multipart: is_multipart,
             multipart_boundary: boundary
         }
     }
 
     pub fn as_multipart(&mut self) -> Option<Multipart<MultipartRequest>> {
-        Multipart::from_request(MultipartRequest {
-            is_multipart: self.is_multipart,
-            boundary: self.multipart_boundary.as_ref().map(|boundary| &**boundary),
-            reader: &mut self.reader
-        }).ok()
+        let reader = &mut self.reader;
+        self.multipart_boundary.as_ref().and_then(move |boundary|
+            Multipart::from_request(MultipartRequest {
+                boundary: boundary,
+                reader: reader
+            }).ok()
+        )
     }
 }
 
@@ -375,19 +373,18 @@ impl<'a, 'b> Read for BodyReader<'a, 'b> {
 ///A specialized request representation for the multipart interface.
 #[cfg(feature = "multipart")]
 pub struct MultipartRequest<'a> {
-    is_multipart: bool,
-    boundary: Option<&'a str>,
+    boundary: &'a str,
     reader: &'a mut Read
 }
 
 #[cfg(feature = "multipart")]
 impl<'a> HttpRequest for MultipartRequest<'a> {
     fn is_multipart(&self) -> bool {
-        self.is_multipart
+        true
     }
 
     fn boundary(&self) -> Option<&str> {
-        self.boundary
+        Some(self.boundary)
     }
 }
 
