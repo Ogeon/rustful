@@ -3,23 +3,21 @@ branches:
   only:
   - master
 skip_tags: true
-platform: x64
+platform: x32
 os: MinGW
 environment:
   RUST_INSTALL_DIR: C:\Rust
   RUST_INSTALL_TRIPLE: i686-pc-windows-gnu
   RUST_VERSION: 1.1.0
-  OPENSSL_VERSION: 1_0_2d
 install:
   - ps: Start-FileDownload "https://static.rust-lang.org/dist/rust-$Env:RUST_VERSION-$Env:RUST_INSTALL_TRIPLE.exe"
   - cmd: rust-%RUST_VERSION%-%RUST_INSTALL_TRIPLE%.exe /VERYSILENT /NORESTART /COMPONENTS="rust,gcc,cargo" /DIR="%RUST_INSTALL_DIR%"
   - cmd: SET PATH=%PATH%;%RUST_INSTALL_DIR%\bin;C:\MINGW\bin\
   - rustc --version
   - cargo --version
-  - ps: Start-FileDownload "http://slproweb.com/download/Win32OpenSSL-$Env:OPENSSL_VERSION.exe"
-  - cmd: Win32OpenSSL-%OPENSSL_VERSION%.exe /silent /verysilent /sp- /suppressmsgboxes
-  - cmd: SET OPENSSL_LIB_DIR=C:\OpenSSL-Win32
-  - cmd: SET OPENSSL_INCLUDE_DIR=C:\OpenSSL-Win32\include
+  - ps: choco install openssl.light
+  - cmd: SET OPENSSL_LIB_DIR=%programfiles%\OpenSSL
+  - cmd: SET OPENSSL_INCLUDE_DIR=%programfiles%\OpenSSL\include
 build: false
 test_script:
   - cargo build -v
