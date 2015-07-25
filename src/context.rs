@@ -226,6 +226,44 @@ impl<'a, 'b> BodyReader<'a, 'b> {
         }
     }
 
+    ///Try to create a `multipart/form-data` reader from the request body.
+    ///
+    ///```
+    ///# extern crate rustful;
+    ///# extern crate multipart;
+    ///use std::fmt::Write;
+    ///use rustful::{Context, Response};
+    ///use rustful::StatusCode::BadRequest;
+    ///use multipart::server::MultipartData;
+    ///
+    ///fn my_handler(mut context: Context, mut response: Response) {
+    ///    if let Some(mut multipart) = context.body.as_multipart() {
+    ///        let mut result = String::new();
+    ///
+    ///        //Iterate over the multipart entries and print info about them in `result`
+    ///        multipart.foreach_entry(|entry| match entry.data {
+    ///            MultipartData::Text(text) => {
+    ///                //Found data from a text field
+    ///                writeln!(&mut result, "{}: '{}'", entry.name, text);
+    ///            },
+    ///            MultipartData::File(file) => {
+    ///                //Found an uploaded file
+    ///                if let Some(file_name) = file.filename() {
+    ///                    writeln!(&mut result, "{}: a file called '{}'", entry.name, file_name);
+    ///                } else {
+    ///                    writeln!(&mut result, "{}: a nameless file", entry.name);
+    ///                }
+    ///            }
+    ///        });
+    ///
+    ///        response.send(result);
+    ///    } else {
+    ///        //We expected it to be a valid `multipart/form-data` request, but it was not
+    ///        response.set_status(BadRequest);
+    ///    }
+    ///}
+    ///# fn main() {}
+    ///```
     pub fn as_multipart<'r>(&'r mut self) -> Option<Multipart<MultipartRequest<'r, 'a, 'b>>> {
         let reader = &mut self.reader;
         self.multipart_boundary.as_ref().and_then(move |boundary|
