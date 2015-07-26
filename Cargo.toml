@@ -32,7 +32,7 @@ version = "0.6"
 default-features = false
 
 [dependencies.multipart]
-version = "0.2"
+version = "0.3"
 default-features = false
 features = ["server"]
 optional = true

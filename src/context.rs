@@ -417,11 +417,7 @@ pub struct MultipartRequest<'r, 'a: 'r, 'b: 'a> {
 
 #[cfg(feature = "multipart")]
 impl<'r, 'a, 'b> HttpRequest for MultipartRequest<'r, 'a, 'b> {
-    fn is_multipart(&self) -> bool {
-        true
-    }
-
-    fn boundary(&self) -> Option<&str> {
+    fn multipart_boundary(&self) -> Option<&str> {
         Some(self.boundary)
     }
 }
