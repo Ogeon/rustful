@@ -203,29 +203,6 @@ pub struct BodyReader<'a, 'b: 'a> {
 
 #[cfg(feature = "multipart")]
 impl<'a, 'b> BodyReader<'a, 'b> {
-    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, headers: &Headers) -> BodyReader<'a, 'b> {
-        use header::ContentType;
-        use mime::{Mime, TopLevel, SubLevel, Attr, Value};
-
-        let boundary = match headers.get() {
-            Some(&ContentType(Mime(TopLevel::Multipart, SubLevel::FormData, ref attrs))) => {
-                attrs.iter()
-                    .find(|&&(ref attr, _)| attr == &Attr::Boundary)
-                    .and_then(|&(_, ref val)| if let Value::Ext(ref boundary) = *val {
-                        Some(boundary.clone())
-                    } else {
-                        None
-                    })
-            },
-            _ => None
-        };
-
-        BodyReader {
-            reader: reader,
-            multipart_boundary: boundary
-        }
-    }
-
     ///Try to create a `multipart/form-data` reader from the request body.
     ///
     ///```
@@ -273,10 +250,35 @@ impl<'a, 'b> BodyReader<'a, 'b> {
             }).ok()
         )
     }
+
+    ///Internal method that may change unexpectedly.
+    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, headers: &Headers) -> BodyReader<'a, 'b> {
+        use header::ContentType;
+        use mime::{Mime, TopLevel, SubLevel, Attr, Value};
+
+        let boundary = match headers.get() {
+            Some(&ContentType(Mime(TopLevel::Multipart, SubLevel::FormData, ref attrs))) => {
+                attrs.iter()
+                    .find(|&&(ref attr, _)| attr == &Attr::Boundary)
+                    .and_then(|&(_, ref val)| if let Value::Ext(ref boundary) = *val {
+                        Some(boundary.clone())
+                    } else {
+                        None
+                    })
+            },
+            _ => None
+        };
+
+        BodyReader {
+            reader: reader,
+            multipart_boundary: boundary
+        }
+    }
 }
 
 #[cfg(not(feature = "multipart"))]
 impl<'a, 'b> BodyReader<'a, 'b> {
+    ///Internal method that may change unexpectedly.
     pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, _headers: &Headers) -> BodyReader<'a, 'b> {
         BodyReader {
             reader: reader
