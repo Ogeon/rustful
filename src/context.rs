@@ -129,7 +129,6 @@
 //![log]: ../log/index.html
 //![body_reader]: struct.BodyReader.html
 
-use std::collections::HashMap;
 use std::io::{self, Read};
 use std::net::SocketAddr;
 
@@ -149,6 +148,7 @@ use utils;
 
 use HttpVersion;
 use Method;
+use Parameters;
 use header::Headers;
 use log::Log;
 
@@ -175,10 +175,10 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub hypermedia: Hypermedia<'s>,
 
     ///Route variables.
-    pub variables: HashMap<String, String>,
+    pub variables: Parameters<String, String>,
 
     ///Query variables from the path.
-    pub query: HashMap<String, String>,
+    pub query: Parameters<String, String>,
 
     ///The fragment part of the URL (after #), if provided.
     pub fragment: Option<String>,
@@ -310,15 +310,15 @@ pub trait ExtQueryBody {
     ///    response.send(format!("{} + {} = {}", a, b, a + b));
     ///}
     ///```
-    fn read_query_body(&mut self) -> io::Result<HashMap<String, String>>;
+    fn read_query_body(&mut self) -> io::Result<Parameters<String, String>>;
 }
 
 impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
     #[inline]
-    fn read_query_body(&mut self) -> io::Result<HashMap<String, String>> {
+    fn read_query_body(&mut self) -> io::Result<Parameters<String, String>> {
         let mut buf = Vec::new();
         try!(self.read_to_end(&mut buf));
-        Ok(utils::parse_parameters(&buf))
+        Ok(utils::parse_parameters(&buf).into())
     }
 }
 

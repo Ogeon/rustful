@@ -118,6 +118,10 @@ pub mod file;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::str::FromStr;
 use std::any::TypeId;
+use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
+use std::borrow::Borrow;
+use std::hash::Hash;
 
 use anymap::Map;
 use anymap::any::{Any, UncheckedAnyExt};
@@ -356,4 +360,63 @@ enum GlobalState {
     None,
     One(TypeId, Box<Any + Send + Sync>),
     Many(Map<Any + Send + Sync>),
+}
+
+pub struct Parameters<K, V>(HashMap<K, V>);
+
+impl<K: Hash + Eq, V: AsRef<str>> Parameters<K, V> {
+    pub fn parse<Q: ?Sized, T>(&self, key: &Q) -> Result<T, Option<T::Err>> where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+        T: FromStr
+    {
+        if let Some(val) = self.0.get(key) {
+            val.as_ref().parse().map_err(|e| Some(e))
+        } else {
+            Err(None)
+        }
+    }
+
+    pub fn parse_or<Q: ?Sized, T>(&self, key: &Q, or: T) -> T where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+        T: FromStr
+    {
+        self.parse(key).unwrap_or(or)
+    }
+
+    pub fn parse_or_else<Q: ?Sized, T, F>(&self, key: &Q, or_else: F) -> T where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+        T: FromStr,
+        F: FnOnce(Option<T::Err>) -> T
+    {
+        self.parse(key).unwrap_or_else(or_else)
+    }
+}
+
+impl<K, V> Deref for Parameters<K, V> {
+    type Target = HashMap<K, V>;
+
+    fn deref(&self) -> &HashMap<K, V> {
+        &self.0
+    }
+}
+
+impl<K, V> DerefMut for Parameters<K, V> {
+    fn deref_mut(&mut self) -> &mut HashMap<K, V> {
+        &mut self.0
+    }
+}
+
+impl<K, V> Into<HashMap<K, V>> for Parameters<K, V> {
+    fn into(self) -> HashMap<K, V> {
+        self.0
+    }
+}
+
+impl<K, V> From<HashMap<K, V>> for Parameters<K, V> {
+    fn from(map: HashMap<K, V>) -> Parameters<K, V> {
+        Parameters(map)
+    }
 }

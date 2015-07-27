@@ -113,7 +113,7 @@ fn get_todo(database: &Database, context: Context, mut response: Response) {
     let host = or_abort!(context.headers.get(), response, StatusCode::BadRequest);
 
     let id = or_abort!(
-        context.variables.get("id").and_then(|id| id.parse().ok()),
+        context.variables.parse("id").ok(),
         response,
         StatusCode::BadRequest
     );
@@ -136,7 +136,7 @@ fn edit_todo(database: &Database, mut context: Context, mut response: Response) 
     let host = or_abort!(context.headers.get(), response, StatusCode::BadRequest);
 
     let id = or_abort!(
-        context.variables.get("id").and_then(|id| id.parse().ok()),
+        context.variables.parse("id").ok(),
         response,
         StatusCode::BadRequest
     );
@@ -155,7 +155,7 @@ fn edit_todo(database: &Database, mut context: Context, mut response: Response) 
 //Delete a to-do, selected by its id
 fn delete_todo(database: &Database, context: Context, mut response: Response) {
     let id = or_abort!(
-        context.variables.get("id").and_then(|id| id.parse().ok()),
+        context.variables.parse("id").ok(),
         response,
         StatusCode::BadRequest
     );
