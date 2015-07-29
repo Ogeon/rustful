@@ -40,6 +40,11 @@ Some parts of Rustful can be toggled using Cargo features:
  * `ssl` - Enable SSL, and thereby HTTPS. Enabled by default.
  * `multipart` - Enable parsing of `multipart/form-data` requests. Enabled by default.
 
+###Using SSL
+Note that the `ssl` feature requires OpenSSL to be installed in one way or
+another. See https://github.com/sfackler/rust-openssl#building for more
+instructions.
+
 ##Write Your Server
 Here is a simple example of what a simple project could look like. Visit
 `http://localhost:8080` or `http://localhost:8080/Olivia` (if your name is
