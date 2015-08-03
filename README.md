@@ -117,7 +117,7 @@ request something. Are you not sure about how to implement your change? Is it
 still a work in progress? Don't worry. You can still open a pull request where
 we can discuss it and do it step by step.
 
-New features are as welcome as fixes, so pull requests and and proposals with
+New features are as welcome as fixes, so pull requests and proposals with
 enhancements are very much appreciated, but please explain your feature and
 give a good motivation to why it should be included. It makes things much
 easier, both for reviewing the feature and for those who are not as familiar
