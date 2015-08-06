@@ -143,3 +143,9 @@ and it's not nice to see warnings from your dependencies when you are
 compiling your project, right? It's therefore recommend that you run your own
 tests with the `strict` feature enabled before pushing, just to see if you
 missed something.
+
+User facing Cargo features are tested one at the time, using
+`scripts/test_features.sh`, so any newly new user facing feature should be
+added to its feature list (as well as the list in this README). Development
+features, such as `strict`, or features that only exists as dependencies for
+other features does not count as user facing.

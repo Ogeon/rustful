@@ -23,5 +23,5 @@ install:
 build: false
 test_script:
   - cargo build -v --features strict
-  - cargo build -v --no-default-features --features strict
   - cargo test --lib -v --features strict
+  - bash scripts\test_features.sh

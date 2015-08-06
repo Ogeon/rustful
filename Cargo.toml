@@ -17,9 +17,10 @@ path = "src/lib.rs"
 
 [features]
 default = ["rustc_json_body", "ssl", "multipart"]
-benchmark = []
 rustc_json_body = ["rustc-serialize"]
 ssl = ["hyper/ssl"]
+
+benchmark = []
 strict = []
 
 [dependencies]
