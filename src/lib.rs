@@ -366,6 +366,11 @@ enum GlobalState {
 pub struct Parameters<K, V>(HashMap<K, V>);
 
 impl<K: Hash + Eq, V: AsRef<str>> Parameters<K, V> {
+    ///Create an empty `Parameters`.
+    pub fn new() -> Parameters<K, V> {
+        Parameters(HashMap::new())
+    }
+
     ///Try to parse an entry as `T`, if it exists. The error will be `None` if
     ///the entry does not exist, and `Some` if it does exists, but the parsing
     ///failed.

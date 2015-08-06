@@ -34,6 +34,7 @@ use Scheme;
 use Host;
 use Global;
 use HttpResult;
+use Parameters;
 
 use utils;
 
@@ -301,7 +302,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     address: request_addr,
                     path: lossy_utf8_percent_decode(&path),
                     hypermedia: Hypermedia::new(),
-                    variables: HashMap::new().into(),
+                    variables: Parameters::new(),
                     query: query.into(),
                     fragment: fragment,
                     log: &*self.log,
