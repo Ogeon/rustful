@@ -363,19 +363,19 @@ mod test {
 
     pub use self::LinkType::{SelfLink, ForwardLink};
 
-    fn check_variable(mut result: Endpoint<TestHandler>, expected: Option<&str>) {
+    fn check_variable(result: Endpoint<TestHandler>, expected: Option<&[&str]>) {
         assert_eq!(result.handler.is_some(), expected.is_some());
 
         if let Some(expected) = expected {
             let keys = vec!("a", "b", "c");
             let result = keys.into_iter().filter_map(|key| {
-                match result.variables.remove(key) {
-                    Some(value) => Some(value),
+                match result.variables.get(key) {
+                    Some(value) => Some(&**value),
                     None => None
                 }
-            }).collect::<Vec<String>>().connect(", ");
+            }).collect::<Vec<&str>>();
 
-            assert_eq!(&result, expected);
+            assert_eq!(&result[..], expected);
         } else {
             assert!(result.variables.len() == 0);
         }
@@ -441,7 +441,7 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check_variable(router.find(&Get, "path/to/test1"), Some("to"));
+        check_variable(router.find(&Get, "path/to/test1"), Some(&["to"]));
         check_variable(router.find(&Get, "path/to"), None);
         check_variable(router.find(&Get, "path/to/test1/nothing"), None);
     }
@@ -458,10 +458,10 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check_variable(router.find(&Get, "path/to/test1"), Some(""));
-        check_variable(router.find(&Get, "path/to/test/no2"), Some("to"));
-        check_variable(router.find(&Get, "path/to/test1/no/test3"), Some("test3, test1, no"));
-        check_variable(router.find(&Post, "path/to/test1/no/test3"), Some("no, test3, test1"));
+        check_variable(router.find(&Get, "path/to/test1"), Some(&[]));
+        check_variable(router.find(&Get, "path/to/test/no2"), Some(&["to"]));
+        check_variable(router.find(&Get, "path/to/test1/no/test3"), Some(&["test3", "test1", "no"]));
+        check_variable(router.find(&Post, "path/to/test1/no/test3"), Some(&["no", "test3", "test1"]));
         check_variable(router.find(&Get, "path/to/test1/no"), None);
     }
 
@@ -631,8 +631,8 @@ mod test {
 
         router1.insert_router(":a", router2);
         
-        check_variable(router1.find(&Get, "path/to/test1"), Some("path, to, test1"));
-        check_variable(router1.find(&Get, "path/to/test1/test"), Some("path, to, test1"));
+        check_variable(router1.find(&Get, "path/to/test1"), Some(&["path", "to", "test1"]));
+        check_variable(router1.find(&Get, "path/to/test1/test"), Some(&["path", "to", "test1"]));
     }
 
 
