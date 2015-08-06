@@ -40,15 +40,17 @@ pub enum ContextAction {
     ///Continue to the next filter in the stack.
     Next,
 
-    ///Abort and send HTTP status.
+    ///Abort and set HTTP status.
     Abort(StatusCode)
 }
 
 impl<'a> ContextAction {
+    ///Continue to the next filter in the stack.
     pub fn next() -> ContextAction {
         ContextAction::Next
     }
 
+    ///Abort and set HTTP status.
     pub fn abort(status: StatusCode) -> ContextAction {
         ContextAction::Abort(status)
     }
@@ -84,14 +86,17 @@ pub enum ResponseAction<'a> {
 }
 
 impl<'a> ResponseAction<'a> {
+    ///Continue to the next filter and maybe write data.
     pub fn next<T: Into<Data<'a>>>(data: Option<T>) -> ResponseAction<'a> {
         ResponseAction::Next(data.map(|d| d.into()))
     }
 
+    ///Do not continue to the next filter.
     pub fn silent_abort() -> ResponseAction<'a> {
         ResponseAction::SilentAbort
     }
 
+    ///Abort with an error.
     pub fn abort(message: String) -> ResponseAction<'a> {
         ResponseAction::Abort(message)
     }

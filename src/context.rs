@@ -251,7 +251,8 @@ impl<'a, 'b> BodyReader<'a, 'b> {
         )
     }
 
-    ///Internal method that may change unexpectedly.
+    #[doc(hidden)]
+    ///Internal and may change without warning.
     pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, headers: &Headers) -> BodyReader<'a, 'b> {
         use header::ContentType;
         use mime::{Mime, TopLevel, SubLevel, Attr, Value};
@@ -278,7 +279,8 @@ impl<'a, 'b> BodyReader<'a, 'b> {
 
 #[cfg(not(feature = "multipart"))]
 impl<'a, 'b> BodyReader<'a, 'b> {
-    ///Internal method that may change unexpectedly.
+    #[doc(hidden)]
+    ///Internal and may change without warning.
     pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, _headers: &Headers) -> BodyReader<'a, 'b> {
         BodyReader {
             reader: reader
@@ -287,16 +289,7 @@ impl<'a, 'b> BodyReader<'a, 'b> {
 }
 
 ///`BodyReader` extension for reading and parsing a query string.
-///
-///Examples and more information can be found in [the documentation for
-///`BodyReader`][body_reader].
-///
-///[body_reader]: struct.BodyReader.html
 pub trait ExtQueryBody {
-    fn read_query_body(&mut self) -> io::Result<HashMap<String, String>>;
-}
-
-impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
     ///Read and parse the request body as a query string. The body will be
     ///decoded as UTF-8 and plain '+' characters will be replaced with spaces.
     ///
@@ -317,6 +310,10 @@ impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
     ///    response.send(format!("{} + {} = {}", a, b, a + b));
     ///}
     ///```
+    fn read_query_body(&mut self) -> io::Result<HashMap<String, String>>;
+}
+
+impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
     #[inline]
     fn read_query_body(&mut self) -> io::Result<HashMap<String, String>> {
         let mut buf = Vec::new();
@@ -328,21 +325,9 @@ impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
 ///`BodyReader` extension for reading and parsing a JSON body.
 ///
 ///It is available by default and can be toggled using the `rustc_json_body`
-///feature. Examples and more information can be found in [the documentation
-///for `BodyReader`][body_reader].
-///
-///[body_reader]: struct.BodyReader.html
+///feature.
 #[cfg(feature = "rustc_json_body")]
 pub trait ExtJsonBody {
-    ///Read the request body into a JSON structure.
-    fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError>;
-
-    ///Parse and decode the request body as some type `T`.
-    fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T>;
-}
-
-#[cfg(feature = "rustc_json_body")]
-impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
     ///Read the request body into a generic JSON structure. This structure can
     ///then be navigated and parsed freely.
     ///
@@ -363,9 +348,7 @@ impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
     ///    response.send(format!("{} + {} = {}", a, b, a + b));
     ///}
     ///```
-    fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError> {
-        json::Json::from_reader(self)
-    }
+    fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError>;
 
     ///Read and decode a request body as a type `T`. The target type must
     ///implement `rustc_serialize::Decodable`.
@@ -393,6 +376,15 @@ impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
     ///}
     ///# fn main() {}
     ///```
+    fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T>;
+}
+
+#[cfg(feature = "rustc_json_body")]
+impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
+    fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError> {
+        json::Json::from_reader(self)
+    }
+
     fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T> {
         let mut buf = String::new();
         try!(self.read_to_string(&mut buf).map_err(|e| {

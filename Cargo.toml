@@ -20,6 +20,7 @@ default = ["rustc_json_body", "ssl", "multipart"]
 benchmark = []
 rustc_json_body = ["rustc-serialize"]
 ssl = ["hyper/ssl"]
+strict = []
 
 [dependencies]
 time = "0.1"

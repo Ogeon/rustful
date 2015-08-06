@@ -22,6 +22,6 @@ install:
   - cmd: SET OPENSSL_INCLUDE_DIR=C:\OpenSSL-Win32\include
 build: false
 test_script:
-  - cargo build -v
-  - cargo build -v --no-default-features
-  - cargo test --lib -v
+  - cargo build -v --features strict
+  - cargo build -v --no-default-features --features strict
+  - cargo test --lib -v --features strict

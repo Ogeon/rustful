@@ -176,6 +176,8 @@ pub struct Response<'a, 'b> {
 }
 
 impl<'a, 'b> Response<'a, 'b> {
+    #[doc(hidden)]
+    ///Internal and may change without warning.
     pub fn new(
         response: hyper::server::response::Response<'a>,
         filters: &'b Vec<Box<ResponseFilter>>,

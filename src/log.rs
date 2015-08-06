@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::fs;
 use std::sync::Mutex;
 
+///The result from a call to any of the `try_*` methods in `Log`.
 pub type Result = io::Result<()>;
 
 ///Common trait for log tools.
@@ -78,6 +79,7 @@ pub struct File {
 }
 
 impl File {
+    ///Create a new `File` logger with `file` as output destination.
     pub fn new(file: fs::File) -> File {
         File {
             file: Mutex::new(file)
