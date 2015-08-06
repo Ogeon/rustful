@@ -362,9 +362,25 @@ enum GlobalState {
     Many(Map<Any + Send + Sync>),
 }
 
+///An extended `HashMap` with extra functionality for value partsing.
 pub struct Parameters<K, V>(HashMap<K, V>);
 
 impl<K: Hash + Eq, V: AsRef<str>> Parameters<K, V> {
+    ///Try to parse an entry as `T`, if it exists. The error will be `None` if
+    ///the entry does not exist, and `Some` if it does exists, but the parsing
+    ///failed.
+    ///
+    ///```
+    ///# use rustful::{Context, Response};
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let age: Result<u8, _> = context.variables.parse("age");
+    ///    match age {
+    ///        Ok(age) => response.send(format!("age: {}", age)),
+    ///        Err(Some(_)) => response.send("age must be a positive number"),
+    ///        Err(None) => response.send("no age provided")
+    ///    }
+    ///}
+    ///```
     pub fn parse<Q: ?Sized, T>(&self, key: &Q) -> Result<T, Option<T::Err>> where
         K: Borrow<Q>,
         Q: Hash + Eq,
@@ -377,6 +393,16 @@ impl<K: Hash + Eq, V: AsRef<str>> Parameters<K, V> {
         }
     }
 
+    ///Try to parse an entry as `T`, if it exists, or return the default in
+    ///`or`.
+    ///
+    ///```
+    ///# use rustful::{Context, Response};
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let page = context.variables.parse_or("page", 0u8);
+    ///    response.send(format!("current page: {}", page));
+    ///}
+    ///```
     pub fn parse_or<Q: ?Sized, T>(&self, key: &Q, or: T) -> T where
         K: Borrow<Q>,
         Q: Hash + Eq,
@@ -385,6 +411,18 @@ impl<K: Hash + Eq, V: AsRef<str>> Parameters<K, V> {
         self.parse(key).unwrap_or(or)
     }
 
+    ///Try to parse an entry as `T`, if it exists, or create a new one using
+    ///`or_else`. The `or_else` function will receive the parsing error if the
+    ///value existed, but was impossible to parse.
+    ///
+    ///```
+    ///# use rustful::{Context, Response};
+    ///# fn do_heavy_stuff() -> u8 {0}
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let science = context.variables.parse_or_else("science", |_| do_heavy_stuff());
+    ///    response.send(format!("science value: {}", science));
+    ///}
+    ///```
     pub fn parse_or_else<Q: ?Sized, T, F>(&self, key: &Q, or_else: F) -> T where
         K: Borrow<Q>,
         Q: Hash + Eq,
