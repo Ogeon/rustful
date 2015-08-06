@@ -5,6 +5,8 @@ use response::Response;
 
 ///A trait for request handlers.
 pub trait Handler: Send + Sync + 'static {
+    ///Handle a request from the client. Panicking within this method is
+    ///discouraged, to allow the server to run smoothly.
     fn handle_request(&self, context: Context, response: Response);
 }
 

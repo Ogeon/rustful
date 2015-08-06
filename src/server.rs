@@ -162,6 +162,7 @@ impl<R: Router> Server<R> {
         }
     }
 
+    ///Start the server.
     #[cfg(not(feature = "ssl"))]
     pub fn run(self) -> HttpResult<Listening> {
         let threads = self.threads;

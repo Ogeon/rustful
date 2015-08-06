@@ -4,7 +4,9 @@ cache:
   directories:
     - $HOME/.cargo
 rust:
-  - 1.0.0
+  - stable
+  - beta
+  - nightly
 os:
   - linux
   - osx
@@ -13,9 +15,9 @@ branches:
     - master
     - auto
 script:
-  - cargo build -v
-  - cargo build -v --no-default-features
-  - cargo test -v
+  - cargo build -v --features strict
+  - cargo test -v --features strict
+  - sh scripts/test_features.sh
   - cargo doc
 after_success:
   - sh scripts/upload_doc.sh

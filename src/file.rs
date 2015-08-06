@@ -63,6 +63,7 @@ pub struct Loader {
 }
 
 impl Loader {
+    ///Create a new `Loader` with a buffer size of 1048576 bytes (1 megabyte).
     pub fn new() -> Loader {
         Loader {
             buffer_size: 1048576
@@ -118,6 +119,7 @@ pub enum Error<'a, 'b> {
 }
 
 impl<'a, 'b> Error<'a, 'b> {
+    ///Borrow the inner IO error.
     pub fn io_error(&self) -> &io::Error {
         match *self {
             Error::Open(ref e, _) => e,
