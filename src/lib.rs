@@ -122,6 +122,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::borrow::Borrow;
 use std::hash::Hash;
+use std::fmt;
 
 use anymap::Map;
 use anymap::any::{Any, UncheckedAnyExt};
@@ -363,6 +364,7 @@ enum GlobalState {
 }
 
 ///An extended `HashMap` with extra functionality for value partsing.
+#[derive(Clone)]
 pub struct Parameters<K, V>(HashMap<K, V>);
 
 impl<K: Hash + Eq, V: AsRef<str>> Parameters<K, V> {
@@ -438,7 +440,7 @@ impl<K: Hash + Eq, V: AsRef<str>> Parameters<K, V> {
     }
 }
 
-impl<K, V> Deref for Parameters<K, V> {
+impl<K: Eq + Hash, V: AsRef<str>> Deref for Parameters<K, V> {
     type Target = HashMap<K, V>;
 
     fn deref(&self) -> &HashMap<K, V> {
@@ -446,20 +448,79 @@ impl<K, V> Deref for Parameters<K, V> {
     }
 }
 
-impl<K, V> DerefMut for Parameters<K, V> {
+impl<K: Eq + Hash, V: AsRef<str>> DerefMut for Parameters<K, V> {
     fn deref_mut(&mut self) -> &mut HashMap<K, V> {
         &mut self.0
     }
 }
 
-impl<K, V> Into<HashMap<K, V>> for Parameters<K, V> {
+impl<K: Eq + Hash, V: AsRef<str>> Into<HashMap<K, V>> for Parameters<K, V> {
     fn into(self) -> HashMap<K, V> {
         self.0
     }
 }
 
-impl<K, V> From<HashMap<K, V>> for Parameters<K, V> {
+impl<K: Eq + Hash, V: AsRef<str>> From<HashMap<K, V>> for Parameters<K, V> {
     fn from(map: HashMap<K, V>) -> Parameters<K, V> {
         Parameters(map)
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str> + PartialEq> PartialEq for Parameters<K, V> {
+    fn eq(&self, other: &Parameters<K, V>) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str> + Eq> Eq for Parameters<K, V> {}
+
+impl<K: Eq + Hash + fmt::Debug, V: AsRef<str> + fmt::Debug> fmt::Debug for Parameters<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> Default for Parameters<K, V> {
+    fn default() -> Parameters<K, V> {
+        Parameters::new()
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> IntoIterator for Parameters<K, V> {
+    type IntoIter = <HashMap<K, V> as IntoIterator>::IntoIter;
+    type Item = (K, V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, K: Eq + Hash, V: AsRef<str>> IntoIterator for &'a Parameters<K, V> {
+    type IntoIter = <&'a HashMap<K, V> as IntoIterator>::IntoIter;
+    type Item = (&'a K, &'a V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.0).into_iter()
+    }
+}
+
+impl<'a, K: Eq + Hash, V: AsRef<str>> IntoIterator for &'a mut Parameters<K, V> {
+    type IntoIter = <&'a mut HashMap<K, V> as IntoIterator>::IntoIter;
+    type Item = (&'a K, &'a mut V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&mut self.0).into_iter()
+    }
+}
+
+impl<'a, K: Eq + Hash, V: AsRef<str>> std::iter::FromIterator<(K, V)> for Parameters<K, V> {
+    fn from_iter<T: IntoIterator<Item=(K, V)>>(iterable: T) -> Parameters<K, V> {
+        HashMap::from_iter(iterable).into()
+    }
+}
+
+impl<'a, K: Eq + Hash, V: AsRef<str>> Extend<(K, V)> for Parameters<K, V> {
+    fn extend<T: IntoIterator<Item=(K, V)>>(&mut self, iter: T) {
+        self.0.extend(iter)
     }
 }
