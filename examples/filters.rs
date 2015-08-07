@@ -114,7 +114,7 @@ impl ContextFilter for RequestLogger {
     ///Count requests and log the path.
     fn modify(&self, ctx: FilterContext, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
-        ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path));
+        ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path.as_ref().map(AsRef::as_ref).unwrap_or("*")));
         ContextAction::next()
     }
 }
@@ -135,7 +135,7 @@ impl PathPrefix {
 impl ContextFilter for PathPrefix {
     ///Append the prefix to the path
     fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
-        context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);
+        context.path = context.path.as_ref().map(|path| format!("/{}{}", self.prefix.trim_matches('/'), path));
         ContextAction::next()
     }
 }

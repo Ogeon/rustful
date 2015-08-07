@@ -168,8 +168,8 @@ pub struct Context<'a, 'b: 'a, 's> {
     ///The HTTP method.
     pub method: Method,
 
-    ///The requested path.
-    pub path: String,
+    ///The requested path, if specified. Requesting `*` will make it `None`.
+    pub path: Option<String>,
 
     ///Hypermedia from the current endpoint.
     pub hypermedia: Hypermedia<'s>,

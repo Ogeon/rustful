@@ -280,14 +280,17 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
         let path_components = match request_uri {
             RequestUri::AbsoluteUri(url) => {
                 Some((
-                    url.serialize_path().map(|p| p.into_bytes()).unwrap_or_else(|| vec!['/' as u8]),
+                    Some(url.serialize_path().map(|p| p.into_bytes()).unwrap_or_else(|| vec!['/' as u8])),
                     url.query_pairs().unwrap_or_else(|| Vec::new()).into_iter().collect(),
                     url.fragment
                 ))
             },
             RequestUri::AbsolutePath(path) => {
                 let (path, query, fragment) = parse_path(path);
-                Some((path.into_bytes(), query, fragment))
+                Some((Some(path.into_bytes()), query, fragment))
+            },
+            RequestUri::Star => {
+                Some((None, HashMap::new(), None))
             },
             _ => None //TODO: Handle *
         };
@@ -300,7 +303,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     http_version: request_version,
                     method: request_method,
                     address: request_addr,
-                    path: lossy_utf8_percent_decode(&path),
+                    path: path.as_ref().map(|path| lossy_utf8_percent_decode(path)),
                     hypermedia: Hypermedia::new(),
                     variables: Parameters::new(),
                     query: query.into(),
@@ -315,11 +318,21 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                 match self.modify_context(&mut filter_storage, &mut context) {
                     ContextAction::Next => {
                         *response.filter_storage_mut() = filter_storage;
+
+                        let endpoint = context.path.as_ref().map(|path| self.handlers.find(&context.method, path)).unwrap_or_else(|| {
+                            Endpoint {
+                                handler: None,
+                                variables: HashMap::new(),
+                                hypermedia: Hypermedia::new()
+                            }
+                        });
+
                         let Endpoint {
                             handler,
                             variables,
                             hypermedia
-                        } = self.handlers.find(&context.method, &context.path);
+                        } = endpoint;
+
                         if let Some(handler) = handler.or(self.fallback_handler.as_ref()) {
                             context.hypermedia = hypermedia;
                             context.variables = variables.into();
