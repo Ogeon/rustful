@@ -454,6 +454,18 @@ impl<K: Eq + Hash, V: AsRef<str>> DerefMut for Parameters<K, V> {
     }
 }
 
+impl<K: Eq + Hash, V: AsRef<str>> AsRef<HashMap<K, V>> for Parameters<K, V> {
+    fn as_ref(&self) -> &HashMap<K, V> {
+        &self.0
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> AsMut<HashMap<K, V>> for Parameters<K, V> {
+    fn as_mut(&mut self) -> &mut HashMap<K, V> {
+        &mut self.0
+    }
+}
+
 impl<K: Eq + Hash, V: AsRef<str>> Into<HashMap<K, V>> for Parameters<K, V> {
     fn into(self) -> HashMap<K, V> {
         self.0
