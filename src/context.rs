@@ -131,6 +131,8 @@
 
 use std::io::{self, Read};
 use std::net::SocketAddr;
+use std::fmt;
+use std::borrow::Cow;
 
 #[cfg(feature = "rustc_json_body")]
 use rustc_serialize::json;
@@ -168,8 +170,8 @@ pub struct Context<'a, 'b: 'a, 's> {
     ///The HTTP method.
     pub method: Method,
 
-    ///The requested path, if specified. Requesting `*` will make it `None`.
-    pub path: Option<String>,
+    ///The requested URI.
+    pub uri: Uri,
 
     ///Hypermedia from the current endpoint.
     pub hypermedia: Hypermedia<'s>,
@@ -459,4 +461,65 @@ pub enum LinkSegment<'a> {
     Variable(&'a str),
     ///A recursive wildcard. Will recursively match anything.
     RecursiveWildcard
+}
+
+///A URI that can be a path or an asterisk (`*`).
+///
+///The URI may be an invalid UTF-8 path and it is therefore represented as a
+///percent decoded byte vector, but can easily be parsed as a string.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Uri {
+    ///A path URI.
+    Path(Vec<u8>),
+    ///An asterisk (`*`) URI.
+    Asterisk
+}
+
+impl Uri {
+    ///Borrow the URI as a raw path.
+    pub fn as_path(&self) -> Option<&[u8]> {
+        match *self {
+            Uri::Path(ref path) => Some(path),
+            Uri::Asterisk => None
+        }
+    }
+
+    ///Borrow the URI as a UTF-8 path, if valid.
+    pub fn as_utf8_path(&self) -> Result<&str, Option<::std::str::Utf8Error>> {
+        match *self {
+            Uri::Path(ref path) => ::std::str::from_utf8(path).map_err(|e| Some(e)),
+            Uri::Asterisk => Err(None)
+        }
+    }
+
+    ///Borrow the URI as a UTF-8 path, if valid, or convert it to a valid
+    ///UTF-8 string.
+    pub fn as_utf8_path_lossy<'a>(&'a self) -> Option<Cow<'a, str>> {
+        match *self {
+            Uri::Path(ref path) => Some(String::from_utf8_lossy(path)),
+            Uri::Asterisk => None
+        }
+    }
+
+    ///Check if the URI is a path.
+    pub fn is_path(&self) -> bool {
+        match *self {
+            Uri::Path(_) => true,
+            Uri::Asterisk => false
+        }
+    }
+
+    ///Check if the URI is an asterisk (`*`).
+    pub fn is_asterisk(&self) -> bool {
+        match *self {
+            Uri::Path(_) => false,
+            Uri::Asterisk => true
+        }
+    }
+}
+
+impl fmt::Display for Uri {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.as_utf8_path_lossy().unwrap_or_else(|| "*".into()).fmt(f)
+    }
 }

@@ -9,6 +9,7 @@ use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilt
 use rustful::response::Data;
 use rustful::StatusCode;
 use rustful::header::Headers;
+use rustful::context::Uri;
 
 fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     //Take the name of the JSONP function from the query variables
@@ -114,7 +115,7 @@ impl ContextFilter for RequestLogger {
     ///Count requests and log the path.
     fn modify(&self, ctx: FilterContext, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
-        ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path.as_ref().map(AsRef::as_ref).unwrap_or("*")));
+        ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.uri));
         ContextAction::next()
     }
 }
@@ -135,7 +136,16 @@ impl PathPrefix {
 impl ContextFilter for PathPrefix {
     ///Append the prefix to the path
     fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
-        context.path = context.path.as_ref().map(|path| format!("/{}{}", self.prefix.trim_matches('/'), path));
+        let new_uri = context.uri.as_path().map(|path| {
+            let mut new_path = vec!['/' as u8];
+            //TODO: replace with push_all or whatever shows up
+            new_path.extend(self.prefix.trim_matches('/').as_bytes().iter().cloned());
+            new_path.extend(path.iter().cloned());
+            Uri::Path(new_path)
+        });
+        if let Some(uri) = new_uri {
+            context.uri = uri;
+        }
         ContextAction::next()
     }
 }
