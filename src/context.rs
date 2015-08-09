@@ -151,6 +151,8 @@ use utils;
 use HttpVersion;
 use Method;
 use Parameters;
+use MaybeUtf8Owned;
+use MaybeUtf8Slice;
 use header::Headers;
 use log::Log;
 
@@ -177,13 +179,13 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub hypermedia: Hypermedia<'s>,
 
     ///Route variables.
-    pub variables: Parameters<String, String>,
+    pub variables: Parameters,
 
     ///Query variables from the path.
-    pub query: Parameters<String, String>,
+    pub query: Parameters,
 
     ///The fragment part of the URL (after #), if provided.
-    pub fragment: Option<String>,
+    pub fragment: Option<MaybeUtf8Owned>,
 
     ///Log for notes, errors and warnings.
     pub log: &'s (Log + 's),
@@ -312,15 +314,15 @@ pub trait ExtQueryBody {
     ///    response.send(format!("{} + {} = {}", a, b, a + b));
     ///}
     ///```
-    fn read_query_body(&mut self) -> io::Result<Parameters<String, String>>;
+    fn read_query_body(&mut self) -> io::Result<Parameters>;
 }
 
 impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
     #[inline]
-    fn read_query_body(&mut self) -> io::Result<Parameters<String, String>> {
+    fn read_query_body(&mut self) -> io::Result<Parameters> {
         let mut buf = Vec::new();
         try!(self.read_to_end(&mut buf));
-        Ok(utils::parse_parameters(&buf).into())
+        Ok(utils::parse_parameters(&buf)    )
     }
 }
 
@@ -456,9 +458,9 @@ pub struct Link<'a> {
 #[derive(PartialEq, Eq, Debug)]
 pub enum LinkSegment<'a> {
     ///A static part of a path.
-    Static(&'a str),
+    Static(MaybeUtf8Slice<'a>),
     ///A dynamic part of a path. Can be substituted with anything.
-    Variable(&'a str),
+    Variable(MaybeUtf8Slice<'a>),
     ///A recursive wildcard. Will recursively match anything.
     RecursiveWildcard
 }

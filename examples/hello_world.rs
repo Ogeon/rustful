@@ -9,8 +9,8 @@ use rustful::{Server, Context, Response, TreeRouter, Handler};
 fn say_hello(context: Context, response: Response) {
     //Get the value of the path variable `:person`, from below.
     let person = match context.variables.get("person") {
-        Some(name) => &name[..],
-        None => "stranger"
+        Some(name) => name,
+        None => "stranger".into()
     };
 
     //Use the name from the path variable to say hello.

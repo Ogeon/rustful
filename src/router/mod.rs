@@ -68,13 +68,13 @@
 //!# let show_welcome = DummyHandler;
 //!let mut router = TreeRouter::new();
 //!
-//!router.insert(Get, "/", show_welcome);
-//!router.insert(Get, "/about", about_us);
-//!router.insert(Get, "/users", list_users);
-//!router.insert(Get, "/users/:id", show_user);
-//!router.insert(Get, "/products", list_products);
-//!router.insert(Get, "/products/:id", show_product);
-//!router.insert(Get, "/*", show_error);
+//!router.insert(Get, &"/", show_welcome);
+//!router.insert(Get, &"/about", about_us);
+//!router.insert(Get, &"/users", list_users);
+//!router.insert(Get, &"/users/:id", show_user);
+//!router.insert(Get, &"/products", list_products);
+//!router.insert(Get, &"/products/:id", show_product);
+//!router.insert(Get, &"/*", show_error);
 //!# }
 //!```
 //!
@@ -82,13 +82,13 @@
 
 use std::collections::HashMap;
 use std::iter::{Iterator, FlatMap};
-use std::str::SplitTerminator;
-use std::slice::Iter;
+use std::slice::Split;
 use std::ops::Deref;
 use hyper::method::Method;
 
 use handler::Handler;
 use context::Hypermedia;
+use MaybeUtf8Owned;
 
 pub use self::tree_router::TreeRouter;
 
@@ -100,7 +100,7 @@ pub struct Endpoint<'a, T: 'a> {
     pub handler: Option<&'a T>,
     ///Path variables for the matching endpoint. May be empty, depending on
     ///the router implementation.
-    pub variables: HashMap<String, String>,
+    pub variables: HashMap<MaybeUtf8Owned, MaybeUtf8Owned>,
     ///Any associated hypermedia, such as links.
     pub hypermedia: Hypermedia<'a>
 }
@@ -124,26 +124,26 @@ pub trait Router: Send + Sync + 'static {
     type Handler: Handler;
 
     ///Insert a new handler into the router.
-    fn insert<'r, R: Route<'r> + ?Sized>(&mut self, method: Method, route: &'r R, handler: Self::Handler);
+    fn insert<'a, D: ?Sized + Deref<Target=R> + 'a, R: ?Sized + Route<'a> + 'a>(&mut self, method: Method, route: &'a D, handler: Self::Handler);
 
     ///Find and return the matching handler and variable values.
-    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, method: &Method, route: &'r R) -> Endpoint<'a, Self::Handler>;
+    fn find<'a>(&'a self, method: &Method, route: &[u8]) -> Endpoint<'a, Self::Handler>;
 }
 
 impl<H: Handler> Router for H {
     type Handler = H;
 
-    fn find<'a: 'r, 'r, R: Route<'r> + ?Sized>(&'a self, _method: &Method, _route: &'r R) -> Endpoint<'a, H> {
+    fn find<'a>(&'a self, _method: &Method, _route: &[u8]) -> Endpoint<'a, H> {
         Some(self).into()
     }
 
-    fn insert<'r, R: Route<'r> + 'r + ?Sized>(&mut self, _method: Method, _route: &'r R, _handler: H) {}
+    fn insert<'a, D: ?Sized + Deref<Target=R> + 'a, R: ?Sized + Route<'a> + 'a>(&mut self, _method: Method, _route: &'a D, _handler: H) {}
 }
 
 ///A segmented route.
 pub trait Route<'a> {
     ///An iterator over route segments.
-    type Segments: Iterator<Item=&'a str>;
+    type Segments: Iterator<Item=&'a [u8]>;
 
     ///Create a route segment iterator. The iterator is expected to return
     ///None for a root path (`/`).
@@ -155,48 +155,66 @@ pub trait Route<'a> {
     ///
     ///let path = ["/path", "to/somewhere/", "/", "/else/"];
     ///let segments = path.segments().collect::<Vec<_>>();
-    ///assert_eq!(segments, vec!["path", "to", "somewhere", "else"]);
+    ///let expected = vec![
+    ///    "path".as_bytes(),
+    ///    "to".as_bytes(),
+    ///    "somewhere".as_bytes(),
+    ///    "else".as_bytes()
+    ///];
+    ///assert_eq!(segments, expected);
     ///```
     fn segments(&'a self) -> <Self as Route<'a>>::Segments;
 }
 
+fn is_slash(c: &u8) -> bool {
+    *c == b'/'
+}
+
 impl<'a> Route<'a> for str {
-    type Segments = RouteIter<SplitTerminator<'a, char>>;
+    type Segments = RouteIter<Split<'a, u8, fn(&u8) -> bool>>;
 
     fn segments(&'a self) -> <Self as Route<'a>>::Segments {
-        let s = if self.starts_with('/') {
+        self.as_bytes().segments()
+    }
+}
+
+impl<'a> Route<'a> for [u8] {
+    type Segments = RouteIter<Split<'a, u8, fn(&u8) -> bool>>;
+
+    fn segments(&'a self) -> <Self as Route<'a>>::Segments {
+        let s = if self.starts_with(b"/") {
             &self[1..]
         } else {
             self
+        };
+        let s = if s.ends_with(b"/") {
+            &s[..s.len() - 1]
+        } else {
+            s
         };
 
         if s.len() == 0 {
             RouteIter::Root
         } else {
-            RouteIter::Path(s.split_terminator('/'))
+            RouteIter::Path(s.split(is_slash))
         }
     }
 }
 
 
-impl<'a, R: Route<'a>> Route<'a> for [R] {
-    type Segments = FlatMap<Iter<'a, R>, <R as Route<'a>>::Segments, fn(&'a R) -> <R as Route<'a>>::Segments>;
+impl<'a, 'b: 'a, I: 'a, T: 'a> Route<'a> for I where
+    &'a I: IntoIterator<Item=&'a T>,
+    T: Deref,
+    <T as Deref>::Target: Route<'a> + 'b
+{
+    type Segments = FlatMap<<&'a I as IntoIterator>::IntoIter, <<T as Deref>::Target as Route<'a>>::Segments, fn(&'a T) -> <<T as Deref>::Target as Route<'a>>::Segments>;
 
-    fn segments(&'a self) -> <Self as Route>::Segments {
-        fn segments<'a, T: Route<'a> + 'a>(s: &'a T) -> <T as Route<'a>>::Segments {
+    fn segments(&'a self) -> Self::Segments {
+        fn segments<'a, 'b: 'a, T: Deref<Target=R> + 'b, R: ?Sized + Route<'a, Segments=S> + 'b, S: Iterator<Item=&'a[u8]>>(s: &'a T) -> S {
             s.segments()
         }
 
-        self.iter().flat_map(segments::<'a>)
-    }
-}
-
-impl<'a, 'b: 'a, T: Deref<Target=R> + 'b, R: Route<'a> + ?Sized + 'b> Route<'a> for T {
-    type Segments = <R as Route<'a>>::Segments;
-
-    #[inline]
-    fn segments(&'a self) -> <Self as Route<'a>>::Segments {
-        self.deref().segments()
+        self.into_iter().flat_map(segments)
     }
 }
 

@@ -14,7 +14,7 @@ use rustful::context::Uri;
 fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     //Take the name of the JSONP function from the query variables
     let mut quote_msg = if let Some(jsonp_name) = context.query.remove("jsonp") {
-        response.filter_storage_mut().insert(JsonpFn(jsonp_name));
+        response.filter_storage_mut().insert(JsonpFn(jsonp_name.into()));
         true
     } else {
         false
@@ -27,8 +27,8 @@ fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     }
 
     let person = match context.variables.get("person") {
-        Some(name) => &name[..],
-        None => "stranger"
+        Some(name) => name,
+        None => "stranger".into()
     };
 
     let message = if quote_msg {
