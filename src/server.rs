@@ -34,6 +34,7 @@ use Scheme;
 use Host;
 use Global;
 use HttpResult;
+use Parameters;
 
 use utils;
 
@@ -301,8 +302,8 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     address: request_addr,
                     path: lossy_utf8_percent_decode(&path),
                     hypermedia: Hypermedia::new(),
-                    variables: HashMap::new(),
-                    query: query,
+                    variables: Parameters::new(),
+                    query: query.into(),
                     fragment: fragment,
                     log: &*self.log,
                     global: &self.global,
@@ -321,7 +322,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                         } = self.handlers.find(&context.method, &context.path);
                         if let Some(handler) = handler.or(self.fallback_handler.as_ref()) {
                             context.hypermedia = hypermedia;
-                            context.variables = variables;
+                            context.variables = variables.into();
                             handler.handle_request(context, response);
                         } else {
                             response.set_status(StatusCode::NotFound);

@@ -118,6 +118,11 @@ pub mod file;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::str::FromStr;
 use std::any::TypeId;
+use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
+use std::borrow::Borrow;
+use std::hash::Hash;
+use std::fmt;
 
 use anymap::Map;
 use anymap::any::{Any, UncheckedAnyExt};
@@ -356,4 +361,178 @@ enum GlobalState {
     None,
     One(TypeId, Box<Any + Send + Sync>),
     Many(Map<Any + Send + Sync>),
+}
+
+///An extended `HashMap` with extra functionality for value partsing.
+#[derive(Clone)]
+pub struct Parameters<K, V>(HashMap<K, V>);
+
+impl<K: Hash + Eq, V: AsRef<str>> Parameters<K, V> {
+    ///Create an empty `Parameters`.
+    pub fn new() -> Parameters<K, V> {
+        Parameters(HashMap::new())
+    }
+
+    ///Try to parse an entry as `T`, if it exists. The error will be `None` if
+    ///the entry does not exist, and `Some` if it does exists, but the parsing
+    ///failed.
+    ///
+    ///```
+    ///# use rustful::{Context, Response};
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let age: Result<u8, _> = context.variables.parse("age");
+    ///    match age {
+    ///        Ok(age) => response.send(format!("age: {}", age)),
+    ///        Err(Some(_)) => response.send("age must be a positive number"),
+    ///        Err(None) => response.send("no age provided")
+    ///    }
+    ///}
+    ///```
+    pub fn parse<Q: ?Sized, T>(&self, key: &Q) -> Result<T, Option<T::Err>> where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+        T: FromStr
+    {
+        if let Some(val) = self.0.get(key) {
+            val.as_ref().parse().map_err(|e| Some(e))
+        } else {
+            Err(None)
+        }
+    }
+
+    ///Try to parse an entry as `T`, if it exists, or return the default in
+    ///`or`.
+    ///
+    ///```
+    ///# use rustful::{Context, Response};
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let page = context.variables.parse_or("page", 0u8);
+    ///    response.send(format!("current page: {}", page));
+    ///}
+    ///```
+    pub fn parse_or<Q: ?Sized, T>(&self, key: &Q, or: T) -> T where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+        T: FromStr
+    {
+        self.parse(key).unwrap_or(or)
+    }
+
+    ///Try to parse an entry as `T`, if it exists, or create a new one using
+    ///`or_else`. The `or_else` function will receive the parsing error if the
+    ///value existed, but was impossible to parse.
+    ///
+    ///```
+    ///# use rustful::{Context, Response};
+    ///# fn do_heavy_stuff() -> u8 {0}
+    ///fn my_handler(context: Context, response: Response) {
+    ///    let science = context.variables.parse_or_else("science", |_| do_heavy_stuff());
+    ///    response.send(format!("science value: {}", science));
+    ///}
+    ///```
+    pub fn parse_or_else<Q: ?Sized, T, F>(&self, key: &Q, or_else: F) -> T where
+        K: Borrow<Q>,
+        Q: Hash + Eq,
+        T: FromStr,
+        F: FnOnce(Option<T::Err>) -> T
+    {
+        self.parse(key).unwrap_or_else(or_else)
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> Deref for Parameters<K, V> {
+    type Target = HashMap<K, V>;
+
+    fn deref(&self) -> &HashMap<K, V> {
+        &self.0
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> DerefMut for Parameters<K, V> {
+    fn deref_mut(&mut self) -> &mut HashMap<K, V> {
+        &mut self.0
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> AsRef<HashMap<K, V>> for Parameters<K, V> {
+    fn as_ref(&self) -> &HashMap<K, V> {
+        &self.0
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> AsMut<HashMap<K, V>> for Parameters<K, V> {
+    fn as_mut(&mut self) -> &mut HashMap<K, V> {
+        &mut self.0
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> Into<HashMap<K, V>> for Parameters<K, V> {
+    fn into(self) -> HashMap<K, V> {
+        self.0
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> From<HashMap<K, V>> for Parameters<K, V> {
+    fn from(map: HashMap<K, V>) -> Parameters<K, V> {
+        Parameters(map)
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str> + PartialEq> PartialEq for Parameters<K, V> {
+    fn eq(&self, other: &Parameters<K, V>) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str> + Eq> Eq for Parameters<K, V> {}
+
+impl<K: Eq + Hash + fmt::Debug, V: AsRef<str> + fmt::Debug> fmt::Debug for Parameters<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> Default for Parameters<K, V> {
+    fn default() -> Parameters<K, V> {
+        Parameters::new()
+    }
+}
+
+impl<K: Eq + Hash, V: AsRef<str>> IntoIterator for Parameters<K, V> {
+    type IntoIter = <HashMap<K, V> as IntoIterator>::IntoIter;
+    type Item = (K, V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, K: Eq + Hash, V: AsRef<str>> IntoIterator for &'a Parameters<K, V> {
+    type IntoIter = <&'a HashMap<K, V> as IntoIterator>::IntoIter;
+    type Item = (&'a K, &'a V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.0).into_iter()
+    }
+}
+
+impl<'a, K: Eq + Hash, V: AsRef<str>> IntoIterator for &'a mut Parameters<K, V> {
+    type IntoIter = <&'a mut HashMap<K, V> as IntoIterator>::IntoIter;
+    type Item = (&'a K, &'a mut V);
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&mut self.0).into_iter()
+    }
+}
+
+impl<'a, K: Eq + Hash, V: AsRef<str>> std::iter::FromIterator<(K, V)> for Parameters<K, V> {
+    fn from_iter<T: IntoIterator<Item=(K, V)>>(iterable: T) -> Parameters<K, V> {
+        HashMap::from_iter(iterable).into()
+    }
+}
+
+impl<'a, K: Eq + Hash, V: AsRef<str>> Extend<(K, V)> for Parameters<K, V> {
+    fn extend<T: IntoIterator<Item=(K, V)>>(&mut self, iter: T) {
+        self.0.extend(iter)
+    }
 }
