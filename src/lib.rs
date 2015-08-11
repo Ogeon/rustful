@@ -601,6 +601,14 @@ impl<S, V> MaybeUtf8<S, V> {
             MaybeUtf8::NotUtf8(ref v) => String::from_utf8_lossy(v.as_ref())
         }
     }
+
+    ///Borrow the string as a slice of bytes.
+    pub fn as_bytes(&self) -> &[u8] where S: AsRef<[u8]>, V: AsRef<[u8]> {
+        match *self {
+            MaybeUtf8::Utf8(ref s) => s.as_ref(),
+            MaybeUtf8::NotUtf8(ref v) => v.as_ref()
+        }
+    }
 }
 
 impl<V> From<String> for MaybeUtf8<String, V> {
