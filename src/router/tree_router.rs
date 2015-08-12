@@ -6,7 +6,7 @@ use std::ops::Deref;
 use hyper::method::Method;
 
 use router::{Router, Route, Endpoint};
-use context::{Link, LinkSegment};
+use context::hypermedia::{Link, LinkSegment};
 use handler::Handler;
 
 use MaybeUtf8Owned;
@@ -337,7 +337,8 @@ mod test {
     #[cfg(feature = "benchmark")]
     use test::Bencher;
     use router::{Endpoint};
-    use context::{Context, LinkSegment};
+    use context::Context;
+    use context::hypermedia::LinkSegment;
     use response::Response;
     use handler::Handler;
     use hyper::method::Method::{Get, Post, Delete, Put, Head};

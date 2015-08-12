@@ -23,7 +23,8 @@ use anymap::AnyMap;
 
 use StatusCode;
 
-use context::{self, Context, Hypermedia, Uri};
+use context::{self, Context, Uri};
+use context::hypermedia::Hypermedia;
 use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::{Router, Endpoint};
 use handler::Handler;
@@ -309,7 +310,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     });
                 }
 
-                let body = context::BodyReader::from_reader(request_reader, &request_headers);
+                let body = context::body::BodyReader::from_reader(request_reader, &request_headers);
 
                 let mut context = Context {
                     headers: request_headers,

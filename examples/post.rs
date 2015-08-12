@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use std::error::Error;
 
 use rustful::{Server, Context, Response, Log, Handler};
-use rustful::context::ExtQueryBody;
+use rustful::context::body::ExtQueryBody;
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
 fn say_hello(mut context: Context, mut response: Response) {

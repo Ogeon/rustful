@@ -87,7 +87,7 @@ use std::ops::Deref;
 use hyper::method::Method;
 
 use handler::Handler;
-use context::Hypermedia;
+use context::hypermedia::Hypermedia;
 use MaybeUtf8Owned;
 
 pub use self::tree_router::TreeRouter;

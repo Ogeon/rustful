@@ -23,7 +23,7 @@ use rustful::header::{
     Host
 };
 use rustful::StatusCode;
-use rustful::context::ExtJsonBody;
+use rustful::context::body::ExtJsonBody;
 
 //Helper for setting a status code and then returning from a function
 macro_rules! or_abort {
