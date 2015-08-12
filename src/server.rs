@@ -331,7 +331,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     ContextAction::Next => {
                         *response.filter_storage_mut() = filter_storage;
 
-                        let endpoint = context.uri.as_path().map(|path| self.handlers.find(&context.method, path)).unwrap_or_else(|| {
+                        let endpoint = context.uri.as_path().map(|path| self.handlers.find(&context.method, &path)).unwrap_or_else(|| {
                             Endpoint {
                                 handler: None,
                                 variables: HashMap::new(),
@@ -378,7 +378,7 @@ fn parse_path(path: &str) -> ParsedUri {
 
             ParsedUri {
                 host: None,
-                uri: Uri::Path(path),
+                uri: Uri::Path(path.into()),
                 query: utils::parse_parameters(query.as_bytes()),
                 fragment: fragment.map(|f| percent_decode(f.as_bytes()).into())
             }
@@ -393,7 +393,7 @@ fn parse_path(path: &str) -> ParsedUri {
 
             ParsedUri {
                 host: None,
-                uri: Uri::Path(path),
+                uri: Uri::Path(path.into()),
                 query: Parameters::new(),
                 fragment: fragment.map(|f| percent_decode(f.as_bytes()).into())
             }
@@ -431,7 +431,7 @@ fn parse_url(url: Url) -> ParsedUri {
 
     ParsedUri {
         host: host,
-        uri: Uri::Path(path),
+        uri: Uri::Path(path.into()),
         query: query,
         fragment: url.fragment.map(|f| percent_decode(f.as_bytes()).into())
     }
@@ -443,7 +443,7 @@ fn parse_path_parts() {
     let with = "this".to_owned().into();
     let and = "that".to_owned().into();
     let ParsedUri { uri, query, fragment, .. } = parse_path("/path/to/something?with=this&and=that#lol");
-    assert_eq!(uri.as_path(), Some("/path/to/something".as_ref()));
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
     assert_eq!(query.get_raw("with"), Some(&with));
     assert_eq!(query.get_raw("and"), Some(&and));
     assert_eq!(fragment, Some("lol".to_owned().into()));
@@ -454,7 +454,7 @@ fn parse_strange_path() {
     let with = "this".to_owned().into();
     let and = "what?".to_owned().into();
     let ParsedUri { uri, query, fragment, .. } = parse_path("/path/to/something?with=this&and=what?#");
-    assert_eq!(uri.as_path(), Some("/path/to/something".as_ref()));
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
     assert_eq!(query.get_raw("with"), Some(&with));
     assert_eq!(query.get_raw("and"), Some(&and));
     assert_eq!(fragment, Some(String::new().into()));
@@ -465,20 +465,20 @@ fn parse_missing_path_parts() {
     let with = "this".to_owned().into();
     let and = "that".to_owned().into();
     let ParsedUri { uri, query, fragment, .. } = parse_path("/path/to/something?with=this&and=that");
-    assert_eq!(uri.as_path(), Some("/path/to/something".as_ref()));
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
     assert_eq!(query.get_raw("with"), Some(&with));
     assert_eq!(query.get_raw("and"), Some(&and));
     assert_eq!(fragment, None);
 
 
     let ParsedUri { uri, query, fragment, .. } = parse_path("/path/to/something#lol");
-    assert_eq!(uri.as_path(), Some("/path/to/something".as_ref()));
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
     assert_eq!(query.len(), 0);
     assert_eq!(fragment, Some("lol".to_owned().into()));
 
 
     let ParsedUri { uri, query, fragment, .. } = parse_path("?with=this&and=that#lol");
-    assert_eq!(uri.as_path(), Some("/".as_ref()));
+    assert_eq!(uri.as_path(), Some("/".into()));
     assert_eq!(query.get_raw("with"), Some(&with));
     assert_eq!(query.get_raw("and"), Some(&and));
     assert_eq!(fragment, Some("lol".to_owned().into()));
@@ -491,7 +491,7 @@ fn parse_url_parts() {
     let and = "that".to_owned().into();
     let url = Url::parse("http://example.com/path/to/something?with=this&and=that#lol").unwrap();
     let ParsedUri { uri, query, fragment, .. } = parse_url(url);
-    assert_eq!(uri.as_path(), Some("/path/to/something".as_ref()));
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
     assert_eq!(query.get_raw("with"), Some(&with));
     assert_eq!(query.get_raw("and"), Some(&and));
     assert_eq!(fragment, Some("lol".to_owned().into()));
@@ -503,7 +503,7 @@ fn parse_strange_url() {
     let and = "what?".to_owned().into();
     let url = Url::parse("http://example.com/path/to/something?with=this&and=what?#").unwrap();
     let ParsedUri { uri, query, fragment, .. } = parse_url(url);
-    assert_eq!(uri.as_path(), Some("/path/to/something".as_ref()));
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
     assert_eq!(query.get_raw("with"), Some(&with));
     assert_eq!(query.get_raw("and"), Some(&and));
     assert_eq!(fragment, Some(String::new().into()));
@@ -515,7 +515,7 @@ fn parse_missing_url_parts() {
     let and = "that".to_owned().into();
     let url = Url::parse("http://example.com/path/to/something?with=this&and=that").unwrap();
     let ParsedUri { uri, query, fragment, .. } = parse_url(url);
-    assert_eq!(uri.as_path(), Some("/path/to/something".as_ref()));
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
     assert_eq!(query.get_raw("with"), Some(&with));
     assert_eq!(query.get_raw("and"), Some(&and));
     assert_eq!(fragment, None);
@@ -523,14 +523,14 @@ fn parse_missing_url_parts() {
 
     let url = Url::parse("http://example.com/path/to/something#lol").unwrap();
     let ParsedUri { uri, query, fragment, .. } = parse_url(url);
-    assert_eq!(uri.as_path(), Some("/path/to/something".as_ref()));
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
     assert_eq!(query.len(), 0);
     assert_eq!(fragment, Some("lol".to_owned().into()));
 
 
     let url = Url::parse("http://example.com?with=this&and=that#lol").unwrap();
     let ParsedUri { uri, query, fragment, .. } = parse_url(url);
-    assert_eq!(uri.as_path(), Some("/".as_ref()));
+    assert_eq!(uri.as_path(), Some("/".into()));
     assert_eq!(query.get_raw("with"), Some(&with));
     assert_eq!(query.get_raw("and"), Some(&and));
     assert_eq!(fragment, Some("lol".to_owned().into()));

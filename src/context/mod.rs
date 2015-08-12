@@ -197,25 +197,25 @@ pub struct Context<'a, 'b: 'a, 's> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Uri {
     ///A path URI.
-    Path(Vec<u8>),
+    Path(MaybeUtf8Owned),
     ///An asterisk (`*`) URI.
     Asterisk
 }
 
 impl Uri {
     ///Borrow the URI as a raw path.
-    pub fn as_path(&self) -> Option<&[u8]> {
+    pub fn as_path(&self) -> Option<MaybeUtf8Slice> {
         match *self {
-            Uri::Path(ref path) => Some(path),
+            Uri::Path(ref path) => Some(path.as_slice()),
             Uri::Asterisk => None
         }
     }
 
     ///Borrow the URI as a UTF-8 path, if valid.
-    pub fn as_utf8_path(&self) -> Result<&str, Option<::std::str::Utf8Error>> {
+    pub fn as_utf8_path(&self) -> Option<&str> {
         match *self {
-            Uri::Path(ref path) => ::std::str::from_utf8(path).map_err(|e| Some(e)),
-            Uri::Asterisk => Err(None)
+            Uri::Path(ref path) => path.as_utf8(),
+            Uri::Asterisk => None
         }
     }
 
@@ -223,7 +223,7 @@ impl Uri {
     ///UTF-8 string.
     pub fn as_utf8_path_lossy<'a>(&'a self) -> Option<Cow<'a, str>> {
         match *self {
-            Uri::Path(ref path) => Some(String::from_utf8_lossy(path)),
+            Uri::Path(ref path) => Some(path.as_utf8_lossy()),
             Uri::Asterisk => None
         }
     }

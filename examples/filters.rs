@@ -141,7 +141,7 @@ impl ContextFilter for PathPrefix {
             //TODO: replace with push_all or whatever shows up
             new_path.extend(self.prefix.trim_matches('/').as_bytes().iter().cloned());
             new_path.extend(path.iter().cloned());
-            Uri::Path(new_path)
+            Uri::Path(new_path.into())
         });
         if let Some(uri) = new_uri {
             context.uri = uri;
