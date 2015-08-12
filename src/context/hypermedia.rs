@@ -1,7 +1,7 @@
 //!Anything related to hypermedia and hyperlinks.
 
 use Method;
-use MaybeUtf8Slice;
+use context::MaybeUtf8Slice;
 
 ///Hypermedia connected to an API endpoint.
 pub struct Hypermedia<'a> {

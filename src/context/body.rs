@@ -14,7 +14,7 @@ use hyper::buffer::BufReader;
 use hyper::http::h1::HttpReader;
 use hyper::net::NetworkStream;
 
-use Parameters;
+use context::Parameters;
 use header::Headers;
 
 ///A reader for a request body.

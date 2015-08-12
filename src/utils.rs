@@ -1,5 +1,5 @@
 use url::percent_encoding::percent_decode;
-use Parameters;
+use context::Parameters;
 
 pub fn parse_parameters(source: &[u8]) -> Parameters {
     let mut parameters = Parameters::new();

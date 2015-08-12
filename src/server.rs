@@ -23,7 +23,7 @@ use anymap::AnyMap;
 
 use StatusCode;
 
-use context::{self, Context, Uri};
+use context::{self, Context, Uri, MaybeUtf8Owned, Parameters};
 use context::hypermedia::Hypermedia;
 use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::{Router, Endpoint};
@@ -36,8 +36,6 @@ use Scheme;
 use Host;
 use Global;
 use HttpResult;
-use Parameters;
-use MaybeUtf8Owned;
 
 use utils;
 

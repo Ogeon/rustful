@@ -135,8 +135,6 @@ use std::borrow::Cow;
 
 use HttpVersion;
 use Method;
-use Parameters;
-use MaybeUtf8Owned;
 use header::Headers;
 use log::Log;
 use Global;
@@ -146,6 +144,12 @@ use self::hypermedia::Hypermedia;
 
 pub mod body;
 pub mod hypermedia;
+
+mod maybe_utf8;
+pub use self::maybe_utf8::{MaybeUtf8, MaybeUtf8Owned, MaybeUtf8Slice};
+
+mod parameters;
+pub use self::parameters::Parameters;
 
 ///A container for handler input, like request data and utilities.
 pub struct Context<'a, 'b: 'a, 's> {

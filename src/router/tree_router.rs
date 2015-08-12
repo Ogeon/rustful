@@ -6,10 +6,9 @@ use std::ops::Deref;
 use hyper::method::Method;
 
 use router::{Router, Route, Endpoint};
+use context::MaybeUtf8Owned;
 use context::hypermedia::{Link, LinkSegment};
 use handler::Handler;
-
-use MaybeUtf8Owned;
 
 use self::Branch::{Static, Variable, Wildcard};
 
