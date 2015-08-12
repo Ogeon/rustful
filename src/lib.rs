@@ -118,7 +118,7 @@ pub mod file;
 use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::str::FromStr;
 use std::any::TypeId;
-use std::collections::HashMap;
+use std::collections::hash_map::{HashMap, Entry};
 use std::ops::{Deref, DerefMut};
 use std::borrow::{Cow, Borrow};
 use std::hash::{Hash, Hasher};
@@ -363,7 +363,11 @@ enum GlobalState {
     Many(Map<Any + Send + Sync>),
 }
 
-///An extended `HashMap` with extra functionality for value partsing.
+///An extended `HashMap` with extra functionality for value parsing.
+///
+///Some of the methods from `HashMap` has been wrapped to provide a more
+///ergonomic API, where anything that can be represented as a byte slice can
+///be used as a key.
 #[derive(Clone)]
 pub struct Parameters(HashMap<MaybeUtf8Owned, MaybeUtf8Owned>);
 
@@ -375,31 +379,51 @@ impl Parameters {
 
     ///Get a parameter as a UTF-8 string. A lossy conversion will be performed
     ///if it's not encoded as UTF-8. Use `get_raw` to get the original data.
-    pub fn get<'a, Q: ?Sized>(&'a self, key: &Q) -> Option<Cow<'a, str>> where
-        Q: Hash + Eq + AsRef<[u8]>
+    pub fn get<'a, K: ?Sized>(&'a self, key: &K) -> Option<Cow<'a, str>> where
+        K: Hash + Eq + AsRef<[u8]>
     {
         self.0.get(key.as_ref()).map(|v| v.as_utf8_lossy())
     }
 
     ///Get a parameter that may or may not be a UTF-8 string.
-    pub fn get_raw<'a, Q: ?Sized>(&'a self, key: &Q) -> Option<&'a MaybeUtf8Owned> where
-        Q: Hash + Eq + AsRef<[u8]>
+    pub fn get_raw<'a, K: ?Sized>(&'a self, key: &K) -> Option<&'a MaybeUtf8Owned> where
+        K: Hash + Eq + AsRef<[u8]>
     {
         self.0.get(key.as_ref())
     }
 
+    ///Get a mutable parameter that may or may not be a UTF-8 string.
+    pub fn get_mut<'a, K: ?Sized>(&'a mut self, key: &K) -> Option<&'a mut MaybeUtf8Owned> where
+        K: Hash + Eq + AsRef<[u8]>
+    {
+        self.0.get_mut(key.as_ref())
+    }
+
+    ///Returns true if a parameter with the given key exists.
+    pub fn contains_key<K: ?Sized>(&self, key: &K) -> bool where
+        K: Hash + Eq + AsRef<[u8]>
+    {
+        self.0.contains_key(key.as_ref())
+    }
+
     ///Insert a parameter.
-    pub fn insert<Q, V>(&mut self, key: Q, value: V) -> Option<MaybeUtf8Owned> where
-        Q: Into<MaybeUtf8Owned>, V: Into<MaybeUtf8Owned>
+    pub fn insert<K, V>(&mut self, key: K, value: V) -> Option<MaybeUtf8Owned> where
+        K: Into<MaybeUtf8Owned>, V: Into<MaybeUtf8Owned>
     {
         self.0.insert(key.into(), value.into())
     }
 
     ///Remove a parameter and return it.
-    pub fn remove<Q: ?Sized>(&mut self, key: &Q) -> Option<MaybeUtf8Owned> where
-        Q: Hash + Eq + AsRef<[u8]>
+    pub fn remove<K: ?Sized>(&mut self, key: &K) -> Option<MaybeUtf8Owned> where
+        K: Hash + Eq + AsRef<[u8]>
     {
         self.0.remove(key.as_ref())
+    }
+
+    ///Gets the given key's corresponding parameter in the map for in-place
+    ///manipulation.
+    pub fn entry<K>(&mut self, key: K) -> Entry<MaybeUtf8Owned, MaybeUtf8Owned> where K: Into<MaybeUtf8Owned> {
+        self.0.entry(key.into())
     }
 
     ///Try to parse an entry as `T`, if it exists. The error will be `None` if
@@ -417,8 +441,8 @@ impl Parameters {
     ///    }
     ///}
     ///```
-    pub fn parse<Q: ?Sized, T>(&self, key: &Q) -> Result<T, Option<T::Err>> where
-        Q: Hash + Eq + AsRef<[u8]>,
+    pub fn parse<K: ?Sized, T>(&self, key: &K) -> Result<T, Option<T::Err>> where
+        K: Hash + Eq + AsRef<[u8]>,
         T: FromStr
     {
         if let Some(val) = self.0.get(key.as_ref()) {
@@ -438,8 +462,8 @@ impl Parameters {
     ///    response.send(format!("current page: {}", page));
     ///}
     ///```
-    pub fn parse_or<Q: ?Sized, T>(&self, key: &Q, or: T) -> T where
-        Q: Hash + Eq + AsRef<[u8]>,
+    pub fn parse_or<K: ?Sized, T>(&self, key: &K, or: T) -> T where
+        K: Hash + Eq + AsRef<[u8]>,
         T: FromStr
     {
         self.parse(key).unwrap_or(or)
@@ -457,8 +481,8 @@ impl Parameters {
     ///    response.send(format!("science value: {}", science));
     ///}
     ///```
-    pub fn parse_or_else<Q: ?Sized, T, F>(&self, key: &Q, or_else: F) -> T where
-        Q: Hash + Eq + AsRef<[u8]>,
+    pub fn parse_or_else<K: ?Sized, T, F>(&self, key: &K, or_else: F) -> T where
+        K: Hash + Eq + AsRef<[u8]>,
         T: FromStr,
         F: FnOnce(Option<T::Err>) -> T
     {
