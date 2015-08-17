@@ -44,7 +44,7 @@ version = "0.3"
 optional = true
 
 [dev-dependencies]
-unicase = "0.1"
+unicase = "1.0"
 tempdir = "0.3"
 
 [build-dependencies]
