@@ -8,11 +8,11 @@ use std::borrow::Cow;
 use std::error::Error;
 
 use rustful::{Server, Context, Response, Log, Handler};
-use rustful::context::ExtQueryBody;
+use rustful::context::body::ExtQueryBody;
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
 fn say_hello(mut context: Context, mut response: Response) {
-    let mut body = match context.body.read_query_body() {
+    let body = match context.body.read_query_body() {
         Ok(body) => body,
         Err(_) => {
             //Oh no! Could not read the body
@@ -31,7 +31,7 @@ fn say_hello(mut context: Context, mut response: Response) {
     };
 
     //Format the name or use the cached form
-    let content = if let Some(name) = body.remove("name") {
+    let content = if let Some(name) = body.get("name") {
         Cow::Owned(format!("<p>Hello, {}!</p>", name))
     } else {
         Cow::Borrowed(&files.form)

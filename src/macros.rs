@@ -121,8 +121,8 @@ macro_rules! __rustful_insert_internal {
                 __rustful_to_path!($($method)::+)
             };
             let path = __rustful_route_expr!($($steps),*);
-            $router.insert(method, path, $handler);
-            __rustful_insert_internal!($router, [$($steps),*], $($next)*)
+            $router.insert(method, &path, $handler);
+            __rustful_insert_internal!($router, [$($steps),*], $($next)*);
         }
     };
     ($router:ident, [$($steps:expr),*], $path:tt => $method:path: $handler:expr, $($next:tt)*) => {
@@ -133,8 +133,8 @@ macro_rules! __rustful_insert_internal {
                 $method
             };
             let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
-            $router.insert(method, path, $handler);
-            __rustful_insert_internal!($router, [$($steps),*], $($next)*)
+            $router.insert(method, &path, $handler);
+            __rustful_insert_internal!($router, [$($steps),*], $($next)*);
         }
     };
     ($router:ident, [$($steps:expr),*], $($method:tt)::+: $handler:expr) => {
@@ -145,7 +145,7 @@ macro_rules! __rustful_insert_internal {
                 __rustful_to_path!($($method)::+)
             };
             let path = __rustful_route_expr!($($steps),*);
-            $router.insert(method, path, $handler);
+            $router.insert(method, &path, $handler);
         }
     };
     ($router:ident, [$($steps:expr),*], $path:tt => $method:path: $handler:expr) => {
@@ -156,7 +156,7 @@ macro_rules! __rustful_insert_internal {
                 $method
             };
             let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
-            $router.insert(method, path, $handler);
+            $router.insert(method, &path, $handler);
         }
     };
 }
@@ -165,7 +165,7 @@ macro_rules! __rustful_insert_internal {
 #[macro_export]
 macro_rules! __rustful_route_expr {
     () => ("");
-    ($($path:expr),+) => (&[$($path),+][..]);
+    ($($path:expr),+) => (&[$($path),+]);
 }
 
 /**

@@ -9,11 +9,12 @@ use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilt
 use rustful::response::Data;
 use rustful::StatusCode;
 use rustful::header::Headers;
+use rustful::context::Uri;
 
 fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     //Take the name of the JSONP function from the query variables
     let mut quote_msg = if let Some(jsonp_name) = context.query.remove("jsonp") {
-        response.filter_storage_mut().insert(JsonpFn(jsonp_name));
+        response.filter_storage_mut().insert(JsonpFn(jsonp_name.into()));
         true
     } else {
         false
@@ -26,8 +27,8 @@ fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     }
 
     let person = match context.variables.get("person") {
-        Some(name) => &name[..],
-        None => "stranger"
+        Some(name) => name,
+        None => "stranger".into()
     };
 
     let message = if quote_msg {
@@ -114,7 +115,7 @@ impl ContextFilter for RequestLogger {
     ///Count requests and log the path.
     fn modify(&self, ctx: FilterContext, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
-        ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.path));
+        ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.uri));
         ContextAction::next()
     }
 }
@@ -135,7 +136,16 @@ impl PathPrefix {
 impl ContextFilter for PathPrefix {
     ///Append the prefix to the path
     fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
-        context.path = format!("/{}{}", self.prefix.trim_matches('/'), context.path);
+        let new_uri = context.uri.as_path().map(|path| {
+            let mut new_path = vec!['/' as u8];
+            //TODO: replace with push_all or whatever shows up
+            new_path.extend(self.prefix.trim_matches('/').as_bytes().iter().cloned());
+            new_path.extend(path.iter().cloned());
+            Uri::Path(new_path.into())
+        });
+        if let Some(uri) = new_uri {
+            context.uri = uri;
+        }
         ContextAction::next()
     }
 }

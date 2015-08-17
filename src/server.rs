@@ -6,7 +6,8 @@ use std::borrow::ToOwned;
 
 use time;
 
-use url::percent_encoding::lossy_utf8_percent_decode;
+use url::percent_encoding::{percent_decode, percent_decode_to};
+use url::{Url, SchemeData};
 
 use hyper;
 use hyper::server::Handler as HyperHandler;
@@ -22,7 +23,8 @@ use anymap::AnyMap;
 
 use StatusCode;
 
-use context::{self, Context, Hypermedia};
+use context::{self, Context, Uri, MaybeUtf8Owned, Parameters};
+use context::hypermedia::Hypermedia;
 use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::{Router, Endpoint};
 use handler::Handler;
@@ -34,7 +36,6 @@ use Scheme;
 use Host;
 use Global;
 use HttpResult;
-use Parameters;
 
 use utils;
 
@@ -261,12 +262,19 @@ impl<R: Router> ServerInstance<R> {
 
 }
 
+struct ParsedUri {
+    host: Option<(String, Option<u16>)>,
+    uri: Uri,
+    query: Parameters,
+    fragment: Option<MaybeUtf8Owned>
+}
+
 impl<R: Router> HyperHandler for ServerInstance<R> {
     fn handle(&self, request: hyper::server::request::Request, writer: hyper::server::response::Response) {
         let (
             request_addr,
             request_method,
-            request_headers,
+            mut request_headers,
             request_uri,
             request_version,
             request_reader
@@ -278,29 +286,36 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
         response.headers_mut().set(hyper::header::Server(self.server.clone()));
 
         let path_components = match request_uri {
-            RequestUri::AbsoluteUri(url) => {
-                Some((
-                    url.serialize_path().map(|p| p.into_bytes()).unwrap_or_else(|| vec!['/' as u8]),
-                    url.query_pairs().unwrap_or_else(|| Vec::new()).into_iter().collect(),
-                    url.fragment
-                ))
+            RequestUri::AbsoluteUri(url) => Some(parse_url(url)),
+            RequestUri::AbsolutePath(path) => Some(parse_path(&path)),
+            RequestUri::Star => {
+                Some(ParsedUri {
+                    host: None,
+                    uri: Uri::Asterisk,
+                    query: Parameters::new(),
+                    fragment: None
+                })
             },
-            RequestUri::AbsolutePath(path) => {
-                let (path, query, fragment) = parse_path(path);
-                Some((path.into_bytes(), query, fragment))
-            },
-            _ => None //TODO: Handle *
+            _ => None
         };
 
         match path_components {
-            Some((path, query, fragment)) => {
-                let body = context::BodyReader::from_reader(request_reader, &request_headers);
+            Some(ParsedUri{ host, uri, query, fragment }) => {
+                if let Some((name, port)) = host {
+                    request_headers.set(::header::Host {
+                        hostname: name,
+                        port: port
+                    });
+                }
+
+                let body = context::body::BodyReader::from_reader(request_reader, &request_headers);
+
                 let mut context = Context {
                     headers: request_headers,
                     http_version: request_version,
                     method: request_method,
                     address: request_addr,
-                    path: lossy_utf8_percent_decode(&path),
+                    uri: uri,
                     hypermedia: Hypermedia::new(),
                     variables: Parameters::new(),
                     query: query.into(),
@@ -315,11 +330,21 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                 match self.modify_context(&mut filter_storage, &mut context) {
                     ContextAction::Next => {
                         *response.filter_storage_mut() = filter_storage;
+
+                        let endpoint = context.uri.as_path().map(|path| self.handlers.find(&context.method, &path)).unwrap_or_else(|| {
+                            Endpoint {
+                                handler: None,
+                                variables: HashMap::new(),
+                                hypermedia: Hypermedia::new()
+                            }
+                        });
+
                         let Endpoint {
                             handler,
                             variables,
                             hypermedia
-                        } = self.handlers.find(&context.method, &context.path);
+                        } = endpoint;
+
                         if let Some(handler) = handler.or(self.fallback_handler.as_ref()) {
                             context.hypermedia = hypermedia;
                             context.variables = variables.into();
@@ -341,15 +366,37 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
     }
 }
 
-fn parse_path(path: String) -> (String, HashMap<String, String>, Option<String>) {
+fn parse_path(path: &str) -> ParsedUri {
     match path.find('?') {
         Some(index) => {
             let (query, fragment) = parse_fragment(&path[index+1..]);
-            (path[..index].to_owned(), utils::parse_parameters(query.as_bytes()), fragment.map(|f| f.to_owned()))
+
+            let mut path = percent_decode(path[..index].as_bytes());
+            if path.is_empty() {
+                path.push('/' as u8);
+            }
+
+            ParsedUri {
+                host: None,
+                uri: Uri::Path(path.into()),
+                query: utils::parse_parameters(query.as_bytes()),
+                fragment: fragment.map(|f| percent_decode(f.as_bytes()).into())
+            }
         },
         None => {
             let (path, fragment) = parse_fragment(&path);
-            (path.to_owned(), HashMap::new(), fragment.map(|f| f.to_owned()))
+
+            let mut path = percent_decode(path.as_bytes());
+            if path.is_empty() {
+                path.push('/' as u8);
+            }
+
+            ParsedUri {
+                host: None,
+                uri: Uri::Path(path.into()),
+                query: Parameters::new(),
+                fragment: fragment.map(|f| percent_decode(f.as_bytes()).into())
+            }
         }
     }
 }
@@ -361,51 +408,130 @@ fn parse_fragment<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
     }
 }
 
+fn parse_url(url: Url) -> ParsedUri {
+    let mut path = Vec::new();
+    for component in url.path().unwrap_or(&[]) {
+        path.push('/' as u8);
+        percent_decode_to(component.as_bytes(), &mut path);
+    }
+    if path.is_empty() {
+        path.push('/' as u8);
+    }
 
+    let query = url.query_pairs()
+            .unwrap_or_else(|| Vec::new())
+            .into_iter()
+            .collect();
+
+    let host = if let SchemeData::Relative(data) = url.scheme_data {
+        Some((data.host.serialize(), data.port))
+    } else {
+        None
+    };
+
+    ParsedUri {
+        host: host,
+        uri: Uri::Path(path.into()),
+        query: query,
+        fragment: url.fragment.map(|f| percent_decode(f.as_bytes()).into())
+    }
+}
 
 
 #[test]
 fn parse_path_parts() {
-    let with = "this".to_owned();
-    let and = "that".to_owned();
-    let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that#lol".to_string());
-    assert_eq!(path, "/path/to/something".to_string());
-    assert_eq!(query.get("with"), Some(&with));
-    assert_eq!(query.get("and"), Some(&and));
-    assert_eq!(fragment, Some("lol".to_string()));
+    let with = "this".to_owned().into();
+    let and = "that".to_owned().into();
+    let ParsedUri { uri, query, fragment, .. } = parse_path("/path/to/something?with=this&and=that#lol");
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
+    assert_eq!(query.get_raw("with"), Some(&with));
+    assert_eq!(query.get_raw("and"), Some(&and));
+    assert_eq!(fragment, Some("lol".to_owned().into()));
 }
 
 #[test]
 fn parse_strange_path() {
-    let with = "this".to_owned();
-    let and = "what?".to_owned();
-    let (path, query, fragment) = parse_path("/path/to/something?with=this&and=what?#".to_string());
-    assert_eq!(path, "/path/to/something".to_string());
-    assert_eq!(query.get("with"), Some(&with));
-    assert_eq!(query.get("and"), Some(&and));
-    assert_eq!(fragment, Some("".to_string()));
+    let with = "this".to_owned().into();
+    let and = "what?".to_owned().into();
+    let ParsedUri { uri, query, fragment, .. } = parse_path("/path/to/something?with=this&and=what?#");
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
+    assert_eq!(query.get_raw("with"), Some(&with));
+    assert_eq!(query.get_raw("and"), Some(&and));
+    assert_eq!(fragment, Some(String::new().into()));
 }
 
 #[test]
 fn parse_missing_path_parts() {
-    let with = "this".to_owned();
-    let and = "that".to_owned();
-    let (path, query, fragment) = parse_path("/path/to/something?with=this&and=that".to_string());
-    assert_eq!(path, "/path/to/something".to_string());
-    assert_eq!(query.get("with"), Some(&with));
-    assert_eq!(query.get("and"), Some(&and));
+    let with = "this".to_owned().into();
+    let and = "that".to_owned().into();
+    let ParsedUri { uri, query, fragment, .. } = parse_path("/path/to/something?with=this&and=that");
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
+    assert_eq!(query.get_raw("with"), Some(&with));
+    assert_eq!(query.get_raw("and"), Some(&and));
     assert_eq!(fragment, None);
 
 
-    let (path, query, fragment) = parse_path("/path/to/something#lol".to_string());
-    assert_eq!(path, "/path/to/something".to_string());
+    let ParsedUri { uri, query, fragment, .. } = parse_path("/path/to/something#lol");
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
     assert_eq!(query.len(), 0);
-    assert_eq!(fragment, Some("lol".to_string()));
+    assert_eq!(fragment, Some("lol".to_owned().into()));
 
 
-    let (path, query, fragment) = parse_path("?with=this&and=that#lol".to_string());
-    assert_eq!(path, "".to_string());
-    assert_eq!(query.get("with"), Some(&with));
-    assert_eq!(query.get("and"), Some(&and));
-    assert_eq!(fragment, Some("lol".to_string()));
+    let ParsedUri { uri, query, fragment, .. } = parse_path("?with=this&and=that#lol");
+    assert_eq!(uri.as_path(), Some("/".into()));
+    assert_eq!(query.get_raw("with"), Some(&with));
+    assert_eq!(query.get_raw("and"), Some(&and));
+    assert_eq!(fragment, Some("lol".to_owned().into()));
+}
+
+
+#[test]
+fn parse_url_parts() {
+    let with = "this".to_owned().into();
+    let and = "that".to_owned().into();
+    let url = Url::parse("http://example.com/path/to/something?with=this&and=that#lol").unwrap();
+    let ParsedUri { uri, query, fragment, .. } = parse_url(url);
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
+    assert_eq!(query.get_raw("with"), Some(&with));
+    assert_eq!(query.get_raw("and"), Some(&and));
+    assert_eq!(fragment, Some("lol".to_owned().into()));
+}
+
+#[test]
+fn parse_strange_url() {
+    let with = "this".to_owned().into();
+    let and = "what?".to_owned().into();
+    let url = Url::parse("http://example.com/path/to/something?with=this&and=what?#").unwrap();
+    let ParsedUri { uri, query, fragment, .. } = parse_url(url);
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
+    assert_eq!(query.get_raw("with"), Some(&with));
+    assert_eq!(query.get_raw("and"), Some(&and));
+    assert_eq!(fragment, Some(String::new().into()));
+}
+
+#[test]
+fn parse_missing_url_parts() {
+    let with = "this".to_owned().into();
+    let and = "that".to_owned().into();
+    let url = Url::parse("http://example.com/path/to/something?with=this&and=that").unwrap();
+    let ParsedUri { uri, query, fragment, .. } = parse_url(url);
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
+    assert_eq!(query.get_raw("with"), Some(&with));
+    assert_eq!(query.get_raw("and"), Some(&and));
+    assert_eq!(fragment, None);
+
+
+    let url = Url::parse("http://example.com/path/to/something#lol").unwrap();
+    let ParsedUri { uri, query, fragment, .. } = parse_url(url);
+    assert_eq!(uri.as_path(), Some("/path/to/something".into()));
+    assert_eq!(query.len(), 0);
+    assert_eq!(fragment, Some("lol".to_owned().into()));
+
+
+    let url = Url::parse("http://example.com?with=this&and=that#lol").unwrap();
+    let ParsedUri { uri, query, fragment, .. } = parse_url(url);
+    assert_eq!(uri.as_path(), Some("/".into()));
+    assert_eq!(query.get_raw("with"), Some(&with));
+    assert_eq!(query.get_raw("and"), Some(&and));
+    assert_eq!(fragment, Some("lol".to_owned().into()));
 }
