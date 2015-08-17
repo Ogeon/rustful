@@ -6,7 +6,7 @@ Rustful
 [![Build Status](https://travis-ci.org/Ogeon/rustful.png?branch=master)](https://travis-ci.org/Ogeon/rustful)
 [![Windows Build status](https://ci.appveyor.com/api/projects/status/6a95paoex0eptbgn/branch/master?svg=true)](https://ci.appveyor.com/project/Ogeon/rustful/branch/master)
 
-A light web micro-framework for Rust with REST-like features. The main purpose
+A light HTTP framework for Rust, with REST-like features. The main purpose
 of Rustful is to create a simple, modular and non-intrusive foundation for
 HTTP applications. It has a mainly stateless structure, which naturally allows
 it to run both as one single server and as multiple instances in a cluster.
@@ -29,7 +29,7 @@ Add the following lines to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-rustful = "0.3"
+rustful = "0.4"
 ```
 
 ###Cargo Features
