@@ -78,7 +78,7 @@ fn read_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 
 enum Api {
     Counter {
-        //We are using the handler to preload the page in this exmaple
+        //We are using the handler to preload the page in this example
         page: Arc<String>,
 
         value: Arc<RwLock<i32>>,
@@ -105,17 +105,13 @@ impl Handler for Api {
                 if let Some(file) = context.variables.get("file") {
                     //Make a full path from the file name and send it
                     let path = format!("examples/handler_storage/{}", file);
-                    let res = response.send_file(&path);
+                    let res = response.send_file(&path).or_else(|e| e.send_not_found("the file was not found"));
 
-                    //Check if file could be opened
+                    //Check if a more fatal file error than "not found" occurred
                     if let Err(FileError::Open(e, mut response)) = res {
-                        if let io::ErrorKind::NotFound = e.kind() {
-                            response.set_status(StatusCode::NotFound);
-                        } else {
-                            //Something went horribly wrong
-                            context.log.error(&format!("failed to open '{}': {}", file, e.description()));
-                            response.set_status(StatusCode::InternalServerError);
-                        }
+                        //Something went horribly wrong
+                        context.log.error(&format!("failed to open '{}': {}", file, e.description()));
+                        response.set_status(StatusCode::InternalServerError);
                     }
                 } else {
                     //No file name was specified

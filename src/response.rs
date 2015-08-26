@@ -112,6 +112,22 @@ impl<'a, 'b> FileError<'a, 'b> {
             FileError::Send(_) => Err(self),
         }
     }
+
+    ///Send a 404 (not found) response if the file wasn't found. `Ok(0)` is
+    ///returned if the file was not found, to reflect that no file data was
+    ///sent. The original error is otherwise returned.
+    pub fn send_not_found<'d, M: Into<Data<'d>>>(self, message: M) -> Result<u64, FileError<'a, 'b>> {
+        match self {
+            FileError::Open(e, mut response) => if let io::ErrorKind::NotFound = e.kind() {
+                response.set_status(StatusCode::NotFound);
+                response.send(message);
+                Ok(0)
+            } else {
+                Err(FileError::Open(e, response))
+            },
+            e => return Err(e)
+        }
+    }
 }
 
 impl<'a, 'b> Into<io::Error> for FileError<'a, 'b> {
@@ -375,7 +391,7 @@ impl<'a, 'b> Response<'a, 'b> {
     ///A MIME type is automatically applied to the response, based on the file
     ///extension, and `application/octet-stream` is used as a fallback if the
     ///extension is unknown. Use `send_file_with_mime` to override the MIME
-    ///guessing. See also [`ext_to_mime`](fn.ext_to_mime.html) for more
+    ///guessing. See also [`ext_to_mime`](../file/fn.ext_to_mime.html) for more
     ///information.
     ///
     ///The amount of bytes that was written will be returned if successful, and an
@@ -385,8 +401,6 @@ impl<'a, 'b> Response<'a, 'b> {
     ///```
     ///# #[macro_use] extern crate rustful;
     ///use std::path::Path;
-    ///use std::error::Error;
-    ///use std::io;
     ///use rustful::{Context, Response};
     ///use rustful::StatusCode;
     ///use rustful::response::FileError;
@@ -397,19 +411,16 @@ impl<'a, 'b> Response<'a, 'b> {
     ///        let path = Path::new("path/to/files").join(file.as_ref());
     ///
     ///        //Send the file
-    ///        let res = response.send_file(&path);
+    ///        let res = response.send_file(&path)
+    ///            .or_else(|e| e.send_not_found("the file was not found"));
     ///
-    ///        //Check if the file could be opened
+    ///        //Check if a more fatal file error than "not found" occurred
     ///        if let Err(FileError::Open(e, mut response)) = res {
-    ///            if let io::ErrorKind::NotFound = e.kind() {
-    ///                response.set_status(StatusCode::NotFound);
-    ///            } else {
-    ///                //Something went horribly wrong
-    ///                context.log.error(
-    ///                    &format!("failed to open '{}': {}", file, e.description())
-    ///                );
-    ///                response.set_status(StatusCode::InternalServerError);
-    ///            }
+    ///            //Something went horribly wrong
+    ///            context.log.error(
+    ///                &format!("failed to open '{}': {}", file, e)
+    ///            );
+    ///            response.set_status(StatusCode::InternalServerError);
     ///        }
     ///    } else {
     ///        //No filename was specified
@@ -436,8 +447,6 @@ impl<'a, 'b> Response<'a, 'b> {
     ///```
     ///# #[macro_use] extern crate rustful;
     ///use std::path::Path;
-    ///use std::error::Error;
-    ///use std::io;
     ///use rustful::{Context, Response};
     ///use rustful::StatusCode;
     ///use rustful::response::FileError;
@@ -455,19 +464,15 @@ impl<'a, 'b> Response<'a, 'b> {
     ///            } else {
     ///                file::ext_to_mime(ext)
     ///            }
-    ///         });
+    ///         }).or_else(|e| e.send_not_found("the file was not found"));
     ///
-    ///        //Check if the file could be opened
+    ///        //Check if a more fatal file error than "not found" occurred
     ///        if let Err(FileError::Open(e, mut response)) = res {
-    ///            if let io::ErrorKind::NotFound = e.kind() {
-    ///                response.set_status(StatusCode::NotFound);
-    ///            } else {
-    ///                //Something went horribly wrong
-    ///                context.log.error(
-    ///                    &format!("failed to open '{}': {}", file, e.description())
-    ///                );
-    ///                response.set_status(StatusCode::InternalServerError);
-    ///            }
+    ///            //Something went horribly wrong
+    ///            context.log.error(
+    ///                &format!("failed to open '{}': {}", file, e)
+    ///            );
+    ///            response.set_status(StatusCode::InternalServerError);
     ///        }
     ///    } else {
     ///        //No filename was specified
