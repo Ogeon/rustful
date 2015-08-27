@@ -15,7 +15,6 @@ use rustful::{
     TreeRouter,
     StatusCode
 };
-use rustful::response::FileError;
 
 fn main() {
     println!("Visit http://localhost:8080 to try this example.");
@@ -105,12 +104,14 @@ impl Handler for Api {
                 if let Some(file) = context.variables.get("file") {
                     //Make a full path from the file name and send it
                     let path = format!("examples/handler_storage/{}", file);
-                    let res = response.send_file(&path).or_else(|e| e.send_not_found("the file was not found"));
+                    let res = response.send_file(&path)
+                        .or_else(|e| e.send_not_found("the file was not found"))
+                        .or_else(|e| e.ignore_send_error());
 
                     //Check if a more fatal file error than "not found" occurred
-                    if let Err(FileError::Open(e, mut response)) = res {
+                    if let Err((error, mut response)) = res {
                         //Something went horribly wrong
-                        context.log.error(&format!("failed to open '{}': {}", file, e.description()));
+                        context.log.error(&format!("failed to open '{}': {}", file, error));
                         response.set_status(StatusCode::InternalServerError);
                     }
                 } else {

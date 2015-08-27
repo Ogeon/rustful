@@ -127,6 +127,14 @@ impl<'a, 'b> FileError<'a, 'b> {
             e => Err(e)
         }
     }
+
+    ///Ignore any error that might have occurred while sending the file.
+    pub fn ignore_send_error(self) -> Result<(), (io::Error, Response<'a, 'b>)> {
+        match self {
+            FileError::Open(e, response) => Err((e, response)),
+            _ => Ok(())
+        }
+    }
 }
 
 impl<'a, 'b> Into<io::Error> for FileError<'a, 'b> {
@@ -401,7 +409,6 @@ impl<'a, 'b> Response<'a, 'b> {
     ///use std::path::Path;
     ///use rustful::{Context, Response};
     ///use rustful::StatusCode;
-    ///use rustful::response::FileError;
     ///
     ///fn my_handler(mut context: Context, mut response: Response) {
     ///    if let Some(file) = context.variables.get("file") {
@@ -410,10 +417,11 @@ impl<'a, 'b> Response<'a, 'b> {
     ///
     ///        //Send the file
     ///        let res = response.send_file(&path)
-    ///            .or_else(|e| e.send_not_found("the file was not found"));
+    ///            .or_else(|e| e.send_not_found("the file was not found"))
+    ///            .or_else(|e| e.ignore_send_error());
     ///
     ///        //Check if a more fatal file error than "not found" occurred
-    ///        if let Err(FileError::Open(e, mut response)) = res {
+    ///        if let Err((e, mut response)) = res {
     ///            //Something went horribly wrong
     ///            context.log.error(
     ///                &format!("failed to open '{}': {}", file, e)
@@ -446,7 +454,6 @@ impl<'a, 'b> Response<'a, 'b> {
     ///use std::path::Path;
     ///use rustful::{Context, Response};
     ///use rustful::StatusCode;
-    ///use rustful::response::FileError;
     ///use rustful::file;
     ///
     ///fn my_handler(mut context: Context, mut response: Response) {
@@ -461,10 +468,11 @@ impl<'a, 'b> Response<'a, 'b> {
     ///            } else {
     ///                file::ext_to_mime(ext)
     ///            }
-    ///         }).or_else(|e| e.send_not_found("the file was not found"));
+    ///        }).or_else(|e| e.send_not_found("the file was not found"))
+    ///            .or_else(|e| e.ignore_send_error());
     ///
     ///        //Check if a more fatal file error than "not found" occurred
-    ///        if let Err(FileError::Open(e, mut response)) = res {
+    ///        if let Err((e, mut response)) = res {
     ///            //Something went horribly wrong
     ///            context.log.error(
     ///                &format!("failed to open '{}': {}", file, e)
