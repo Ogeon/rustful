@@ -113,19 +113,18 @@ impl<'a, 'b> FileError<'a, 'b> {
         }
     }
 
-    ///Send a 404 (not found) response if the file wasn't found. `Ok(0)` is
-    ///returned if the file was not found, to reflect that no file data was
-    ///sent. The original error is otherwise returned.
-    pub fn send_not_found<'d, M: Into<Data<'d>>>(self, message: M) -> Result<u64, FileError<'a, 'b>> {
+    ///Send a 404 (not found) response if the file wasn't found, or return
+    ///`self` if any other error occurred.
+    pub fn send_not_found<'d, M: Into<Data<'d>>>(self, message: M) -> Result<(), FileError<'a, 'b>> {
         match self {
             FileError::Open(e, mut response) => if let io::ErrorKind::NotFound = e.kind() {
                 response.set_status(StatusCode::NotFound);
                 response.send(message);
-                Ok(0)
+                Ok(())
             } else {
                 Err(FileError::Open(e, response))
             },
-            e => return Err(e)
+            e => Err(e)
         }
     }
 }
@@ -394,9 +393,8 @@ impl<'a, 'b> Response<'a, 'b> {
     ///guessing. See also [`ext_to_mime`](../file/fn.ext_to_mime.html) for more
     ///information.
     ///
-    ///The amount of bytes that was written will be returned if successful, and an
-    ///error where the response may be recovered is returned if the file could not
-    ///be opened or sent.
+    ///An error is returned upon failure and the response may be recovered
+    ///from there if the file could not be opened.
     ///
     ///```
     ///# #[macro_use] extern crate rustful;
@@ -429,7 +427,7 @@ impl<'a, 'b> Response<'a, 'b> {
     ///}
     ///# fn main() {}
     ///```
-    pub fn send_file<P: AsRef<Path>>(self, path: P) -> Result<u64, FileError<'a, 'b>> {
+    pub fn send_file<P: AsRef<Path>>(self, path: P) -> Result<(), FileError<'a, 'b>> {
         self.send_file_with_mime(path, ::file::ext_to_mime)
     }
 
@@ -440,9 +438,8 @@ impl<'a, 'b> Response<'a, 'b> {
     ///file will be sent as. This can be useful if, for example, the MIME guesser
     ///happens to be wrong about some file extension.
     ///
-    ///The amount of bytes that was written will be returned if successful, and an
-    ///error where the response may be recovered is returned if the file could not
-    ///be opened or sent.
+    ///An error is returned upon failure and the response may be recovered
+    ///from there if the file could not be opened.
     ///
     ///```
     ///# #[macro_use] extern crate rustful;
@@ -481,7 +478,7 @@ impl<'a, 'b> Response<'a, 'b> {
     ///}
     ///# fn main() {}
     ///```
-    pub fn send_file_with_mime<P, F>(mut self, path: P, to_mime: F) -> Result<u64, FileError<'a, 'b>> where
+    pub fn send_file_with_mime<P, F>(mut self, path: P, to_mime: F) -> Result<(), FileError<'a, 'b>> where
         P: AsRef<Path>,
         F: FnOnce(&str) -> Option<Mime>
     {
@@ -504,7 +501,7 @@ impl<'a, 'b> Response<'a, 'b> {
 
         let mut writer = unsafe { self.into_raw(metadata.len()) };
 
-        io::copy(&mut file, &mut writer).map_err(|e| FileError::Send(e))
+        io::copy(&mut file, &mut writer).map_err(|e| FileError::Send(e)).map(|_| ())
     }
 
     ///Write the status code and headers to the client and turn the `Response`
