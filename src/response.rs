@@ -38,6 +38,8 @@ use std::borrow::Cow;
 use std::convert::From;
 use std::str::{from_utf8, Utf8Error};
 use std::string::{FromUtf8Error};
+use std::fs::File;
+use std::path::Path;
 
 use hyper;
 
@@ -45,10 +47,11 @@ use anymap::AnyMap;
 
 use StatusCode;
 
-use header::Headers;
+use header::{Headers, ContentType};
 use filter::{FilterContext, ResponseFilter};
 use filter::ResponseAction as Action;
 use log::Log;
+use mime::{Mime, TopLevel, SubLevel};
 
 use Global;
 
@@ -89,6 +92,90 @@ impl error::Error for Error {
         match *self {
             Error::Filter(_) => None,
             Error::Io(ref e) => Some(e)
+        }
+    }
+}
+
+///Error that may occure while sending a file.
+pub enum FileError<'a, 'b> {
+    ///Failed to open the file.
+    Open(io::Error, Response<'a, 'b>),
+    ///Failed while sending the file.
+    Send(io::Error)
+}
+
+impl<'a, 'b> FileError<'a, 'b> {
+    ///Recover the response if the file couldn't be opened.
+    pub fn recover_response(self) -> Result<Response<'a, 'b>, FileError<'a, 'b>> {
+        match self {
+            FileError::Open(_, r) => Ok(r),
+            FileError::Send(_) => Err(self),
+        }
+    }
+
+    ///Send a 404 (not found) response if the file wasn't found, or return
+    ///`self` if any other error occurred.
+    pub fn send_not_found<'d, M: Into<Data<'d>>>(self, message: M) -> Result<(), FileError<'a, 'b>> {
+        match self {
+            FileError::Open(e, mut response) => if let io::ErrorKind::NotFound = e.kind() {
+                response.set_status(StatusCode::NotFound);
+                response.send(message);
+                Ok(())
+            } else {
+                Err(FileError::Open(e, response))
+            },
+            e => Err(e)
+        }
+    }
+
+    ///Ignore any error that might have occurred while sending the file.
+    pub fn ignore_send_error(self) -> Result<(), (io::Error, Response<'a, 'b>)> {
+        match self {
+            FileError::Open(e, response) => Err((e, response)),
+            _ => Ok(())
+        }
+    }
+}
+
+impl<'a, 'b> Into<io::Error> for FileError<'a, 'b> {
+    fn into(self) -> io::Error {
+        match self {
+            FileError::Open(e, _) => e,
+            FileError::Send(e) => e
+        }
+    }
+}
+
+impl<'a, 'b> std::fmt::Debug for FileError<'a, 'b> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            FileError::Open(ref e, _) => write!(f, "FileError::Open({:?}, Response)", e),
+            FileError::Send(ref e) => write!(f, "FileError::Send({:?})", e)
+        }
+    }
+}
+
+impl<'a, 'b> std::fmt::Display for FileError<'a, 'b> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            FileError::Open(ref e, _) => write!(f, "failed to open a file: {}", e),
+            FileError::Send(ref e) => write!(f, "failed to send a file: {}", e)
+        }
+    }
+}
+
+impl<'a, 'b> error::Error for FileError<'a, 'b> {
+    fn description(&self) -> &str {
+        match *self {
+            FileError::Open(ref e, _) => e.description(),
+            FileError::Send(ref e) => e.description()
+        }
+    }
+
+    fn cause(&self) -> Option<&std::error::Error> {
+        match *self {
+            FileError::Open(ref e, _) => Some(e),
+            FileError::Send(ref e) => Some(e)
         }
     }
 }
@@ -304,6 +391,125 @@ impl<'a, 'b> Response<'a, 'b> {
             
             writer.send(&buffer).map_err(|e| e.into())
         }
+    }
+
+    ///Send a static file to the client.
+    ///
+    ///A MIME type is automatically applied to the response, based on the file
+    ///extension, and `application/octet-stream` is used as a fallback if the
+    ///extension is unknown. Use `send_file_with_mime` to override the MIME
+    ///guessing. See also [`ext_to_mime`](../file/fn.ext_to_mime.html) for more
+    ///information.
+    ///
+    ///An error is returned upon failure and the response may be recovered
+    ///from there if the file could not be opened.
+    ///
+    ///```
+    ///# #[macro_use] extern crate rustful;
+    ///use std::path::Path;
+    ///use rustful::{Context, Response};
+    ///use rustful::StatusCode;
+    ///
+    ///fn my_handler(mut context: Context, mut response: Response) {
+    ///    if let Some(file) = context.variables.get("file") {
+    ///        //Make a full path from the filename
+    ///        let path = Path::new("path/to/files").join(file.as_ref());
+    ///
+    ///        //Send the file
+    ///        let res = response.send_file(&path)
+    ///            .or_else(|e| e.send_not_found("the file was not found"))
+    ///            .or_else(|e| e.ignore_send_error());
+    ///
+    ///        //Check if a more fatal file error than "not found" occurred
+    ///        if let Err((e, mut response)) = res {
+    ///            //Something went horribly wrong
+    ///            context.log.error(
+    ///                &format!("failed to open '{}': {}", file, e)
+    ///            );
+    ///            response.set_status(StatusCode::InternalServerError);
+    ///        }
+    ///    } else {
+    ///        //No filename was specified
+    ///        response.set_status(StatusCode::Forbidden);
+    ///    }
+    ///}
+    ///# fn main() {}
+    ///```
+    pub fn send_file<P: AsRef<Path>>(self, path: P) -> Result<(), FileError<'a, 'b>> {
+        self.send_file_with_mime(path, ::file::ext_to_mime)
+    }
+
+
+    ///Send a static file with a specified MIME type to the client.
+    ///
+    ///This can be used instead of `send_file` to control what MIME type the
+    ///file will be sent as. This can be useful if, for example, the MIME guesser
+    ///happens to be wrong about some file extension.
+    ///
+    ///An error is returned upon failure and the response may be recovered
+    ///from there if the file could not be opened.
+    ///
+    ///```
+    ///# #[macro_use] extern crate rustful;
+    ///use std::path::Path;
+    ///use rustful::{Context, Response};
+    ///use rustful::StatusCode;
+    ///use rustful::file;
+    ///
+    ///fn my_handler(mut context: Context, mut response: Response) {
+    ///    if let Some(file) = context.variables.get("file") {
+    ///        //Make a full path from the filename
+    ///        let path = Path::new("path/to/files").join(file.as_ref());
+    ///
+    ///        //Send .rs files as Rust files and do the usual guessing for the rest
+    ///        let res = response.send_file_with_mime(&path, |ext| {
+    ///            if ext == "rs" {
+    ///                Some(content_type!(Text / "rust"; Charset = Utf8))
+    ///            } else {
+    ///                file::ext_to_mime(ext)
+    ///            }
+    ///        }).or_else(|e| e.send_not_found("the file was not found"))
+    ///            .or_else(|e| e.ignore_send_error());
+    ///
+    ///        //Check if a more fatal file error than "not found" occurred
+    ///        if let Err((e, mut response)) = res {
+    ///            //Something went horribly wrong
+    ///            context.log.error(
+    ///                &format!("failed to open '{}': {}", file, e)
+    ///            );
+    ///            response.set_status(StatusCode::InternalServerError);
+    ///        }
+    ///    } else {
+    ///        //No filename was specified
+    ///        response.set_status(StatusCode::Forbidden);
+    ///    }
+    ///}
+    ///# fn main() {}
+    ///```
+    pub fn send_file_with_mime<P, F>(mut self, path: P, to_mime: F) -> Result<(), FileError<'a, 'b>> where
+        P: AsRef<Path>,
+        F: FnOnce(&str) -> Option<Mime>
+    {
+        let path: &Path = path.as_ref();
+        let mime = path
+            .extension()
+            .and_then(|ext| to_mime(&ext.to_string_lossy()))
+            .unwrap_or(Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
+
+        let mut file = match File::open(path) {
+            Ok(file) => file,
+            Err(e) => return Err(FileError::Open(e, self))
+        };
+        let metadata = match file.metadata() {
+            Ok(metadata) => metadata,
+            Err(e) => return Err(FileError::Open(e, self))
+        };
+
+        self.headers_mut().set(ContentType(mime));
+
+        let mut writer = unsafe { self.into_raw(metadata.len()) };
+
+        io::copy(&mut file, &mut writer).map_err(|e| FileError::Send(e)).map(|_| ())
     }
 
     ///Write the status code and headers to the client and turn the `Response`
