@@ -9,8 +9,7 @@ use context::Context;
 use log::Log;
 
 use response::Data;
-
-use Global;
+use server::Global;
 
 ///Contextual tools for filters.
 pub struct FilterContext<'a> {

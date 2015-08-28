@@ -12,14 +12,13 @@ use router::Router;
 use handler::Handler;
 use log::{Log, StdOut};
 
-use Scheme;
-use Host;
-use Global;
 use HttpResult;
 
 pub use self::instance::ServerInstance;
+pub use self::config::{Host, Global, Scheme};
 
 mod instance;
+mod config;
 
 ///Used to set up and run a server.
 ///

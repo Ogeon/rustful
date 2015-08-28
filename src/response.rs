@@ -52,8 +52,7 @@ use filter::{FilterContext, ResponseFilter};
 use filter::ResponseAction as Action;
 use log::Log;
 use mime::{Mime, TopLevel, SubLevel};
-
-use Global;
+use server::Global;
 
 ///The result of a response action.
 #[derive(Debug)]

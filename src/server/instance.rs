@@ -28,9 +28,8 @@ use handler::Handler;
 use response::Response;
 use log::Log;
 use header::HttpDate;
+use server::{Scheme, Global};
 
-use Scheme;
-use Global;
 use HttpResult;
 use Server;
 
