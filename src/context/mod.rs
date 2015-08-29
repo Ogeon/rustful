@@ -137,7 +137,7 @@ use HttpVersion;
 use Method;
 use header::Headers;
 use log::Log;
-use Global;
+use server::Global;
 
 use self::body::BodyReader;
 use self::hypermedia::Hypermedia;
