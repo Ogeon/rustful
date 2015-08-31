@@ -50,6 +50,43 @@ impl<S, V> MaybeUtf8<S, V> {
     }
 }
 
+impl MaybeUtf8<String, Vec<u8>> {
+    ///Push a single `char` to the end of the string.
+    pub fn push_char(&mut self, c: char) {
+        match *self {
+            MaybeUtf8::Utf8(ref mut s) => s.push(c),
+            MaybeUtf8::NotUtf8(ref mut v) => {
+                //Do some witchcraft until encode_utf8 becomes a thing.
+                let string: &mut String = unsafe { ::std::mem::transmute(v) };
+                string.push(c);
+            }
+        }
+    }
+
+    ///Extend the string.
+    pub fn push_str(&mut self, string: &str) {
+        match *self {
+            MaybeUtf8::Utf8(ref mut s) => s.push_str(string),
+            MaybeUtf8::NotUtf8(ref mut v) => v.extend(string.as_bytes().iter().cloned())
+        }
+    }
+
+    ///Push a number of bytes to the string. The strings UTF-8 compatibility
+    ///may change.
+    pub fn push_bytes(&mut self, bytes: &[u8]) {
+        match ::std::str::from_utf8(bytes) {
+            Ok(string) => self.push_str(string),
+            Err(_) => {
+                let mut v = MaybeUtf8::NotUtf8(vec![]);
+                ::std::mem::swap(self, &mut v);
+                let mut v: Vec<u8> = v.into();
+                v.extend(bytes.iter().cloned());
+                *self = v.into();
+            }
+        }
+    }
+}
+
 impl<V> From<String> for MaybeUtf8<String, V> {
     fn from(string: String) -> MaybeUtf8<String, V> {
         MaybeUtf8::Utf8(string)
