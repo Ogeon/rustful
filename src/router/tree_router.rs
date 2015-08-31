@@ -19,26 +19,72 @@ enum Branch {
     Wildcard
 }
 
-///Stores items, such as request handlers, using an HTTP method and a path as keys.
+struct VariableIter<I> {
+    iter: I,
+    current: Option<(usize, MaybeUtf8Owned)>
+}
+
+impl<'a, I: Iterator<Item=(usize, &'a [u8])>> VariableIter<I> {
+    fn new(iter: I) -> VariableIter<I> {
+        VariableIter {
+            iter: iter,
+            current: None
+        }
+    }
+}
+
+impl<'a, I: Iterator<Item=(usize, &'a [u8])>> Iterator for VariableIter<I> {
+    type Item=(usize, MaybeUtf8Owned);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some((next_index, next_segment)) = self.iter.next() {
+            if let Some((index, mut segment)) = self.current.take() {
+                if index == next_index {
+                    segment.push_char('/');
+                    segment.push_bytes(next_segment);
+                    self.current = Some((index, segment));
+                } else {
+                    self.current = Some((next_index, next_segment.to_owned().into()));
+                    return Some((index, segment));
+                }
+            } else {
+                self.current = Some((next_index, next_segment.to_owned().into()));
+            }
+        }
+
+        self.current.take()
+    }
+}
+
+///Stores handlers, using an HTTP method and a path as keys.
 ///
 ///Paths can be static (`"path/to/item"`) or variable (`"users/:group/:user"`)
-///and contain wildcards (`"path/*/item/*"`). Variables (starting with `:`)
-///will match whatever word the request path contains at that point and it
-///will be sent as a value to the item. Wildcards (a single `*`) will consume
-///the segments until the rest of the path gives a match.
+///and contain wildcards (`"first/*middle/also_middle/*tail"`). Variables
+///(starting with `:`) will match whatever word the request path contains at
+///that point and it will be sent as a value to the handler. Wildcards (starting
+///with `*`) are also variables, but they may consume multiple segments until
+///the rest of the path gives a match.
 ///
-///```ignore
-///pattern = "a/*/b"
-///"a/c/b" -> match
-///"a/c/d/b" -> match
+///```text
+///pattern = "a/:v/b"
+///"a/c/b" -> v = "c"
+///"a/c/d/b" -> no match
 ///"a/b" -> no match
 ///"a/c/b/d" -> no match
 ///```
 ///
-///```ignore
-///pattern = "a/b/*"
-///"a/b/c" -> match
-///"a/b/c/d" -> match
+///```text
+///pattern = "a/*w/b"
+///"a/c/b" -> w = "c"
+///"a/c/d/b" -> w = "c/d"
+///"a/b" -> no match
+///"a/c/b/d" -> no match
+///```
+///
+///```text
+///pattern = "a/b/*w"
+///"a/b/c" -> w = "c"
+///"a/b/c/d" -> w = "c/d"
 ///"a/b" -> no match
 ///```
 ///
@@ -66,12 +112,12 @@ impl<T> TreeRouter<T> {
 
     //Tries to find a router matching the key or inserts a new one if none exists.
     fn find_or_insert_router<'a>(&'a mut self, key: &[u8]) -> &'a mut TreeRouter<T> {
-        if key == b"*" {
+        if let Some(&b'*') = key.get(0) {
             if self.wildcard_route.is_none() {
                 self.wildcard_route = Some(Box::new(TreeRouter::new()));
             }
             &mut **self.wildcard_route.as_mut::<'a>().unwrap()
-        } else if let Some(&b':') = key.iter().next() {
+        } else if let Some(&b':') = key.get(0) {
             if self.variable_route.is_none() {
                 self.variable_route = Some(Box::new(TreeRouter::new()));
             }
@@ -91,8 +137,9 @@ impl<T> TreeRouter<T> {
 
             |(current, mut variable_names), piece| {
                 let next = current.find_or_insert_router(&piece);
-                if let Some(&b':') = piece.iter().next() {
-                    variable_names.push(piece[1..].to_owned().into());
+                match piece.get(0) {
+                    Some(&b'*') | Some(&b':') => variable_names.push(piece[1..].to_owned().into()),
+                    _ => {}
                 }
 
                 (next, variable_names)
@@ -147,31 +194,34 @@ impl<T: Handler> Router for TreeRouter<T> {
     fn find<'a>(&'a self, method: &Method, route: &[u8]) -> Endpoint<'a, T> {
         let path = route.segments().collect::<Vec<_>>();
 
-        let mut variables: Vec<_> = ::std::iter::repeat(false).take(path.len()).collect();
+        let mut variables: Vec<_> = ::std::iter::repeat(None).take(path.len()).collect();
 
-        let mut stack = vec![(self, Wildcard, 0), (self, Variable, 0), (self, Static, 0)];
+        let mut stack = vec![(self, Wildcard, 0, 0), (self, Variable, 0, 0), (self, Static, 0, 0)];
 
         let mut result: Endpoint<T> = None.into();
 
-        while stack.len() > 0 {
-            let (current, branch, index) = stack.pop().unwrap();
-
+        while let Some((current, branch, index, var_index)) = stack.pop() {
             if index == path.len() && result.handler.is_none() {
                 if let Some(&(ref item, ref variable_names)) = current.items.get(&method) {
                     let values = path.iter().zip(variables.iter()).filter_map(|(v, keep)| {
-                        if *keep {
-                            Some(v.clone())
+                        if let &Some(index) = keep {
+                            Some((index, v.clone()))
                         } else {
                             None
                         }
                     });
 
-                    let var_map = variable_names.iter().zip(values).map(|(key, value)| {
-                        (key.clone().into(), value.to_owned().into())
-                    });
+                    let mut var_map = HashMap::<MaybeUtf8Owned, MaybeUtf8Owned>::with_capacity(variable_names.len());
+                    for (index, value) in VariableIter::new(values) {
+                        debug_assert!(
+                            index < variable_names.len(),
+                            format!("invalid variable name index! variable_names.len(): {}, index: {}", variable_names.len(), index)
+                        );
+                        var_map.insert(variable_names[index].clone(), value);
+                    }
 
                     result.handler = Some(item);
-                    result.variables = var_map.collect();
+                    result.variables = var_map;
                     if !self.find_hyperlinks {
                         return result;
                     }
@@ -217,34 +267,34 @@ impl<T: Handler> Router for TreeRouter<T> {
                 Static => {
                     if index < path.len() {
                         current.static_routes.get(path[index]).map(|next| {
-                            variables.get_mut(index).map(|v| *v = false);
+                            variables.get_mut(index).map(|v| *v = None);
 
-                            stack.push((next, Wildcard, index+1));
-                            stack.push((next, Variable, index+1));
-                            stack.push((next, Static, index+1));
+                            stack.push((next, Wildcard, index+1, var_index));
+                            stack.push((next, Variable, index+1, var_index));
+                            stack.push((next, Static, index+1, var_index));
                         });
                     }
                 },
                 Variable => {
                     if index < path.len() {
                         current.variable_route.as_ref().map(|next| {
-                            variables.get_mut(index).map(|v| *v = true);
+                            variables.get_mut(index).map(|v| *v = Some(var_index));
 
-                            stack.push((next, Wildcard, index+1));
-                            stack.push((next, Variable, index+1));
-                            stack.push((next, Static, index+1));
+                            stack.push((next, Wildcard, index+1, var_index+1));
+                            stack.push((next, Variable, index+1, var_index+1));
+                            stack.push((next, Static, index+1, var_index+1));
                         });
                     }
                 },
                 Wildcard => {
                     if index < path.len() {
                         current.wildcard_route.as_ref().map(|next| {
-                            variables.get_mut(index).map(|v| *v = false);
+                            variables.get_mut(index).map(|v| *v = Some(var_index));
 
-                            stack.push((current, Wildcard, index+1));
-                            stack.push((next, Wildcard, index+1));
-                            stack.push((next, Variable, index+1));
-                            stack.push((next, Static, index+1));
+                            stack.push((current, Wildcard, index+1, var_index));
+                            stack.push((next, Wildcard, index+1, var_index+1));
+                            stack.push((next, Variable, index+1, var_index+1));
+                            stack.push((next, Static, index+1, var_index+1));
                         });
                     }
                 }
@@ -258,8 +308,9 @@ impl<T: Handler> Router for TreeRouter<T> {
         let (endpoint, variable_names) = route.segments().fold((self, Vec::new()),
             |(current, mut variable_names), piece| {
                 let next = current.find_or_insert_router(&piece);
-                if let Some(&b':') = piece.iter().next() {
-                    variable_names.push(piece[1..].to_owned().into());
+                match piece.get(0) {
+                    Some(&b'*') | Some(&b':') => variable_names.push(piece[1..].to_owned().into()),
+                    _ => {}
                 }
 
                 (next, variable_names)

@@ -3,7 +3,7 @@ extern crate rustful;
 
 use std::io::{self, Read};
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, Component};
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
@@ -42,7 +42,7 @@ fn main() {
                 value: value.clone(),
                 operation: Some(sub)
             },
-            "res/:file" => Get: Api::File
+            "res/*file" => Get: Api::File
         }
     };
 
@@ -102,17 +102,25 @@ impl Handler for Api {
             },
             Api::File => {
                 if let Some(file) = context.variables.get("file") {
-                    //Make a full path from the file name and send it
-                    let path = format!("examples/handler_storage/{}", file);
-                    let res = response.send_file(&path)
-                        .or_else(|e| e.send_not_found("the file was not found"))
-                        .or_else(|e| e.ignore_send_error());
+                    let file_path = Path::new(file.as_ref());
 
-                    //Check if a more fatal file error than "not found" occurred
-                    if let Err((error, mut response)) = res {
-                        //Something went horribly wrong
-                        context.log.error(&format!("failed to open '{}': {}", file, error));
-                        response.set_status(StatusCode::InternalServerError);
+                    //Check if the path is valid
+                    if file_path.components().find(|c| if let Component::ParentDir = *c { true } else { false }).is_some() {
+                        //Accessing parent directories is forbidden
+                        response.set_status(StatusCode::Forbidden);
+                    } else {
+                        //Make a full path from the file name and send it
+                        let path = Path::new("examples/handler_storage").join(file_path);
+                        let res = response.send_file(path)
+                            .or_else(|e| e.send_not_found("the file was not found"))
+                            .or_else(|e| e.ignore_send_error());
+
+                        //Check if a more fatal file error than "not found" occurred
+                        if let Err((error, mut response)) = res {
+                            //Something went horribly wrong
+                            context.log.error(&format!("failed to open '{}': {}", file, error));
+                            response.set_status(StatusCode::InternalServerError);
+                        }
                     }
                 } else {
                     //No file name was specified
