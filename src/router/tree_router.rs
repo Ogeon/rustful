@@ -217,7 +217,10 @@ impl<T: Handler> Router for TreeRouter<T> {
                             index < variable_names.len(),
                             format!("invalid variable name index! variable_names.len(): {}, index: {}", variable_names.len(), index)
                         );
-                        var_map.insert(variable_names[index].clone(), value);
+                        let name = &variable_names[index];
+                        if name.len() > 0 {
+                            var_map.insert(name.clone(), value);
+                        }
                     }
 
                     result.handler = Some(item);
