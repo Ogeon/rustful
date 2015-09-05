@@ -123,8 +123,13 @@ impl<S: AsRef<[u8]>, V: AsRef<[u8]>> Borrow<[u8]> for MaybeUtf8<S, V> {
     }
 }
 
-impl<S: AsRef<[u8]>, V: AsRef<[u8]>> PartialEq for MaybeUtf8<S, V> {
-    fn eq(&self, other: &MaybeUtf8<S, V>) -> bool {
+impl<S1, V1, S2, V2> PartialEq<MaybeUtf8<S1, V1>> for MaybeUtf8<S2, V2> where
+    S1: AsRef<[u8]>,
+    V1: AsRef<[u8]>,
+    S2: AsRef<[u8]>,
+    V2: AsRef<[u8]>
+{
+    fn eq(&self, other: &MaybeUtf8<S1, V1>) -> bool {
         self.as_ref().eq(other.as_ref())
     }
 }

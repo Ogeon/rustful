@@ -100,7 +100,7 @@ pub struct TreeRouter<T> {
     variable_route: Option<Box<TreeRouter<T>>>,
     wildcard_route: Option<Box<TreeRouter<T>>>,
     ///Should the router search for hyperlinks? Setting this to `true` may
-    ///slow down enpoint search, but enables hyperlinks.
+    ///slow down endpoint search, but enables hyperlinks.
     pub find_hyperlinks: bool
 }
 
@@ -389,14 +389,123 @@ mod test {
     use router::Router;
     #[cfg(feature = "benchmark")]
     use test::Bencher;
-    use router::{Endpoint};
     use context::Context;
     use context::hypermedia::LinkSegment;
     use response::Response;
     use handler::Handler;
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
-    use std::vec::Vec;
     use Method;
+
+    macro_rules! check {
+        ($res: expr => $handler: expr, {$($key: expr => $val: expr),*}, [$([$($links: tt)*]),*]) => (
+            {
+                use std::collections::HashMap;
+                use context::MaybeUtf8Slice;
+
+                let handler: Option<&str> = $handler;
+                let handler = handler.map(|h| TestHandler::from(h));
+                let mut endpoint = $res;
+                assert_eq!(endpoint.handler, handler.as_ref());
+                let expected_vars: HashMap<MaybeUtf8Slice, MaybeUtf8Slice> = map!($($key => $val),*);
+                for (key, expected) in &expected_vars {
+                    if let Some(var) = endpoint.variables.get(key.as_ref()) {
+                        if var != expected {
+                            panic!("expected variable '{}' to have value '{}', but it is '{}'", key.as_utf8_lossy(), expected.as_utf8_lossy(), var.as_utf8_lossy());
+                        }
+                    } else {
+                        panic!("variable '{}' is missing", key.as_utf8_lossy());
+                    }
+                }
+                for (key, var) in &endpoint.variables {
+                    if let Some(expected) = expected_vars.get(key.as_ref()) {
+                        if var != expected {
+                            panic!("found variable '{}' with value '{}', but it was expected to be '{}'", key.as_utf8_lossy(), var.as_utf8_lossy(), expected.as_utf8_lossy());
+                        }
+                    } else {
+                        panic!("unexpected variable '{}'", key.as_utf8_lossy());
+                    }
+                }
+
+                let expected_links = [$(link!($($links)*)),*];
+                for link in &expected_links {
+                    let index = endpoint
+                                .hypermedia
+                                .links
+                                .iter()
+                                .map(|link| (link.method.as_ref(), &link.path))
+                                .position(|other| match (other, link) {
+                                   ((Some(other_method), _), &SelfLink(ref method)) => other_method == method,
+                                   ((None, other_link), &ForwardLink(ref link)) => other_link == link,
+                                   _ => false
+                                });
+                    if let Some(index) = index {
+                        endpoint.hypermedia.links.swap_remove(index);
+                    } else {
+                        panic!("missing link: {:?}", link);
+                    }
+                }
+                assert_eq!(endpoint.hypermedia.links, vec![]);
+            }
+        );
+        
+        ($res: expr => $handler: expr, {$($key: expr => $val: expr),*}) => (
+            check!($res => $handler, {$($key => $val),*}, []);
+        );
+
+        ($res: expr => $handler: expr, [$([$($links: tt)*]),*]) => (
+            check!($res => $handler, {}, [$([$($links)*]),*]);
+        );
+
+        ($res: expr => $handler: expr) => (
+            check!($res => $handler, {}, []);
+        );
+    }
+
+    macro_rules! link {
+        (./$method: ident) => (
+            SelfLink($method)
+        );
+        ($($section: tt)+) => (
+            {
+                let mut link = vec![];
+                add_link!(link $($section)+,);
+                ForwardLink(link)
+            }
+        );
+    }
+
+    macro_rules! add_link {
+        ($link: ident) => ();
+        ($link: ident : $name: expr, $($rest: tt)*) => (
+            {
+                $link.push(LinkSegment::Variable($name.into()));
+                add_link!($link $($rest)*);
+            }
+        );
+        ($link: ident * $name: expr, $($rest: tt)*) => (
+            {
+                $link.push(LinkSegment::RecursiveWildcard);
+                add_link!($link $($rest)*);
+            }
+        );
+        ($link: ident $name: expr, $($rest: tt)*) => (
+            {
+                $link.push(LinkSegment::Static($name.into()));
+                add_link!($link $($rest)*);
+            }
+        );
+    }
+
+    macro_rules! map {
+        () => (HashMap::new());
+        ($($key: expr => $val: expr),*) => (
+            {
+                let mut map = HashMap::new();
+                $(map.insert($key.into(), $val.into());)*
+                map
+            }
+        );
+    }
 
     #[derive(PartialEq, Debug, Clone, Copy)]
     struct TestHandler(&'static str);
@@ -414,54 +523,9 @@ mod test {
     #[derive(Debug)]
     enum LinkType<'a> {
         SelfLink(Method),
-        ForwardLink(LinkSegment<'a>)
+        ForwardLink(Vec<LinkSegment<'a>>)
     }
-
     pub use self::LinkType::{SelfLink, ForwardLink};
-
-    fn check_variable(result: Endpoint<TestHandler>, expected: Option<&[&str]>) {
-        assert_eq!(result.handler.is_some(), expected.is_some());
-
-        if let Some(expected) = expected {
-            let keys = vec!("a".as_bytes(), "b".as_bytes(), "c".as_bytes());
-            let result = keys.into_iter().filter_map(|key| {
-                match result.variables.get(key) {
-                    Some(value) => Some(value.as_ref()),
-                    None => None
-                }
-            }).collect::<Vec<&[u8]>>();
-
-            for (&result, expected) in result.iter().zip(expected.iter()) {
-                assert_eq!(result, expected.as_bytes());
-            }
-        } else {
-            assert!(result.variables.len() == 0);
-        }
-    }
-
-    fn check(mut result: Endpoint<TestHandler>, expected: Option<&'static str>, links: Vec<LinkType>) {
-        let expected = expected.map(|e| e.into());
-        println!("found {:?} and expected {:?}", result.hypermedia.links, links);
-        assert_eq!(result.handler.map(|&v| v), expected);
-        for link in links {
-            let index = result
-                        .hypermedia
-                        .links
-                        .iter()
-                        .map(|link| (link.method.as_ref(), link.path.first()))
-                        .position(|other| match (other, &link) {
-                           ((Some(other_method), None), &SelfLink(ref method)) => other_method == method,
-                           ((None, Some(other_link)), &ForwardLink(ref link)) => other_link == link,
-                           _ => false
-                        });
-            if let Some(index) = index {
-                result.hypermedia.links.swap_remove(index);
-            } else {
-                panic!("missing link: {:?}", link);
-            }
-        }
-        assert_eq!(result.hypermedia.links, vec![]);
-    }
 
     #[test]
     fn one_static_route() {
@@ -470,9 +534,9 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, b"path/to/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to"), None, vec![ForwardLink(LinkSegment::Static("test1".into()))]);
-        check(router.find(&Get, b"path/to/test1/nothing"), None, vec![]);
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to") => None, [["test1"]]);
+        check!(router.find(&Get, b"path/to/test1/nothing") => None);
     }
 
     #[test]
@@ -486,10 +550,10 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, b""), Some("test 1"), vec![ForwardLink(LinkSegment::Static("path".into()))]);
-        check(router.find(&Get, b"path/to/test/no2"), Some("test 2"), vec![]);
-        check(router.find(&Get, b"path/to/test1/no/test3"), Some("test 3"), vec![]);
-        check(router.find(&Get, b"path/to/test1/no"), None, vec![ForwardLink(LinkSegment::Static("test3".into()))]);
+        check!(router.find(&Get, b"") => Some("test 1"), [["path"]]);
+        check!(router.find(&Get, b"path/to/test/no2") => Some("test 2"));
+        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test 3"));
+        check!(router.find(&Get, b"path/to/test1/no") => None, [["test3"]]);
     }
 
     #[test]
@@ -499,9 +563,9 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check_variable(router.find(&Get, b"path/to/test1"), Some(&["to"]));
-        check_variable(router.find(&Get, b"path/to"), None);
-        check_variable(router.find(&Get, b"path/to/test1/nothing"), None);
+        check!(router.find(&Get, b"path/to/test1") => Some("test_var"), {"a" => "to"});
+        check!(router.find(&Get, b"path/to") => None, [["test1"]]);
+        check!(router.find(&Get, b"path/to/test1/nothing") => None);
     }
 
     #[test]
@@ -516,11 +580,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check_variable(router.find(&Get, b"path/to/test1"), Some(&[]));
-        check_variable(router.find(&Get, b"path/to/test/no2"), Some(&["to"]));
-        check_variable(router.find(&Get, b"path/to/test1/no/test3"), Some(&["test3", "test1", "no"]));
-        check_variable(router.find(&Post, b"path/to/test1/no/test3"), Some(&["no", "test3", "test1"]));
-        check_variable(router.find(&Get, b"path/to/test1/no"), None);
+        check!(router.find(&Get, b"path/to/test1") => Some("test_var"));
+        check!(router.find(&Get, b"path/to/test/no2") => Some("test_var"), {"a" => "to"}, [[:""]]);
+        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test_var"), {"a" => "test3", "b" => "test1", "c" => "no"}, [[./Post]]);
+        check!(router.find(&Post, b"path/to/test1/no/test3") => Some("test_var"), {"a" => "no", "b" => "test3", "c" => "test1"}, [[./Get]]);
+        check!(router.find(&Get, b"path/to/test1/no") => None, [[:""]]);
     }
 
     #[test]
@@ -530,11 +594,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, b"path/to/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to/same/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to/the/same/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to"), None, vec![ForwardLink(LinkSegment::RecursiveWildcard)]);
-        check(router.find(&Get, b"path"), None, vec![ForwardLink(LinkSegment::Static("to".into()))]);
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to") => None, [[*""]]);
+        check!(router.find(&Get, b"path") => None, [["to"]]);
     }
 
 
@@ -545,12 +609,12 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, b"path/to/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to/same/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to/the/same/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to"), None, vec![ForwardLink(LinkSegment::Static("test1".into()))]);
-        check(router.find(&Get, b"path"), None, vec![ForwardLink(LinkSegment::RecursiveWildcard)]);
-    }
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to") => None, [["test1"]]);
+        check!(router.find(&Get, b"path") => None, [[*""]]);
+   }
 
     #[test]
     fn one_universal_wildcard_route() {
@@ -559,12 +623,12 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, b"path/to/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to/same/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to/the/same/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/to"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path"), Some("test 1"), vec![]);
-        check(router.find(&Get, b""), None, vec![ForwardLink(LinkSegment::RecursiveWildcard)]);
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to") => Some("test 1"));
+        check!(router.find(&Get, b"path") => Some("test 1"));
+        check!(router.find(&Get, b"") => None, [[*""]]);
     }
 
     #[test]
@@ -578,11 +642,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, b"path/to/test1"), Some("test 1"), vec![ForwardLink(LinkSegment::RecursiveWildcard)]);
-        check(router.find(&Get, b"path/for/test/no2"), Some("test 2"), vec![]);
-        check(router.find(&Get, b"path/to/test1/no/test3"), Some("test 3"), vec![]);
-        check(router.find(&Get, b"path/to/test1/no/test3/again"), Some("test 3"), vec![]);
-        check(router.find(&Get, b"path/to"), None, vec![ForwardLink(LinkSegment::RecursiveWildcard), ForwardLink(LinkSegment::Static("test".into()))]);
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), [[*""]]);
+        check!(router.find(&Get, b"path/for/test/no2") => Some("test 2"));
+        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test 3"));
+        check!(router.find(&Get, b"path/to/test1/no/test3/again") => Some("test 3"));
+        check!(router.find(&Get, b"path/to") => None, [[*""], ["test"]]);
     }
 
     #[test]
@@ -595,11 +659,11 @@ mod test {
 
         let router = routes.into_iter().collect::<TreeRouter<_>>();
 
-        check(router.find(&Get, b"path/to/test1"), Some("test 1"), vec![]);
-        check(router.find(&Get, b"path/for/test/no2"), Some("test 2"), vec![]);
-        check(router.find(&Get, b"path/to/test1/no/test3"), Some("test 3"), vec![]);
-        check(router.find(&Get, b"path/to/test1/no/test3/again"), Some("test 3"), vec![]);
-        check(router.find(&Get, b"path/to"), None, vec![]);
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/for/test/no2") => Some("test 2"));
+        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test 3"));
+        check!(router.find(&Get, b"path/to/test1/no/test3/again") => Some("test 3"));
+        check!(router.find(&Get, b"path/to") => None);
     }
 
     #[test]
@@ -614,11 +678,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check(router.find(&Get, b""), Some("test 1"), vec![ForwardLink(LinkSegment::Static("path".into()))]);
-        check(router.find(&Get, b"path/to/test/no2/"), Some("test 2"), vec![]);
-        check(router.find(&Get, b"path/to/test3"), Some("test 3"), vec![ForwardLink(LinkSegment::Static("again".into()))]);
-        check(router.find(&Get, b"/path/to/test3/again"), Some("test 3"), vec![]);
-        check(router.find(&Get, b"//path/to/test3"), None, vec![]);
+        check!(router.find(&Get, b"") => Some("test 1"), [["path"]]);
+        check!(router.find(&Get, b"path/to/test/no2/") => Some("test 2"));
+        check!(router.find(&Get, b"path/to/test3") => Some("test 3"), [["again"]]);
+        check!(router.find(&Get, b"/path/to/test3/again") => Some("test 3"));
+        check!(router.find(&Get, b"//path/to/test3") => None);
     }
 
     #[test]
@@ -632,21 +696,11 @@ mod test {
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
-
-        let links = vec![SelfLink(Post), SelfLink(Delete), SelfLink(Put)];
-        check(router.find(&Get, b"/"), Some("get"), links);
-
-        let links = vec![SelfLink(Get), SelfLink(Delete), SelfLink(Put)];
-        check(router.find(&Post, b"/"), Some("post"), links);
-
-        let links = vec![SelfLink(Get), SelfLink(Post), SelfLink(Put)];
-        check(router.find(&Delete, b"/"), Some("delete"), links);
-
-        let links = vec![SelfLink(Get), SelfLink(Post), SelfLink(Delete)];
-        check(router.find(&Put, b"/"), Some("put"), links);
-
-        let links = vec![SelfLink(Get), SelfLink(Post), SelfLink(Delete), SelfLink(Put)];
-        check(router.find(&Head, b"/"), None, links);
+        check!(router.find(&Get, b"/") => Some("get"), [[./Post], [./Delete], [./Put]]);
+        check!(router.find(&Post, b"/") => Some("post"), [[./Get], [./Delete], [./Put]]);
+        check!(router.find(&Delete, b"/") => Some("delete"), [[./Get], [./Post], [./Put]]);
+        check!(router.find(&Put, b"/") => Some("put"), [[./Get], [./Post], [./Delete]]);
+        check!(router.find(&Head, b"/") => None, [[./Get], [./Post], [./Delete], [./Put]]);
     }
 
     #[test]
@@ -669,12 +723,12 @@ mod test {
 
         router1.insert_router("path/to", router2);
 
-        check(router1.find(&Get, b""), Some("test 1"), vec![ForwardLink(LinkSegment::Static("path".into()))]);
-        check(router1.find(&Get, b"path/to/test/no2"), Some("test 2"), vec![]);
-        check(router1.find(&Get, b"path/to/test1/no/test3"), Some("test 3"), vec![SelfLink(Post)]);
-        check(router1.find(&Post, b"path/to/test1/no/test3"), Some("test 3 post"), vec![SelfLink(Get)]);
-        check(router1.find(&Get, b"path/to/test/no5"), Some("test 5"), vec![]);
-        check(router1.find(&Get, b"path/to"), Some("test 1"), vec![ForwardLink(LinkSegment::Static("test".into())), ForwardLink(LinkSegment::Static("test1".into()))]);
+        check!(router1.find(&Get, b"") => Some("test 1"), [["path"]]);
+        check!(router1.find(&Get, b"path/to/test/no2") => Some("test 2"));
+        check!(router1.find(&Get, b"path/to/test1/no/test3") => Some("test 3"), [[./Post]]);
+        check!(router1.find(&Post, b"path/to/test1/no/test3") => Some("test 3 post"), [[./Get]]);
+        check!(router1.find(&Get, b"path/to/test/no5") => Some("test 5"));
+        check!(router1.find(&Get, b"path/to") => Some("test 1"), [["test"], ["test1"]]);
     }
 
 
@@ -689,8 +743,8 @@ mod test {
 
         router1.insert_router(":a", router2);
         
-        check_variable(router1.find(&Get, b"path/to/test1"), Some(&["path", "to", "test1"]));
-        check_variable(router1.find(&Get, b"path/to/test1/test"), Some(&["path", "to", "test1"]));
+        check!(router1.find(&Get, b"path/to/test1") => Some("test 2"), {"a" => "path", "b" => "to", "c" => "test1"}, [["test"]]);
+        check!(router1.find(&Get, b"path/to/test1/test") => Some("test 1"), {"a" => "path", "b" => "to", "c" => "test1"});
     }
 
 
@@ -705,11 +759,11 @@ mod test {
 
         router1.insert_router("path", router2);
 
-        check(router1.find(&Get, b"path/to/test1"), Some("test 1"), vec![]);
-        check(router1.find(&Get, b"path/to/same/test1"), Some("test 1"), vec![]);
-        check(router1.find(&Get, b"path/to/the/same/test1"), Some("test 1"), vec![]);
-        check(router1.find(&Get, b"path/to"), Some("test 2"), vec![]);
-        check(router1.find(&Get, b"path"), None, vec![ForwardLink(LinkSegment::Static("to".into())), ForwardLink(LinkSegment::RecursiveWildcard)]);
+        check!(router1.find(&Get, b"path/to/test1") => Some("test 1"));
+        check!(router1.find(&Get, b"path/to/same/test1") => Some("test 1"));
+        check!(router1.find(&Get, b"path/to/the/same/test1") => Some("test 1"));
+        check!(router1.find(&Get, b"path/to") => Some("test 2"));
+        check!(router1.find(&Get, b"path") => None, [["to"], [*""]]);
     }
 
     
