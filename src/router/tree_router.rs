@@ -589,14 +589,14 @@ mod test {
 
     #[test]
     fn one_wildcard_end_route() {
-        let routes = vec![(Get, "path/to/*", "test 1".into())];
+        let routes = vec![(Get, "path/to/*tail", "test 1".into())];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
-        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"));
-        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), {"tail" => "test1"});
+        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"), {"tail" => "same/test1"});
+        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"), {"tail" => "the/same/test1"});
         check!(router.find(&Get, b"path/to") => None, [[*""]]);
         check!(router.find(&Get, b"path") => None, [["to"]]);
     }
@@ -604,30 +604,30 @@ mod test {
 
     #[test]
     fn one_wildcard_middle_route() {
-        let routes = vec![(Get, "path/*/test1", "test 1".into())];
+        let routes = vec![(Get, "path/*middle/test1", "test 1".into())];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
-        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"));
-        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"));
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), {"middle" => "to"});
+        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"), {"middle" => "to/same"});
+        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"), {"middle" => "to/the/same"});
         check!(router.find(&Get, b"path/to") => None, [["test1"]]);
         check!(router.find(&Get, b"path") => None, [[*""]]);
    }
 
     #[test]
     fn one_universal_wildcard_route() {
-        let routes = vec![(Get, "*", "test 1".into())];
+        let routes = vec![(Get, "*all", "test 1".into())];
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
-        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"));
-        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"));
-        check!(router.find(&Get, b"path/to") => Some("test 1"));
-        check!(router.find(&Get, b"path") => Some("test 1"));
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), {"all" => "path/to/test1"});
+        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"), {"all" => "path/to/same/test1"});
+        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"), {"all" => "path/to/the/same/test1"});
+        check!(router.find(&Get, b"path/to") => Some("test 1"), {"all" => "path/to"});
+        check!(router.find(&Get, b"path") => Some("test 1"), {"all" => "path"});
         check!(router.find(&Get, b"") => None, [[*""]]);
     }
 
@@ -652,17 +652,17 @@ mod test {
     #[test]
     fn several_wildcards_routes_no_hyperlinks() {
         let routes = vec![
-            (Get, "path/to/*", "test 1".into()),
-            (Get, "path/*/test/no2", "test 2".into()),
-            (Get, "path/to/*/*/*", "test 3".into())
+            (Get, "path/to/*tail", "test 1".into()),
+            (Get, "path/*middle/test/no2", "test 2".into()),
+            (Get, "path/to/*a/*b/*c", "test 3".into())
         ];
 
         let router = routes.into_iter().collect::<TreeRouter<_>>();
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
-        check!(router.find(&Get, b"path/for/test/no2") => Some("test 2"));
-        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test 3"));
-        check!(router.find(&Get, b"path/to/test1/no/test3/again") => Some("test 3"));
+        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), {"tail" => "test1"});
+        check!(router.find(&Get, b"path/for/test/no2") => Some("test 2"), {"middle" => "for"});
+        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test 3"), {"a" => "test1", "b" => "no", "c" => "test3"});
+        check!(router.find(&Get, b"path/to/test1/no/test3/again") => Some("test 3"), {"a" => "test1", "b" => "no", "c" => "test3/again"});
         check!(router.find(&Get, b"path/to") => None);
     }
 
@@ -780,8 +780,8 @@ mod test {
             (Get, "path/to/test1", "test 1".into()),
             (Get, "path/:a/test/no2", "test 1".into()),
             (Get, "path/to/:b/:c/:a", "test 1".into()),
-            (Get, "path/to/*", "test 1".into()),
-            (Get, "path/to/*/other", "test 1".into())
+            (Get, "path/to/*a", "test 1".into()),
+            (Get, "path/to/*a/other", "test 1".into())
         ];
 
         let paths = [
