@@ -56,14 +56,20 @@ impl<'a, I: Iterator<Item=(usize, &'a [u8])>> Iterator for VariableIter<I> {
     }
 }
 
-///Stores handlers, using an HTTP method and a path as keys.
+///Stores handlers, using an HTTP method and a route as key.
 ///
-///Paths can be static (`"path/to/item"`) or variable (`"users/:group/:user"`)
-///and contain wildcards (`"first/*middle/also_middle/*tail"`). Variables
-///(starting with `:`) will match whatever word the request path contains at
-///that point and it will be sent as a value to the handler. Wildcards (starting
-///with `*`) are also variables, but they may consume multiple segments until
-///the rest of the path gives a match.
+///#Variables
+///
+///Routes may contain variables, that are useful for capturing parts of the
+///requested path as input to the handler. The syntax for a variable is simply
+///an indicator character (`:` or `*`) followed by a label. Variables without
+///labels are also valid, but their values will be discarded.
+///
+///##Variable Segments (:label)
+///
+///A variable segment will match a single arbitrary segment. They are probably
+///the most commonly used variables and may, for example, be used to select a
+///blog post: `"posts/:year/:month/:day/:title_slug"`.
 ///
 ///```text
 ///pattern = "a/:v/b"
@@ -73,26 +79,37 @@ impl<'a, I: Iterator<Item=(usize, &'a [u8])>> Iterator for VariableIter<I> {
 ///"a/c/b/d" -> no match
 ///```
 ///
+///##Variable Sequences (*label)
+///
+///A variable sequence is similar to a variable segment, but with the
+///difference that it may consume multiple segments until the rest of the path
+///gives a match. An example use case is a route for downloadable files that
+///may be arranged in arbitrary directories: `"downloads/*file_path"`.
+///
 ///```text
-///pattern = "a/*w/b"
-///"a/c/b" -> w = "c"
-///"a/c/d/b" -> w = "c/d"
+///pattern = "a/*v/b"
+///"a/c/b" -> v = "c"
+///"a/c/d/b" -> v = "c/d"
 ///"a/b" -> no match
 ///"a/c/b/d" -> no match
 ///```
 ///
 ///```text
-///pattern = "a/b/*w"
-///"a/b/c" -> w = "c"
-///"a/b/c/d" -> w = "c/d"
+///pattern = "a/b/*v"
+///"a/b/c" -> v = "c"
+///"a/b/c/d" -> v = "c/d"
 ///"a/b" -> no match
 ///```
 ///
-///`TreeRouter` has support for shallow hyperlinks to children, siblings,
-///cousins, ans so forth. The use of wildcards complicates this process and
-///may cause confusing results. The hyperlinks may or may not point to a
-///handler. Hyperlinks has to be activated by setting `find_hyperlinks` to
-///`true`.
+///#Hyperlinks
+///
+///The 'TreeRouter` has support for shallow hyperlinks to children, siblings,
+///cousins, ans so forth. The use of variable sequences complicates this
+///process and may cause confusing results in certain situations. The
+///hyperlinks may or may not point to a handler.
+///
+///Hyperlinks has to be activated by setting `find_hyperlinks` to  `true`.
+
 #[derive(Clone)]
 pub struct TreeRouter<T> {
     items: HashMap<Method, (T, Vec<MaybeUtf8Owned>)>,
