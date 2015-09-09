@@ -3,7 +3,7 @@ extern crate rustful;
 
 use std::io::{self, Read};
 use std::fs::File;
-use std::path::{Path, Component};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
@@ -15,6 +15,7 @@ use rustful::{
     TreeRouter,
     StatusCode
 };
+use rustful::file::check_path;
 
 fn main() {
     println!("Visit http://localhost:8080 to try this example.");
@@ -105,10 +106,7 @@ impl Handler for Api {
                     let file_path = Path::new(file.as_ref());
 
                     //Check if the path is valid
-                    if file_path.components().find(|c| if let Component::ParentDir = *c { true } else { false }).is_some() {
-                        //Accessing parent directories is forbidden
-                        response.set_status(StatusCode::Forbidden);
-                    } else {
+                    if check_path(file_path).is_ok() {
                         //Make a full path from the file name and send it
                         let path = Path::new("examples/handler_storage").join(file_path);
                         let res = response.send_file(path)
@@ -121,6 +119,9 @@ impl Handler for Api {
                             context.log.error(&format!("failed to open '{}': {}", file, error));
                             response.set_status(StatusCode::InternalServerError);
                         }
+                    } else {
+                        //Accessing parent directories is forbidden
+                        response.set_status(StatusCode::Forbidden);
                     }
                 } else {
                     //No file name was specified
