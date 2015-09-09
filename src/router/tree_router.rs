@@ -7,7 +7,7 @@ use hyper::method::Method;
 
 use router::{Router, Route, Endpoint};
 use context::MaybeUtf8Owned;
-use context::hypermedia::{Link, LinkSegment};
+use context::hypermedia::{Link, LinkSegment, SegmentType};
 use handler::Handler;
 
 use self::Branch::{Static, Variable, Wildcard};
@@ -246,21 +246,30 @@ impl<T: Handler> Router for TreeRouter<T> {
                     for (segment, _next) in &current.static_routes {
                         result.hypermedia.links.push(Link {
                             method: None,
-                            path: vec![LinkSegment::Static(segment.as_slice())]
+                            path: vec![LinkSegment {
+                                label: segment.as_slice(),
+                                ty: SegmentType::Static
+                            }]
                         });
                     }
 
                     if let Some(ref _next) = current.variable_route {
                         result.hypermedia.links.push(Link {
                             method: None,
-                            path: vec![LinkSegment::Variable("".into())]
+                            path: vec![LinkSegment {
+                                label: "".into(),
+                                ty: SegmentType::VariableSegment
+                            }]
                         });
                     }
 
                     if let Some(ref _next) = current.wildcard_route {
                         result.hypermedia.links.push(Link {
                             method: None,
-                            path: vec![LinkSegment::RecursiveWildcard]
+                            path: vec![LinkSegment {
+                                label: "".into(),
+                                ty: SegmentType::VariableSequence
+                            }]
                         });
                     }
                 }
@@ -390,7 +399,7 @@ mod test {
     #[cfg(feature = "benchmark")]
     use test::Bencher;
     use context::Context;
-    use context::hypermedia::LinkSegment;
+    use context::hypermedia::{LinkSegment, SegmentType};
     use response::Response;
     use handler::Handler;
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
@@ -478,19 +487,28 @@ mod test {
         ($link: ident) => ();
         ($link: ident : $name: expr, $($rest: tt)*) => (
             {
-                $link.push(LinkSegment::Variable($name.into()));
+                $link.push(LinkSegment {
+                    label: $name.into(),
+                    ty: SegmentType::VariableSegment
+                });
                 add_link!($link $($rest)*);
             }
         );
         ($link: ident * $name: expr, $($rest: tt)*) => (
             {
-                $link.push(LinkSegment::RecursiveWildcard);
+                $link.push(LinkSegment {
+                    label: $name.into(),
+                    ty: SegmentType::VariableSequence
+                });
                 add_link!($link $($rest)*);
             }
         );
         ($link: ident $name: expr, $($rest: tt)*) => (
             {
-                $link.push(LinkSegment::Static($name.into()));
+                $link.push(LinkSegment {
+                    label: $name.into(),
+                    ty: SegmentType::Static
+                });
                 add_link!($link $($rest)*);
             }
         );
