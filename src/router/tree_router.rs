@@ -19,40 +19,54 @@ enum Branch {
     Wildcard
 }
 
-struct VariableIter<I> {
+struct VariableIter<'a, I> {
     iter: I,
-    current: Option<(usize, MaybeUtf8Owned)>
+    names: &'a [MaybeUtf8Owned],
+    current: Option<(usize, MaybeUtf8Owned, MaybeUtf8Owned)>
 }
 
-impl<'a, I: Iterator<Item=(usize, &'a [u8])>> VariableIter<I> {
-    fn new(iter: I) -> VariableIter<I> {
+impl<'a, I: Iterator<Item=(usize, &'a [u8])>> VariableIter<'a, I> {
+    fn new(iter: I, names: &'a [MaybeUtf8Owned]) -> VariableIter<'a, I> {
         VariableIter {
             iter: iter,
+            names: names,
             current: None
         }
     }
 }
 
-impl<'a, I: Iterator<Item=(usize, &'a [u8])>> Iterator for VariableIter<I> {
-    type Item=(usize, MaybeUtf8Owned);
+impl<'a, I: Iterator<Item=(usize, &'a [u8])>> Iterator for VariableIter<'a, I> {
+    type Item=(MaybeUtf8Owned, MaybeUtf8Owned);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some((next_index, next_segment)) = self.iter.next() {
-            if let Some((index, mut segment)) = self.current.take() {
+            //validate next_index and check if the variable has a name
+            debug_assert!(next_index < self.names.len(), format!("invalid variable name index! variable_names.len(): {}, index: {}", self.names.len(), next_index));
+            let next_name = match self.names.get(next_index) {
+                None => continue,
+                Some(n) if n.is_empty() => continue,
+                Some(n) => n
+            };
+
+            if let Some((index, name, mut segment)) = self.current.take() {
                 if index == next_index {
+                    //this is a part of the current sequence
                     segment.push_char('/');
                     segment.push_bytes(next_segment);
-                    self.current = Some((index, segment));
+                    self.current = Some((index, name, segment));
                 } else {
-                    self.current = Some((next_index, next_segment.to_owned().into()));
-                    return Some((index, segment));
+                    //the current sequence has ended
+                    self.current = Some((next_index, (*next_name).clone(), next_segment.to_owned().into()));
+                    return Some((name, segment));
                 }
             } else {
-                self.current = Some((next_index, next_segment.to_owned().into()));
+                //this is the first named variable
+                self.current = Some((next_index, (*next_name).clone(), next_segment.to_owned().into()));
             }
         }
 
-        self.current.take()
+        //return the last variable
+        self.current.take().map(|(_, name, segment)| (name, segment))
     }
 }
 
@@ -229,15 +243,8 @@ impl<T: Handler> Router for TreeRouter<T> {
                     });
 
                     let mut var_map = HashMap::<MaybeUtf8Owned, MaybeUtf8Owned>::with_capacity(variable_names.len());
-                    for (index, value) in VariableIter::new(values) {
-                        debug_assert!(
-                            index < variable_names.len(),
-                            format!("invalid variable name index! variable_names.len(): {}, index: {}", variable_names.len(), index)
-                        );
-                        let name = &variable_names[index];
-                        if name.len() > 0 {
-                            var_map.insert(name.clone(), value);
-                        }
+                    for (name, value) in VariableIter::new(values, variable_names) {
+                        var_map.insert(name, value);
                     }
 
                     result.handler = Some(item);
