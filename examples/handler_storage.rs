@@ -15,6 +15,7 @@ use rustful::{
     TreeRouter,
     StatusCode
 };
+use rustful::file::check_path;
 
 fn main() {
     println!("Visit http://localhost:8080 to try this example.");
@@ -42,7 +43,7 @@ fn main() {
                 value: value.clone(),
                 operation: Some(sub)
             },
-            "res/:file" => Get: Api::File
+            "res/*file" => Get: Api::File
         }
     };
 
@@ -102,17 +103,25 @@ impl Handler for Api {
             },
             Api::File => {
                 if let Some(file) = context.variables.get("file") {
-                    //Make a full path from the file name and send it
-                    let path = format!("examples/handler_storage/{}", file);
-                    let res = response.send_file(&path)
-                        .or_else(|e| e.send_not_found("the file was not found"))
-                        .or_else(|e| e.ignore_send_error());
+                    let file_path = Path::new(file.as_ref());
 
-                    //Check if a more fatal file error than "not found" occurred
-                    if let Err((error, mut response)) = res {
-                        //Something went horribly wrong
-                        context.log.error(&format!("failed to open '{}': {}", file, error));
-                        response.set_status(StatusCode::InternalServerError);
+                    //Check if the path is valid
+                    if check_path(file_path).is_ok() {
+                        //Make a full path from the file name and send it
+                        let path = Path::new("examples/handler_storage").join(file_path);
+                        let res = response.send_file(path)
+                            .or_else(|e| e.send_not_found("the file was not found"))
+                            .or_else(|e| e.ignore_send_error());
+
+                        //Check if a more fatal file error than "not found" occurred
+                        if let Err((error, mut response)) = res {
+                            //Something went horribly wrong
+                            context.log.error(&format!("failed to open '{}': {}", file, error));
+                            response.set_status(StatusCode::InternalServerError);
+                        }
+                    } else {
+                        //Accessing parent directories is forbidden
+                        response.set_status(StatusCode::Forbidden);
                     }
                 } else {
                     //No file name was specified

@@ -1,5 +1,7 @@
 //!File related utilities.
 
+use std::path::{Path, Component};
+
 use mime::{Mime, TopLevel, SubLevel};
 
 include!(concat!(env!("OUT_DIR"), "/mime.rs"));
@@ -47,4 +49,40 @@ impl<'a> Into<SubLevel> for &'a MaybeKnown<SubLevel> {
             MaybeKnown::Unknown(s) => SubLevel::Ext(s.into())
         }
     }
+}
+
+///Check if a path tries to escape its parent directory.
+///
+///Forbidden path components:
+///
+/// * Root directory
+/// * Prefixes (e.g. `C:` on Windows)
+/// * Parent directory
+///
+///Allowed path components:
+///
+/// * "Normal" components (e.g. `res/scripts`)
+/// * Current directory
+///
+///The first forbidden component is returned if the path is invalid.
+///
+///```
+///use std::path::Component;
+///use rustful::file::check_path;
+///
+///let bad_path = "..";
+///
+///assert_eq!(check_path(bad_path), Err(Component::ParentDir));
+///```
+pub fn check_path<P: ?Sized + AsRef<Path>>(path: &P) -> Result<(), Component> {
+    for component in path.as_ref().components() {
+        match component {
+            c @ Component::RootDir |
+            c @ Component::Prefix(_) |
+            c @ Component::ParentDir => return Err(c),
+            Component::Normal(_) | Component::CurDir => {}
+        }
+    }
+
+    Ok(())
 }
