@@ -224,11 +224,9 @@ impl<T: Handler> Router for TreeRouter<T> {
 
     fn find<'a>(&'a self, method: &Method, route: &[u8]) -> Endpoint<'a, T> {
         let path = route.segments().collect::<Vec<_>>();
-
-        let mut variables: Vec<_> = ::std::iter::repeat(None).take(path.len()).collect();
-
+        let mut variables = vec![None; path.len()];
         let mut stack = vec![(self, Wildcard, 0, 0), (self, Variable, 0, 0), (self, Static, 0, 0)];
-
+        
         let mut result: Endpoint<T> = None.into();
 
         while let Some((current, branch, index, var_index)) = stack.pop() {
