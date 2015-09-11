@@ -74,7 +74,7 @@ impl<'a> Into<SubLevel> for &'a MaybeKnown<SubLevel> {
 ///
 ///assert_eq!(check_path(bad_path), Err(Component::ParentDir));
 ///```
-pub fn check_path<'a, P: ?Sized + AsRef<Path> + 'a>(path: &'a P) -> Result<(), Component<'a>> {
+pub fn check_path<P: ?Sized + AsRef<Path>>(path: &P) -> Result<(), Component> {
     for component in path.as_ref().components() {
         match component {
             c @ Component::RootDir |
