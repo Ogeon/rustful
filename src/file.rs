@@ -51,7 +51,7 @@ impl<'a> Into<SubLevel> for &'a MaybeKnown<SubLevel> {
     }
 }
 
-///Make sure that a path doesn't try to escape its parent.
+///Check if a path tries to escape its parent directory.
 ///
 ///Forbidden path components:
 ///
@@ -59,33 +59,20 @@ impl<'a> Into<SubLevel> for &'a MaybeKnown<SubLevel> {
 /// * Prefixes (e.g. `C:` on Windows)
 /// * Parent directory
 ///
+///Allowed path components:
+///
+/// * "Normal" components (e.g. `res/scripts`)
+/// * Current directory
+///
 ///The first forbidden component is returned if the path is invalid.
 ///
 ///```
 ///use std::path::Component;
 ///use rustful::file::check_path;
 ///
-///let bad_path = "../etc/passwd";
+///let bad_path = "..";
 ///
 ///assert_eq!(check_path(bad_path), Err(Component::ParentDir));
-///```
-///
-///```
-///use std::path::Component;
-///use std::ffi::OsStr;
-///use rustful::file::check_path;
-///
-///let bad_path_on_windows = "C:/etc/passwd";
-///
-///if cfg!(windows) {
-///    //we can't create a Component, so we have to improvise
-///    match check_path(bad_path_on_windows) {
-///        Err(Component::Prefix(prefix)) => assert_eq!(prefix.as_os_str(), OsStr::new("C:")),
-///        unexpected => panic!("expected Err(Component::Prefix(\"C:\")), but found {:?}", unexpected)
-///    }
-///} else {
-///    assert_eq!(check_path(bad_path_on_windows), Ok(()));
-///}
 ///```
 pub fn check_path<'a, P: ?Sized + AsRef<Path> + 'a>(path: &'a P) -> Result<(), Component<'a>> {
     for component in path.as_ref().components() {
