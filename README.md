@@ -144,8 +144,38 @@ compiling your project, right? It's therefore recommend that you run your own
 tests with the `strict` feature enabled before pushing, just to see if you
 missed something.
 
-User facing Cargo features are tested one at the time, using
-`scripts/test_features.sh`, so any newly new user facing feature should be
-added to its feature list (as well as the list in this README). Development
-features, such as `strict`, or features that only exists as dependencies for
-other features does not count as user facing.
+###Automatic Feature Testing
+
+User facing Cargo features are automatically gathered from `Cargo.toml` and
+tested one at the time, using `scripts/test_features.sh`. The lack of public
+and private features forces us to use a special annotation to differ between
+internal and user facing feature. Here is an simple example snippet of how the
+`Cargo.toml` is expected to look:
+
+```toml
+#...
+
+[features]
+default = ["feature_a", "feature_b"]
+feature_a = ["feature_c"]
+feature_b = []
+
+#internal
+feature_c = []
+
+[dependencies.optional_lib]
+#feature
+optional=true
+
+#...
+```
+
+Features that are supposed to be available to the user has to be declared
+before the `#internal` comment. This will tell the test script that these are
+supposed to be tested.
+
+Dependency libraries can also be features, so we have to annotate these as
+well. Each dependency that is supposed to work as a user facing feature will
+need a `#feature` comment somewhere within its declaration. This will only
+work with features that are declared using the above form, and not the
+`feature_lib = { ... }` form.

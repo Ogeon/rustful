@@ -17,7 +17,7 @@ branches:
 script:
   - cargo build -v --features strict
   - cargo test -v --features strict
-  - sh scripts/test_features.sh
+  - bash scripts/test_features.sh
   - cargo doc
 after_success:
   - sh scripts/upload_doc.sh
