@@ -20,6 +20,7 @@ default = ["rustc_json_body", "ssl", "multipart"]
 rustc_json_body = ["rustc-serialize"]
 ssl = ["hyper/ssl"]
 
+#internal
 benchmark = []
 strict = []
 
@@ -34,6 +35,7 @@ version = "0.6"
 default-features = false
 
 [dependencies.multipart]
+#feature
 version = "0.3"
 default-features = false
 features = ["server"]
