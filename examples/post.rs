@@ -7,7 +7,7 @@ use std::path::Path;
 use std::borrow::Cow;
 use std::error::Error;
 
-use rustful::{Server, Context, Response, Log, Handler};
+use rustful::{Server, Context, Response, Log};
 use rustful::context::body::ExtQueryBody;
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
@@ -42,15 +42,6 @@ fn say_hello(mut context: Context, mut response: Response) {
     response.send(complete_page);
 }
 
-//Dodge an ICE, related to functions as handlers.
-struct HandlerFn(fn(Context, Response));
-
-impl Handler for HandlerFn {
-    fn handle_request(&self, context: Context, response: Response) {
-        self.0(context, response);
-    }
-}
-
 fn main() {
     println!("Visit http://localhost:8080 to try this example.");
 
@@ -65,7 +56,7 @@ fn main() {
         host: 8080.into(),
         global: Box::new(files).into(),
         content_type: content_type!(Text / Html; Charset = Utf8),
-        ..Server::new(HandlerFn(say_hello))
+        ..Server::new(say_hello)
     }.run();
 
     //Check if the server started successfully

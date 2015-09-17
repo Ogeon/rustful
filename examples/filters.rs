@@ -4,7 +4,7 @@ extern crate rustful;
 use std::sync::RwLock;
 use std::error::Error;
 
-use rustful::{Server, TreeRouter, Context, Response, Log, Handler};
+use rustful::{Server, TreeRouter, Context, Response, Log};
 use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilter, ContextAction};
 use rustful::response::Data;
 use rustful::StatusCode;
@@ -49,10 +49,9 @@ enum Format {
     Text
 }
 
-//Dodge an ICE, related to functions as handlers.
-struct HandlerFn(fn(Context, Response, &Format), Format);
+struct Handler(fn(Context, Response, &Format), Format);
 
-impl Handler for HandlerFn {
+impl rustful::Handler for Handler {
     fn handle_request(&self, context: Context, response: Response) {
         self.0(context, response, &self.1);
     }
@@ -66,12 +65,12 @@ fn main() {
     insert_routes!{
         &mut router => {
             "print" => {
-                Get: HandlerFn(say_hello, Format::Text),
-                ":person" => Get: HandlerFn(say_hello, Format::Text),
+                Get: Handler(say_hello, Format::Text),
+                ":person" => Get: Handler(say_hello, Format::Text),
 
                 "json" => {
-                    Get: HandlerFn(say_hello, Format::Json),
-                    ":person" => Get: HandlerFn(say_hello, Format::Json)
+                    Get: Handler(say_hello, Format::Json),
+                    ":person" => Get: Handler(say_hello, Format::Json)
                 }
             }
         }
