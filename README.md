@@ -57,7 +57,7 @@ extern crate rustful;
 
 use std::error::Error;
 
-use rustful::{Server, Context, Response, TreeRouter, Handler};
+use rustful::{Server, Context, Response, TreeRouter};
 
 fn say_hello(context: Context, response: Response) {
     //Get the value of the path variable `:person`, from below.
@@ -70,15 +70,6 @@ fn say_hello(context: Context, response: Response) {
     response.send(format!("Hello, {}!", person));
 }
 
-//Dodge an ICE, related to functions as handlers.
-struct HandlerFn(fn(Context, Response));
-
-impl Handler for HandlerFn {
-    fn handle_request(&self, context: Context, response: Response) {
-        self.0(context, response);
-    }
-}
-
 fn main() {
     //Build and run the server.
     let server_result = Server {
@@ -89,11 +80,11 @@ fn main() {
         handlers: insert_routes!{
             TreeRouter::new() => {
                 //Handle requests for root...
-                Get: HandlerFn(say_hello),
+                Get: say_hello,
 
                 //...and one level below.
                 //`:person` is a path variable and it will be accessible in the handler.
-                ":person" => Get: HandlerFn(say_hello)
+                ":person" => Get: say_hello
             }
         },
 
