@@ -83,6 +83,7 @@ extern crate time;
 extern crate hyper;
 extern crate anymap;
 extern crate phf;
+extern crate num_cpus;
 
 pub use hyper::mime;
 pub use hyper::method::Method;

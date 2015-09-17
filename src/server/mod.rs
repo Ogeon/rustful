@@ -59,9 +59,14 @@ pub struct Server<R: Router> {
     pub scheme: Scheme,
 
     ///The number of threads to be used in the server thread pool. The default
-    ///(`None`) will cause the server to use a value based on recommendations
-    ///from the system.
+    ///(`None`) will cause the server to optimistically use the formula
+    ///`(num_cores * 5) / 4`.
     pub threads: Option<usize>,
+
+    ///The the minimal number of threads in the thread pool that are required
+    ///to be available for new connections. This can be used to prevent hangs
+    ///during high load. Default is `1`.
+    pub available_threads: usize,
 
     ///The content of the server header. Default is `"rustful"`.
     pub server: String,
@@ -105,6 +110,7 @@ impl<R: Router> Server<R> {
             host: 80.into(),
             scheme: Scheme::Http,
             threads: None,
+            available_threads: 1,
             server: "rustful".to_owned(),
             content_type: Mime(
                 hyper::mime::TopLevel::Text,
@@ -120,9 +126,8 @@ impl<R: Router> Server<R> {
 
     ///Start the server.
     pub fn run(self) -> HttpResult<Listening> {
-        let threads = self.threads;
         let (server, scheme) = self.build();
-        server.run(threads, scheme)
+        server.run(scheme)
     }
 
     ///Build a runnable instance of the server.

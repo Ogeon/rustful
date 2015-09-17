@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use time;
+
+use num_cpus;
 
 use url::percent_encoding::{percent_decode, percent_decode_to};
 use url::{Url, SchemeData};
@@ -63,6 +66,10 @@ pub struct ServerInstance<R: Router> {
     server: String,
     content_type: Mime,
 
+    threads: usize,
+    available_threads: usize,
+    threads_in_use: AtomicUsize,
+
     log: Box<Log>,
 
     context_filters: Vec<Box<ContextFilter>>,
@@ -81,6 +88,9 @@ impl<R: Router> ServerInstance<R> {
             host: config.host.into(),
             server: config.server,
             content_type: config.content_type,
+            threads: config.threads.unwrap_or_else(|| (num_cpus::get() * 5) / 4),
+            available_threads: config.available_threads,
+            threads_in_use: AtomicUsize::new(0),
             log: config.log,
             context_filters: config.context_filters,
             response_filters: config.response_filters,
@@ -91,24 +101,17 @@ impl<R: Router> ServerInstance<R> {
 
     ///Start the server.
     #[cfg(feature = "ssl")]
-    pub fn run(self, threads: Option<usize>, scheme: Scheme) -> HttpResult<Listening> {
+    pub fn run(self, scheme: Scheme) -> HttpResult<Listening> {
         let host = self.host;
+        let threads = self.threads;
         match scheme {
             Scheme::Http => hyper::server::Server::http(host).and_then(|http| {
-                if let Some(threads) = threads {
-                    http.handle_threads(self, threads)
-                } else {
-                    http.handle(self)
-                }
+                http.handle_threads(self, threads)
             }),
             Scheme::Https {cert, key} => {
                 let ssl = try!(Openssl::with_cert_and_key(cert, key));
                 hyper::server::Server::https(host, ssl).and_then(|https| {
-                    if let Some(threads) = threads {
-                        https.handle_threads(self, threads)
-                    } else {
-                        https.handle(self)
-                    }
+                    https.handle_threads(self, threads)
                 })
             }
         }
@@ -116,14 +119,11 @@ impl<R: Router> ServerInstance<R> {
 
     ///Start the server.
     #[cfg(not(feature = "ssl"))]
-    pub fn run(self, threads: Option<usize>, _scheme: Scheme) -> HttpResult<Listening> {
+    pub fn run(self, _scheme: Scheme) -> HttpResult<Listening> {
         let host = self.host;
+        let threads = self.threads;
         hyper::server::Server::http(host).and_then(|http| {
-            if let Some(threads) = threads {
-                http.handle_threads(self, threads)
-            } else {
-                http.handle(self)
-            }
+            http.handle_threads(self, threads)
         })
     }
 
@@ -167,7 +167,8 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
             request_reader
         ) = request.deconstruct();
 
-        let mut response = Response::new(writer, &self.response_filters, &*self.log, &self.global);
+        let force_close = self.threads_in_use.load(Ordering::SeqCst) + self.available_threads > self.threads;
+        let mut response = Response::new(writer, &self.response_filters, &*self.log, &self.global, force_close);
         response.headers_mut().set(Date(HttpDate(time::now_utc())));
         response.headers_mut().set(ContentType(self.content_type.clone()));
         response.headers_mut().set(hyper::header::Server(self.server.clone()));
@@ -250,6 +251,14 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                 response.set_status(StatusCode::BadRequest);
             }
         }
+    }
+
+    fn on_connection_start(&self) {
+        self.threads_in_use.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn on_connection_end(&self) {
+        self.threads_in_use.fetch_sub(1, Ordering::SeqCst);
     }
 }
 

@@ -47,7 +47,12 @@ use anymap::AnyMap;
 
 use StatusCode;
 
-use header::{Headers, ContentType};
+use header::{
+    Headers,
+    ContentType,
+    Connection,
+    ConnectionOption
+};
 use filter::{FilterContext, ResponseFilter};
 use filter::ResponseAction as Action;
 use log::Log;
@@ -258,7 +263,8 @@ pub struct Response<'a, 'b> {
     filters: &'b Vec<Box<ResponseFilter>>,
     log: &'b (Log + 'b),
     global: &'b Global,
-    filter_storage: Option<AnyMap>
+    filter_storage: Option<AnyMap>,
+    force_close: bool
 }
 
 impl<'a, 'b> Response<'a, 'b> {
@@ -268,14 +274,16 @@ impl<'a, 'b> Response<'a, 'b> {
         response: hyper::server::response::Response<'a>,
         filters: &'b Vec<Box<ResponseFilter>>,
         log: &'b Log,
-        global: &'b Global
+        global: &'b Global,
+        force_close: bool
     ) -> Response<'a, 'b> {
         Response {
             writer: Some(response),
             filters: filters,
             log: log,
             global: global,
-            filter_storage: Some(AnyMap::new())
+            filter_storage: Some(AnyMap::new()),
+            force_close: force_close
         }
     }
 
@@ -349,6 +357,9 @@ impl<'a, 'b> Response<'a, 'b> {
         let mut filter_storage = self.filter_storage.take().expect("response used after drop");
 
         if self.filters.is_empty() {
+            if self.force_close {
+                writer.headers_mut().set(Connection(vec![ConnectionOption::Close]));
+            }
             writer.send(content.into().as_bytes()).map_err(|e| e.into())
         } else {
             let mut buffer = vec![];
@@ -361,6 +372,9 @@ impl<'a, 'b> Response<'a, 'b> {
                 self.global,
                 &mut filter_storage
             ));
+            if self.force_close {
+                writer.headers_mut().set(Connection(vec![ConnectionOption::Close]));
+            }
             *writer.status_mut() = status;
             for action in write_queue {
                 match action {
@@ -528,6 +542,9 @@ impl<'a, 'b> Response<'a, 'b> {
             self.global,
             self.filter_storage_mut()
         ).and_then(|(status, write_queue)|{
+            if self.force_close {
+                writer.headers_mut().set(Connection(vec![ConnectionOption::Close]));
+            }
             *writer.status_mut() = status;
             let mut writer = try!(writer.start());
 
@@ -561,6 +578,9 @@ impl<'a, 'b> Response<'a, 'b> {
     pub unsafe fn into_raw(mut self, content_length: u64) -> Raw<'a> {
         let mut writer = self.writer.take().expect("response used after drop");
 
+        if self.force_close {
+            writer.headers_mut().set(Connection(vec![ConnectionOption::Close]));
+        }
         writer.headers_mut().remove_raw("content-length");
         writer.headers_mut().set(::header::ContentLength(content_length));
 
