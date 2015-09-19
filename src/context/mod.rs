@@ -146,7 +146,7 @@ pub mod body;
 pub mod hypermedia;
 
 mod maybe_utf8;
-pub use self::maybe_utf8::{MaybeUtf8, MaybeUtf8Owned, MaybeUtf8Slice};
+pub use self::maybe_utf8::{MaybeUtf8, MaybeUtf8Owned, MaybeUtf8Slice, Buffer};
 
 mod parameters;
 pub use self::parameters::Parameters;
