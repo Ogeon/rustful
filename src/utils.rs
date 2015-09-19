@@ -1,3 +1,4 @@
+use std::io::Write;
 use url::percent_encoding::percent_decode;
 use context::Parameters;
 
@@ -25,6 +26,18 @@ pub fn parse_parameters(source: &[u8]) -> Parameters {
     }
 
     parameters
+}
+
+///Extension trait for byte vectors.
+pub trait BytesExt {
+    ///Copy a number of bytes to the vector.
+    fn push_bytes(&mut self, bytes: &[u8]);
+}
+
+impl BytesExt for Vec<u8> {
+    fn push_bytes(&mut self, bytes: &[u8]) {
+        self.write_all(bytes).unwrap();
+    }
 }
 
 #[cfg(test)]

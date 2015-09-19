@@ -53,6 +53,7 @@ use filter::ResponseAction as Action;
 use log::Log;
 use mime::{Mime, TopLevel, SubLevel};
 use server::Global;
+use utils::BytesExt;
 
 ///The result of a response action.
 #[derive(Debug)]
@@ -364,7 +365,7 @@ impl<'a, 'b> Response<'a, 'b> {
             *writer.status_mut() = status;
             for action in write_queue {
                 match action {
-                    Action::Next(Some(content)) => try!(buffer.write_all(content.as_bytes())),
+                    Action::Next(Some(content)) => buffer.push_bytes(content.as_bytes()),
                     Action::Next(None) => {},
                     Action::Abort(e) => return Err(Error::Filter(e)),
                     Action::SilentAbort => break
@@ -373,7 +374,7 @@ impl<'a, 'b> Response<'a, 'b> {
 
             let filter_result = filter_content(self.filters, content, self.log, self.global, &mut filter_storage);
             match filter_result {
-                Action::Next(Some(content)) => try!(buffer.write_all(content.as_bytes())),
+                Action::Next(Some(content)) => buffer.push_bytes(content.as_bytes()),
                 Action::Abort(e) => return Err(Error::Filter(e)),
                 _ => {}
             }
@@ -381,7 +382,7 @@ impl<'a, 'b> Response<'a, 'b> {
             let write_queue = try!(filter_end(self.filters, self.log, self.global, &mut filter_storage));
             for action in write_queue {
                 match action {
-                    Action::Next(Some(content)) => try!(buffer.write_all(content.as_bytes())),
+                    Action::Next(Some(content)) => buffer.push_bytes(content.as_bytes()),
                     Action::Next(None) => {},
                     Action::Abort(e) => return Err(Error::Filter(e)),
                     Action::SilentAbort => break

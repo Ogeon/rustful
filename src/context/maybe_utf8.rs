@@ -2,6 +2,8 @@ use std::ops::Deref;
 use std::borrow::{Cow, Borrow};
 use std::hash::{Hash, Hasher};
 
+use ::utils::BytesExt;
+
 ///An owned string that may be UTF-8 encoded.
 pub type MaybeUtf8Owned = MaybeUtf8<String, Vec<u8>>;
 ///A slice of a string that may be UTF-8 encoded.
@@ -67,7 +69,7 @@ impl MaybeUtf8<String, Vec<u8>> {
     pub fn push_str(&mut self, string: &str) {
         match *self {
             MaybeUtf8::Utf8(ref mut s) => s.push_str(string),
-            MaybeUtf8::NotUtf8(ref mut v) => v.extend(string.as_bytes().iter().cloned())
+            MaybeUtf8::NotUtf8(ref mut v) => v.push_bytes(string.as_bytes())
         }
     }
 
@@ -80,7 +82,7 @@ impl MaybeUtf8<String, Vec<u8>> {
                 let mut v = MaybeUtf8::NotUtf8(vec![]);
                 ::std::mem::swap(self, &mut v);
                 let mut v: Vec<u8> = v.into();
-                v.extend(bytes.iter().cloned());
+                v.push_bytes(bytes);
                 *self = v.into();
             }
         }
