@@ -16,8 +16,8 @@ Some of the features are:
 * Generic response handlers. Just use a function or implement the Handler trait.
 * Unified log system to make sure everything is working together.
 * Some handy macros reduces the risk for typos and makes life easier.
+* Variables in routes, that can capture parts of the requested path.
 * Pluggable request and response filtering.
-* Variables and recursive wildcards in routes.
 
 [Online documentation](http://ogeon.github.io/docs/rustful/master/rustful/index.html).
 
@@ -29,7 +29,7 @@ Add the following lines to your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-rustful = "0.4"
+rustful = "0.5"
 ```
 
 ###Cargo Features
