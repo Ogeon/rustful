@@ -9,7 +9,7 @@ use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilt
 use rustful::response::Data;
 use rustful::StatusCode;
 use rustful::header::Headers;
-use rustful::context::Uri;
+use rustful::context::{Uri, MaybeUtf8Owned};
 
 fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     //Take the name of the JSONP function from the query variables
@@ -136,11 +136,10 @@ impl ContextFilter for PathPrefix {
     ///Append the prefix to the path
     fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
         let new_uri = context.uri.as_path().map(|path| {
-            let mut new_path = vec!['/' as u8];
-            //TODO: replace with push_all or whatever shows up
-            new_path.extend(self.prefix.trim_matches('/').as_bytes().iter().cloned());
-            new_path.extend(path.iter().cloned());
-            Uri::Path(new_path.into())
+            let mut new_path = MaybeUtf8Owned::from("/");
+            new_path.push_str(self.prefix.trim_matches('/'));
+            new_path.push_bytes(path.as_ref());
+            Uri::Path(new_path)
         });
         if let Some(uri) = new_uri {
             context.uri = uri;

@@ -6,7 +6,7 @@ use std::ops::Deref;
 use hyper::method::Method;
 
 use router::{Router, Route, Endpoint};
-use context::MaybeUtf8Owned;
+use context::{MaybeUtf8Owned, MaybeUtf8Slice};
 use context::hypermedia::{Link, LinkSegment, SegmentType};
 use handler::Handler;
 
@@ -279,7 +279,7 @@ impl<T: Handler> Router for TreeRouter<T> {
                         result.hypermedia.links.push(Link {
                             method: None,
                             path: vec![LinkSegment {
-                                label: "".into(),
+                                label: MaybeUtf8Slice::new(),
                                 ty: SegmentType::VariableSegment
                             }]
                         });
@@ -289,7 +289,7 @@ impl<T: Handler> Router for TreeRouter<T> {
                         result.hypermedia.links.push(Link {
                             method: None,
                             path: vec![LinkSegment {
-                                label: "".into(),
+                                label: MaybeUtf8Slice::new(),
                                 ty: SegmentType::VariableSequence
                             }]
                         });
