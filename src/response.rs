@@ -423,24 +423,33 @@ impl<'a, 'b> Response<'a, 'b> {
     ///use std::path::Path;
     ///use rustful::{Context, Response};
     ///use rustful::StatusCode;
+    ///use rustful::file::check_path;
     ///
     ///fn my_handler(mut context: Context, mut response: Response) {
     ///    if let Some(file) = context.variables.get("file") {
-    ///        //Make a full path from the filename
-    ///        let path = Path::new("path/to/files").join(file.as_ref());
+    ///        let file_path = Path::new(file.as_ref());
     ///
-    ///        //Send the file
-    ///        let res = response.send_file(&path)
-    ///            .or_else(|e| e.send_not_found("the file was not found"))
-    ///            .or_else(|e| e.ignore_send_error());
+    ///        //Check if the path is valid
+    ///        if check_path(file_path).is_ok() {
+    ///            //Make a full path from the filename
+    ///            let path = Path::new("path/to/files").join(file_path);
     ///
-    ///        //Check if a more fatal file error than "not found" occurred
-    ///        if let Err((e, mut response)) = res {
-    ///            //Something went horribly wrong
-    ///            context.log.error(
-    ///                &format!("failed to open '{}': {}", file, e)
-    ///            );
-    ///            response.set_status(StatusCode::InternalServerError);
+    ///            //Send the file
+    ///            let res = response.send_file(&path)
+    ///                .or_else(|e| e.send_not_found("the file was not found"))
+    ///                .or_else(|e| e.ignore_send_error());
+    ///
+    ///            //Check if a more fatal file error than "not found" occurred
+    ///            if let Err((e, mut response)) = res {
+    ///                //Something went horribly wrong
+    ///                context.log.error(
+    ///                    &format!("failed to open '{}': {}", file, e)
+    ///                );
+    ///                response.set_status(StatusCode::InternalServerError);
+    ///            }
+    ///        } else {
+    ///            //Accessing parent directories is forbidden
+    ///            response.set_status(StatusCode::Forbidden);
     ///        }
     ///    } else {
     ///        //No filename was specified
@@ -472,26 +481,34 @@ impl<'a, 'b> Response<'a, 'b> {
     ///
     ///fn my_handler(mut context: Context, mut response: Response) {
     ///    if let Some(file) = context.variables.get("file") {
-    ///        //Make a full path from the filename
-    ///        let path = Path::new("path/to/files").join(file.as_ref());
+    ///        let file_path = Path::new(file.as_ref());
     ///
-    ///        //Send .rs files as Rust files and do the usual guessing for the rest
-    ///        let res = response.send_file_with_mime(&path, |ext| {
-    ///            if ext == "rs" {
-    ///                Some(content_type!(Text / "rust"; Charset = Utf8))
-    ///            } else {
-    ///                file::ext_to_mime(ext)
+    ///        //Check if the path is valid
+    ///        if file::check_path(file_path).is_ok() {
+    ///            //Make a full path from the filename
+    ///            let path = Path::new("path/to/files").join(file_path);
+    ///
+    ///            //Send .rs files as Rust files and do the usual guessing for the rest
+    ///            let res = response.send_file_with_mime(&path, |ext| {
+    ///                if ext == "rs" {
+    ///                    Some(content_type!(Text / "rust"; Charset = Utf8))
+    ///                } else {
+    ///                    file::ext_to_mime(ext)
+    ///                }
+    ///            }).or_else(|e| e.send_not_found("the file was not found"))
+    ///                .or_else(|e| e.ignore_send_error());
+    ///
+    ///            //Check if a more fatal file error than "not found" occurred
+    ///            if let Err((e, mut response)) = res {
+    ///                //Something went horribly wrong
+    ///                context.log.error(
+    ///                    &format!("failed to open '{}': {}", file, e)
+    ///                );
+    ///                response.set_status(StatusCode::InternalServerError);
     ///            }
-    ///        }).or_else(|e| e.send_not_found("the file was not found"))
-    ///            .or_else(|e| e.ignore_send_error());
-    ///
-    ///        //Check if a more fatal file error than "not found" occurred
-    ///        if let Err((e, mut response)) = res {
-    ///            //Something went horribly wrong
-    ///            context.log.error(
-    ///                &format!("failed to open '{}': {}", file, e)
-    ///            );
-    ///            response.set_status(StatusCode::InternalServerError);
+    ///        } else {
+    ///            //Accessing parent directories is forbidden
+    ///            response.set_status(StatusCode::Forbidden);
     ///        }
     ///    } else {
     ///        //No filename was specified
