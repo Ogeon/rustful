@@ -6,7 +6,6 @@ use StatusCode;
 use header::Headers;
 
 use context::Context;
-use log::Log;
 
 use response::Data;
 use server::Global;
@@ -17,9 +16,6 @@ pub struct FilterContext<'a> {
     ///accessible from the handler and all of the filters. It can be used to
     ///send data between these units.
     pub storage: &'a mut AnyMap,
-
-    ///Log for notes, errors and warnings.
-    pub log: &'a Log,
 
     ///Globally accessible data.
     pub global: &'a Global,

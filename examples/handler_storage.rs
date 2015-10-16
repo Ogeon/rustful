@@ -7,6 +7,10 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
 use rustful::{
     Server,
     Context,
@@ -18,6 +22,8 @@ use rustful::{
 use rustful::file::check_path;
 
 fn main() {
+    env_logger::init().unwrap();
+
     println!("Visit http://localhost:8080 to try this example.");
 
     //Read the page before we start
@@ -56,7 +62,7 @@ fn main() {
 
     match server_result {
         Ok(_server) => {},
-        Err(e) => println!("could not start server: {}", e.description())
+        Err(e) => error!("could not start server: {}", e.description())
     }
 }
 
@@ -116,7 +122,7 @@ impl Handler for Api {
                         //Check if a more fatal file error than "not found" occurred
                         if let Err((error, mut response)) = res {
                             //Something went horribly wrong
-                            context.log.error(&format!("failed to open '{}': {}", file, error));
+                            error!("failed to open '{}': {}", file, error);
                             response.set_status(StatusCode::InternalServerError);
                         }
                     } else {

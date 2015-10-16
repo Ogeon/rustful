@@ -55,30 +55,6 @@
 //! * The fragment (`http://example.com#foo`) is also parsed and can be
 //!accessed through `fragment` as an optional `String`.
 //!
-//!##Logging
-//!
-//!Rustful has a built in logging infrastructure and it is made available to
-//!handlers through the `log` field. This provides logging and error reporting
-//!in a unified and more controlled fashion than what panics and `println!`
-//!gives. See the [`log`][log] module for more information about the standard
-//!alternatives.
-//!
-//!```
-//!# fn something_that_may_fail() -> Result<&'static str, &'static str> { Ok("yo") }
-//!use rustful::{Context, Response};
-//!use rustful::StatusCode::InternalServerError;
-//!
-//!fn my_handler(context: Context, mut response: Response) {
-//!    match something_that_may_fail() {
-//!        Ok(res) => response.send(res),
-//!        Err(e) => {
-//!            context.log.error(&format!("it failed! {}", e));
-//!            response.set_status(InternalServerError);
-//!        }
-//!    }
-//!}
-//!```
-//!
 //!##Global Data
 //!
 //!There is also infrastructure for globally accessible data, that can be
@@ -89,6 +65,8 @@
 //!mutability.
 //!
 //!```
+//!# #[macro_use] extern crate rustful;
+//!#[macro_use] extern crate log;
 //!use rustful::{Context, Response};
 //!use rustful::StatusCode::InternalServerError;
 //!
@@ -96,10 +74,12 @@
 //!    if let Some(some_wise_words) = context.global.get::<&str>() {
 //!        response.send(format!("food for thought: {}", some_wise_words));
 //!    } else {
-//!        context.log.error("there should be a string literal in `global`");
+//!        error!("there should be a string literal in `global`");
 //!        response.set_status(InternalServerError);
 //!    }
 //!}
+//!
+//!# fn main() {}
 //!```
 //!
 //!##Request Body
@@ -136,7 +116,6 @@ use std::borrow::Cow;
 use HttpVersion;
 use Method;
 use header::Headers;
-use log::Log;
 use server::Global;
 
 use self::body::BodyReader;
@@ -179,9 +158,6 @@ pub struct Context<'a, 'b: 'a, 's> {
 
     ///The fragment part of the URL (after #), if provided.
     pub fragment: Option<MaybeUtf8Owned>,
-
-    ///Log for notes, errors and warnings.
-    pub log: &'s (Log + 's),
 
     ///Globally accessible data.
     pub global: &'s Global,

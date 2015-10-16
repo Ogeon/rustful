@@ -3,6 +3,10 @@ extern crate rustful;
 extern crate rustc_serialize;
 extern crate unicase;
 
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
 use std::sync::RwLock;
 use std::collections::btree_map::{BTreeMap, Iter};
 
@@ -38,6 +42,8 @@ macro_rules! or_abort {
 }
 
 fn main() {
+    env_logger::init().unwrap();
+
     let mut router = insert_routes!{
         TreeRouter::new() => {
             Get: Api(Some(list_all)),
@@ -68,7 +74,7 @@ fn main() {
     }.run();
 
     if let Err(e) = server_result {
-        println!("could not run the server: {}", e)
+        error!("could not run the server: {}", e)
     }
 }
 
@@ -184,7 +190,7 @@ impl Handler for Api {
         let database = if let Some(database) = context.global.get() {
             database
         } else {
-            context.log.error("expected a globally accessible Database");
+            error!("expected a globally accessible Database");
             response.set_status(StatusCode::InternalServerError);
             return
         };

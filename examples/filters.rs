@@ -4,7 +4,11 @@ extern crate rustful;
 use std::sync::RwLock;
 use std::error::Error;
 
-use rustful::{Server, TreeRouter, Context, Response, Log};
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
+use rustful::{Server, TreeRouter, Context, Response};
 use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilter, ContextAction};
 use rustful::response::Data;
 use rustful::StatusCode;
@@ -40,7 +44,7 @@ fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     //Using `try_send` allows us to catch eventual errors from the filters.
     //This example should not produce any errors, so this is only for show.
     if let Err(e) = response.try_send(message) {
-        context.log.note(&format!("could not send hello: {}", e.description()));
+        error!("could not send hello: {}", e.description());
     }
 }
 
@@ -58,8 +62,11 @@ impl rustful::Handler for Handler {
 }
 
 fn main() {
+    env_logger::init().unwrap();
+
     println!("Visit http://localhost:8080, http://localhost:8080/Peter or http://localhost:8080/json/Peter (if your name is Peter) to try this example.");
     println!("Append ?jsonp=someFunction to get a JSONP response.");
+    println!("Run this example with the environment variable 'RUST_LOG' set to 'debug' to see the debug prints.");
 
     let mut router = TreeRouter::new();
     insert_routes!{
@@ -94,7 +101,7 @@ fn main() {
 
     match server_result {
         Ok(_server) => {},
-        Err(e) => println!("could not start server: {}", e.description())
+        Err(e) => error!("could not start server: {}", e.description())
     }
 }
 
@@ -112,9 +119,9 @@ impl RequestLogger {
 
 impl ContextFilter for RequestLogger {
     ///Count requests and log the path.
-    fn modify(&self, ctx: FilterContext, context: &mut Context) -> ContextAction {
+    fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
-        ctx.log.note(&format!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.uri));
+        debug!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.uri);
         ContextAction::next()
     }
 }
