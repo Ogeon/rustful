@@ -14,7 +14,6 @@ it to run both as one single server and as multiple instances in a cluster.
 Some of the features are:
 
 * Generic response handlers. Just use a function or implement the Handler trait.
-* Unified log system to make sure everything is working together.
 * Some handy macros reduces the risk for typos and makes life easier.
 * Variables in routes, that can capture parts of the requested path.
 * Pluggable request and response filtering.
@@ -55,6 +54,10 @@ Olivia) to try it.
 #[macro_use]
 extern crate rustful;
 
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
 use std::error::Error;
 
 use rustful::{Server, Context, Response, TreeRouter};
@@ -71,6 +74,8 @@ fn say_hello(context: Context, response: Response) {
 }
 
 fn main() {
+    env_logger::init().unwrap();
+
     //Build and run the server.
     let server_result = Server {
         //Turn a port number into an IPV4 host address (0.0.0.0:8080 in this case).
@@ -94,7 +99,7 @@ fn main() {
 
     match server_result {
         Ok(_server) => {},
-        Err(e) => println!("could not start server: {}", e.description())
+        Err(e) => error!("could not start server: {}", e.description())
     }
 }
 ```

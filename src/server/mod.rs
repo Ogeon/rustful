@@ -10,7 +10,6 @@ pub use hyper::server::Listening;
 use filter::{ContextFilter, ResponseFilter};
 use router::Router;
 use handler::Handler;
-use log::{Log, StdOut};
 
 use HttpResult;
 
@@ -74,9 +73,6 @@ pub struct Server<R: Router> {
     ///The default media type. Default is `text/plain, charset: UTF-8`.
     pub content_type: Mime,
 
-    ///Tool for printing to a log. The default is to print to standard output.
-    pub log: Box<Log>,
-
     ///Globally accessible data.
     pub global: Global,
 
@@ -117,7 +113,6 @@ impl<R: Router> Server<R> {
                 hyper::mime::SubLevel::Plain,
                 vec![(hyper::mime::Attr::Charset, hyper::mime::Value::Utf8)]
             ),
-            log: Box::new(StdOut),
             global: Global::default(),
             context_filters: Vec::new(),
             response_filters: Vec::new(),

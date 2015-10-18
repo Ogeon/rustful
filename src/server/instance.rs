@@ -29,7 +29,6 @@ use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::{Router, Endpoint};
 use handler::Handler;
 use response::Response;
-use log::Log;
 use header::HttpDate;
 use server::{Scheme, Global};
 
@@ -70,8 +69,6 @@ pub struct ServerInstance<R: Router> {
     available_threads: usize,
     threads_in_use: AtomicUsize,
 
-    log: Box<Log>,
-
     context_filters: Vec<Box<ContextFilter>>,
     response_filters: Vec<Box<ResponseFilter>>,
 
@@ -91,7 +88,6 @@ impl<R: Router> ServerInstance<R> {
             threads: config.threads.unwrap_or_else(|| (num_cpus::get() * 5) / 4),
             available_threads: config.available_threads,
             threads_in_use: AtomicUsize::new(0),
-            log: config.log,
             context_filters: config.context_filters,
             response_filters: config.response_filters,
             global: config.global,
@@ -135,7 +131,6 @@ impl<R: Router> ServerInstance<R> {
                 ContextAction::Next => {
                     let filter_context = FilterContext {
                         storage: filter_storage,
-                        log: &*self.log,
                         global: &self.global,
                     };
                     filter.modify(filter_context, context)
@@ -168,7 +163,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
         ) = request.deconstruct();
 
         let force_close = self.threads_in_use.load(Ordering::SeqCst) + self.available_threads > self.threads;
-        let mut response = Response::new(writer, &self.response_filters, &*self.log, &self.global, force_close);
+        let mut response = Response::new(writer, &self.response_filters, &self.global, force_close);
         response.headers_mut().set(Date(HttpDate(time::now_utc())));
         response.headers_mut().set(ContentType(self.content_type.clone()));
         response.headers_mut().set(hyper::header::Server(self.server.clone()));
@@ -208,7 +203,6 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     variables: Parameters::new(),
                     query: query.into(),
                     fragment: fragment,
-                    log: &*self.log,
                     global: &self.global,
                     body: body
                 };

@@ -7,7 +7,11 @@ use std::path::Path;
 use std::borrow::Cow;
 use std::error::Error;
 
-use rustful::{Server, Context, Response, Log};
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
+use rustful::{Server, Context, Response};
 use rustful::context::body::ExtQueryBody;
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
@@ -25,7 +29,7 @@ fn say_hello(mut context: Context, mut response: Response) {
         files
     } else {
         //Oh no! Why is the global data not a File instance?!
-        context.log.error("the global data should be of the type `Files`, but it's not");
+        error!("the global data should be of the type `Files`, but it's not");
         response.set_status(InternalServerError);
         return;
     };
@@ -43,6 +47,8 @@ fn say_hello(mut context: Context, mut response: Response) {
 }
 
 fn main() {
+    env_logger::init().unwrap();
+
     println!("Visit http://localhost:8080 to try this example.");
 
     //Preload the files
@@ -62,7 +68,7 @@ fn main() {
     //Check if the server started successfully
     match server_result {
         Ok(_server) => {},
-        Err(e) => println!("could not start server: {}", e.description())
+        Err(e) => error!("could not start server: {}", e.description())
     }
 }
 

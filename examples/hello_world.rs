@@ -1,5 +1,9 @@
 //Include macros to be able to use `insert_routes!`.
 #[macro_use]
+extern crate log;
+extern crate env_logger;
+
+#[macro_use]
 extern crate rustful;
 
 use std::error::Error;
@@ -18,6 +22,8 @@ fn say_hello(context: Context, response: Response) {
 }
 
 fn main() {
+    env_logger::init().unwrap();
+
     println!("Visit http://localhost:8080 or http://localhost:8080/Olivia (if your name is Olivia) to try this example.");
 
     //Build and run the server.
@@ -43,6 +49,6 @@ fn main() {
 
     match server_result {
         Ok(_server) => {},
-        Err(e) => println!("could not start server: {}", e.description())
+        Err(e) => error!("could not start server: {}", e.description())
     }
 }

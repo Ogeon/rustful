@@ -48,7 +48,8 @@ optional = true
 
 [dev-dependencies]
 unicase = "1.0"
-tempdir = "0.3"
+log = "0.3.2"
+env_logger = "0.3.1"
 
 [build-dependencies]
 phf_codegen = "0.7"

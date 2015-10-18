@@ -69,9 +69,6 @@
 #[cfg(feature = "benchmark")]
 extern crate test;
 
-#[cfg(test)]
-extern crate tempdir;
-
 #[cfg(feature = "rustc-serialize")]
 extern crate rustc_serialize;
 
@@ -99,7 +96,6 @@ pub use self::response::Response;
 pub use self::response::Error;
 pub use self::handler::Handler;
 pub use self::router::Router;
-pub use self::log::Log;
 pub use self::router::TreeRouter;
 
 mod utils;
@@ -113,5 +109,4 @@ pub mod handler;
 pub mod context;
 pub mod response;
 pub mod filter;
-pub mod log;
 pub mod file;

@@ -55,7 +55,6 @@ use header::{
 };
 use filter::{FilterContext, ResponseFilter};
 use filter::ResponseAction as Action;
-use log::Log;
 use mime::{Mime, TopLevel, SubLevel};
 use server::Global;
 use utils::BytesExt;
@@ -262,7 +261,6 @@ impl<'a> Into<Data<'a>> for &'a str {
 pub struct Response<'a, 'b> {
     writer: Option<hyper::server::response::Response<'a>>,
     filters: &'b Vec<Box<ResponseFilter>>,
-    log: &'b (Log + 'b),
     global: &'b Global,
     filter_storage: Option<AnyMap>,
     force_close: bool
@@ -274,14 +272,12 @@ impl<'a, 'b> Response<'a, 'b> {
     pub fn new(
         response: hyper::server::response::Response<'a>,
         filters: &'b Vec<Box<ResponseFilter>>,
-        log: &'b Log,
         global: &'b Global,
         force_close: bool
     ) -> Response<'a, 'b> {
         Response {
             writer: Some(response),
             filters: filters,
-            log: log,
             global: global,
             filter_storage: Some(AnyMap::new()),
             force_close: force_close
@@ -340,14 +336,18 @@ impl<'a, 'b> Response<'a, 'b> {
     ///same as `send`, but errors are not ignored.
     ///
     ///```
+    ///# #[macro_use] extern crate rustful;
+    ///#[macro_use] extern crate log;
     ///use rustful::{Context, Response};
     ///use rustful::response::Error;
     ///
     ///fn my_handler(context: Context, response: Response) {
     ///    if let Err(Error::Filter(e)) = response.try_send("hello") {
-    ///        context.log.note(&format!("a filter failed: {}", e));
+    ///        error!("a filter failed: {}", e);
     ///    }
     ///}
+    ///
+    ///# fn main() {}
     ///```
     pub fn try_send<'d, Content: Into<Data<'d>>>(mut self, content: Content) -> Result<(), Error> {
         self.send_sized(content)
@@ -369,7 +369,6 @@ impl<'a, 'b> Response<'a, 'b> {
                 self.filters,
                 writer.status(),
                 writer.headers_mut(),
-                self.log,
                 self.global,
                 &mut filter_storage
             ));
@@ -386,14 +385,14 @@ impl<'a, 'b> Response<'a, 'b> {
                 }
             }
 
-            let filter_result = filter_content(self.filters, content, self.log, self.global, &mut filter_storage);
+            let filter_result = filter_content(self.filters, content, self.global, &mut filter_storage);
             match filter_result {
                 Action::Next(Some(content)) => buffer.push_bytes(content.as_bytes()),
                 Action::Abort(e) => return Err(Error::Filter(e)),
                 _ => {}
             }
 
-            let write_queue = try!(filter_end(self.filters, self.log, self.global, &mut filter_storage));
+            let write_queue = try!(filter_end(self.filters, self.global, &mut filter_storage));
             for action in write_queue {
                 match action {
                     Action::Next(Some(content)) => buffer.push_bytes(content.as_bytes()),
@@ -420,6 +419,7 @@ impl<'a, 'b> Response<'a, 'b> {
     ///
     ///```
     ///# #[macro_use] extern crate rustful;
+    ///#[macro_use] extern crate log;
     ///use std::path::Path;
     ///use rustful::{Context, Response};
     ///use rustful::StatusCode;
@@ -442,9 +442,7 @@ impl<'a, 'b> Response<'a, 'b> {
     ///            //Check if a more fatal file error than "not found" occurred
     ///            if let Err((e, mut response)) = res {
     ///                //Something went horribly wrong
-    ///                context.log.error(
-    ///                    &format!("failed to open '{}': {}", file, e)
-    ///                );
+    ///                error!("failed to open '{}': {}", file, e);
     ///                response.set_status(StatusCode::InternalServerError);
     ///            }
     ///        } else {
@@ -474,6 +472,7 @@ impl<'a, 'b> Response<'a, 'b> {
     ///
     ///```
     ///# #[macro_use] extern crate rustful;
+    ///#[macro_use] extern crate log;
     ///use std::path::Path;
     ///use rustful::{Context, Response};
     ///use rustful::StatusCode;
@@ -501,9 +500,7 @@ impl<'a, 'b> Response<'a, 'b> {
     ///            //Check if a more fatal file error than "not found" occurred
     ///            if let Err((e, mut response)) = res {
     ///                //Something went horribly wrong
-    ///                context.log.error(
-    ///                    &format!("failed to open '{}': {}", file, e)
-    ///                );
+    ///                error!("failed to open '{}': {}", file, e);
     ///                response.set_status(StatusCode::InternalServerError);
     ///            }
     ///        } else {
@@ -556,7 +553,6 @@ impl<'a, 'b> Response<'a, 'b> {
             self.filters,
             writer.status(),
             writer.headers_mut(),
-            self.log,
             self.global,
             self.filter_storage_mut()
         ).and_then(|(status, write_queue)|{
@@ -581,7 +577,6 @@ impl<'a, 'b> Response<'a, 'b> {
         Chunked {
             writer: Some(writer),
             filters: self.filters,
-            log: self.log,
             global: self.global,
             filter_storage: self.filter_storage.take().expect("response used after drop")
         }
@@ -627,7 +622,6 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 pub struct Chunked<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
     filters: &'b Vec<Box<ResponseFilter>>,
-    log: &'b (Log + 'b),
     global: &'b Global,
     filter_storage: AnyMap
 }
@@ -670,6 +664,8 @@ impl<'a, 'b> Chunked<'a, 'b> {
     ///errors are not ignored.
     ///
     ///```
+    ///# #[macro_use] extern crate rustful;
+    ///#[macro_use] extern crate log;
     ///use rustful::{Context, Response};
     ///use rustful::response::Error;
     ///
@@ -681,10 +677,11 @@ impl<'a, 'b> Chunked<'a, 'b> {
     ///
     ///    for i in 0..count {
     ///        if let Err(Error::Filter(e)) = chunked.try_send(format!("chunk #{}", i + 1)) {
-    ///            context.log.note(&format!("a filter failed: {}", e));
+    ///            error!("a filter failed: {}", e);
     ///        }
     ///    }
     ///}
+    ///# fn main() {}
     ///```
     pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<usize, Error> {
         let mut writer = match self.writer {
@@ -695,7 +692,7 @@ impl<'a, 'b> Chunked<'a, 'b> {
             } else { unreachable!(); }
         };
 
-        let filter_result = filter_content(self.filters, content, self.log, self.global, &mut self.filter_storage);
+        let filter_result = filter_content(self.filters, content, self.global, &mut self.filter_storage);
 
         let write_result = match filter_result {
             Action::Next(Some(ref s)) => {
@@ -729,7 +726,7 @@ impl<'a, 'b> Chunked<'a, 'b> {
 
     fn finish(&mut self) -> Result<(), Error> {
         let mut writer = try!(self.writer.take().expect("can only finish once"));
-        let write_queue = try!(filter_end(self.filters, self.log, self.global, &mut self.filter_storage));
+        let write_queue = try!(filter_end(self.filters, self.global, &mut self.filter_storage));
 
         for action in write_queue {
             try!{
@@ -808,6 +805,7 @@ impl<'a> Raw<'a> {
     ///        raw.send([i].as_ref());
     ///    }
     ///}
+    ///# fn main() {}
     ///```
     #[allow(unused_must_use)]
     pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
@@ -818,6 +816,8 @@ impl<'a> Raw<'a> {
     ///errors are not ignored.
     ///
     ///```
+    ///# #[macro_use] extern crate rustful;
+    ///#[macro_use] extern crate log;
     ///use rustful::{Context, Response};
     ///
     ///fn my_handler(context: Context, response: Response) {
@@ -828,11 +828,12 @@ impl<'a> Raw<'a> {
     ///
     ///    for i in 0..count {
     ///        if let Err(e) = raw.try_send([i].as_ref()) {
-    ///            context.log.note(&format!("failed to write: {}", e));
+    ///            error!("failed to write: {}", e);
     ///            break;
     ///        }
     ///    }
     ///}
+    ///# fn main() {}
     ///```
     pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> io::Result<()> {
         self.write_all(content.into().as_bytes())
@@ -891,7 +892,6 @@ fn filter_headers<'a>(
     filters: &'a [Box<ResponseFilter>],
     status: StatusCode,
     headers: &mut Headers,
-    log: &Log,
     global: &Global,
     filter_storage: &mut AnyMap
 ) -> Result<(StatusCode, Vec<Action<'a>>), Error> {
@@ -908,7 +908,6 @@ fn filter_headers<'a>(
                 let filter_res = {
                     let filter_context = FilterContext {
                         storage: filter_storage,
-                        log: log,
                         global: global,
                     };
                     filter.begin(filter_context, status, headers)
@@ -923,7 +922,6 @@ fn filter_headers<'a>(
                             Action::Next(content) => {
                                 let filter_context = FilterContext {
                                     storage: filter_storage,
-                                    log: log,
                                     global: global,
                                 };
                                 Some(filter.write(filter_context, content))
@@ -954,7 +952,7 @@ fn filter_headers<'a>(
     }
 }
 
-fn filter_content<'a, 'd: 'a, Content: Into<Data<'d>>>(filters: &'a [Box<ResponseFilter>], content: Content, log: &Log, global: &Global, filter_storage: &mut AnyMap) -> Action<'a> {
+fn filter_content<'a, 'd: 'a, Content: Into<Data<'d>>>(filters: &'a [Box<ResponseFilter>], content: Content, global: &Global, filter_storage: &mut AnyMap) -> Action<'a> {
     let mut filter_result = Action::next(Some(content));
 
     for filter in filters {
@@ -962,7 +960,6 @@ fn filter_content<'a, 'd: 'a, Content: Into<Data<'d>>>(filters: &'a [Box<Respons
             Action::Next(content) => {
                 let filter_context = FilterContext {
                     storage: filter_storage,
-                    log: log,
                     global: global,
                 };
                 filter.write(filter_context, content)
@@ -974,13 +971,12 @@ fn filter_content<'a, 'd: 'a, Content: Into<Data<'d>>>(filters: &'a [Box<Respons
     filter_result
 }
 
-fn filter_end<'a>(filters: &'a [Box<ResponseFilter>], log: &Log, global: &Global, filter_storage: &mut AnyMap) -> Result<Vec<Action<'a>>, Error> {
+fn filter_end<'a>(filters: &'a [Box<ResponseFilter>], global: &Global, filter_storage: &mut AnyMap) -> Result<Vec<Action<'a>>, Error> {
     let otuputs: Vec<_> = filters.into_iter()
         .rev()
         .map(|filter| {
             let filter_context = FilterContext {
                 storage: filter_storage,
-                log: log,
                 global: global,
             };
 
@@ -999,7 +995,6 @@ fn filter_end<'a>(filters: &'a [Box<ResponseFilter>], log: &Log, global: &Global
             Action::Next(content) => {
                 let filter_context = FilterContext {
                     storage: filter_storage,
-                    log: log,
                     global: global,
                 };
                 Some(filter.write(filter_context, content))
