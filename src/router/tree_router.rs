@@ -256,11 +256,12 @@ impl<T: Handler> Router for TreeRouter<T> {
 
                 //Only register hyperlinks on the first pass.
                 if branch == Static {
-                    for (other_method, _) in &current.items {
+                    for (other_method, &(ref item, _)) in &current.items {
                         if other_method != method {
                             result.hypermedia.links.push(Link {
                                 method: Some(other_method.clone()),
-                                path: vec![]
+                                path: vec![],
+                                handler: Some(item)
                             });
                         }
                     }
@@ -271,7 +272,8 @@ impl<T: Handler> Router for TreeRouter<T> {
                             path: vec![LinkSegment {
                                 label: segment.as_slice(),
                                 ty: SegmentType::Static
-                            }]
+                            }],
+                            handler: None
                         });
                     }
 
@@ -281,7 +283,8 @@ impl<T: Handler> Router for TreeRouter<T> {
                             path: vec![LinkSegment {
                                 label: MaybeUtf8Slice::new(),
                                 ty: SegmentType::VariableSegment
-                            }]
+                            }],
+                            handler: None
                         });
                     }
 
@@ -291,7 +294,8 @@ impl<T: Handler> Router for TreeRouter<T> {
                             path: vec![LinkSegment {
                                 label: MaybeUtf8Slice::new(),
                                 ty: SegmentType::VariableSequence
-                            }]
+                            }],
+                            handler: None
                         });
                     }
                 }
@@ -475,7 +479,7 @@ mod test {
                         panic!("missing link: {:?}", link);
                     }
                 }
-                assert_eq!(endpoint.hypermedia.links, vec![]);
+                assert!(endpoint.hypermedia.links.is_empty());
             }
         );
         
