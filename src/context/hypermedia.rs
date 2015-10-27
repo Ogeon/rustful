@@ -5,22 +5,6 @@ use Method;
 use Handler;
 use context::MaybeUtf8Slice;
 
-///Hypermedia connected to an API endpoint.
-pub struct Hypermedia<'a> {
-    ///Forward links from the current endpoint to other endpoints. These may
-    ///include endpoints with the same path, but different method.
-    pub links: Vec<Link<'a>>
-}
-
-impl<'a> Hypermedia<'a> {
-    ///Create an empty `Hypermedia` structure.
-    pub fn new() -> Hypermedia<'a> {
-        Hypermedia {
-            links: vec![]
-        }
-    }
-}
-
 ///A hyperlink.
 pub struct Link<'a> {
     ///The HTTP method for which an endpoint is available. It can be left

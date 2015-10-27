@@ -119,7 +119,7 @@ use header::Headers;
 use server::Global;
 
 use self::body::BodyReader;
-use self::hypermedia::Hypermedia;
+use self::hypermedia::Link;
 
 pub mod body;
 pub mod hypermedia;
@@ -147,8 +147,8 @@ pub struct Context<'a, 'b: 'a, 's> {
     ///The requested URI.
     pub uri: Uri,
 
-    ///Hypermedia from the current endpoint.
-    pub hypermedia: Hypermedia<'s>,
+    ///Hyperlinks from the current endpoint.
+    pub hyperlinks: Vec<Link<'s>>,
 
     ///Route variables.
     pub variables: Parameters,

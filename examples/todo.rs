@@ -178,7 +178,7 @@ struct Api(Option<fn(&Database, Context, Response)>);
 impl Handler for Api {
     fn handle_request(&self, context: Context, mut response: Response) {
         //Collect the accepted methods from the provided hyperlinks
-        let mut methods: Vec<_> = context.hypermedia.links.iter().filter_map(|l| l.method.clone()).collect();
+        let mut methods: Vec<_> = context.hyperlinks.iter().filter_map(|l| l.method.clone()).collect();
         methods.push(context.method.clone());
 
         //Setup cross origin resource sharing

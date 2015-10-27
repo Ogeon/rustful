@@ -88,7 +88,7 @@ use hyper::method::Method;
 
 use handler::Handler;
 use context::MaybeUtf8Owned;
-use context::hypermedia::Hypermedia;
+use context::hypermedia::Link;
 
 pub use self::tree_router::TreeRouter;
 
@@ -101,8 +101,8 @@ pub struct Endpoint<'a, T: 'a> {
     ///Path variables for the matching endpoint. May be empty, depending on
     ///the router implementation.
     pub variables: HashMap<MaybeUtf8Owned, MaybeUtf8Owned>,
-    ///Any associated hypermedia, such as links.
-    pub hypermedia: Hypermedia<'a>
+    ///Any associated hyperlinks.
+    pub hyperlinks: Vec<Link<'a>>
 }
 
 impl<'a, T> From<Option<&'a T>> for Endpoint<'a, T> {
@@ -110,7 +110,7 @@ impl<'a, T> From<Option<&'a T>> for Endpoint<'a, T> {
         Endpoint {
             handler: handler,
             variables: HashMap::new(),
-            hypermedia: Hypermedia::new()
+            hyperlinks: vec![]
         }
     }
 }

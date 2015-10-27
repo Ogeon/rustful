@@ -258,7 +258,7 @@ impl<T: Handler> Router for TreeRouter<T> {
                 if branch == Static {
                     for (other_method, &(ref item, _)) in &current.items {
                         if other_method != method {
-                            result.hypermedia.links.push(Link {
+                            result.hyperlinks.push(Link {
                                 method: Some(other_method.clone()),
                                 path: vec![],
                                 handler: Some(item)
@@ -267,7 +267,7 @@ impl<T: Handler> Router for TreeRouter<T> {
                     }
 
                     for (segment, _next) in &current.static_routes {
-                        result.hypermedia.links.push(Link {
+                        result.hyperlinks.push(Link {
                             method: None,
                             path: vec![LinkSegment {
                                 label: segment.as_slice(),
@@ -278,7 +278,7 @@ impl<T: Handler> Router for TreeRouter<T> {
                     }
 
                     if let Some(ref _next) = current.variable_route {
-                        result.hypermedia.links.push(Link {
+                        result.hyperlinks.push(Link {
                             method: None,
                             path: vec![LinkSegment {
                                 label: MaybeUtf8Slice::new(),
@@ -289,7 +289,7 @@ impl<T: Handler> Router for TreeRouter<T> {
                     }
 
                     if let Some(ref _next) = current.wildcard_route {
-                        result.hypermedia.links.push(Link {
+                        result.hyperlinks.push(Link {
                             method: None,
                             path: vec![LinkSegment {
                                 label: MaybeUtf8Slice::new(),
@@ -464,8 +464,7 @@ mod test {
                 let expected_links = [$(link!($($links)*)),*];
                 for link in &expected_links {
                     let index = endpoint
-                                .hypermedia
-                                .links
+                                .hyperlinks
                                 .iter()
                                 .map(|link| (link.method.as_ref(), &link.path))
                                 .position(|other| match (other, link) {
@@ -474,12 +473,12 @@ mod test {
                                    _ => false
                                 });
                     if let Some(index) = index {
-                        endpoint.hypermedia.links.swap_remove(index);
+                        endpoint.hyperlinks.swap_remove(index);
                     } else {
                         panic!("missing link: {:?}", link);
                     }
                 }
-                assert!(endpoint.hypermedia.links.is_empty());
+                assert!(endpoint.hyperlinks.is_empty());
             }
         );
         

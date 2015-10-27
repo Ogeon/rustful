@@ -24,7 +24,6 @@ use anymap::AnyMap;
 use StatusCode;
 
 use context::{self, Context, Uri, MaybeUtf8Owned, Parameters};
-use context::hypermedia::Hypermedia;
 use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::{Router, Endpoint};
 use handler::Handler;
@@ -199,7 +198,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     method: request_method,
                     address: request_addr,
                     uri: uri,
-                    hypermedia: Hypermedia::new(),
+                    hyperlinks: vec![],
                     variables: Parameters::new(),
                     query: query.into(),
                     fragment: fragment,
@@ -217,18 +216,18 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                             Endpoint {
                                 handler: None,
                                 variables: HashMap::new(),
-                                hypermedia: Hypermedia::new()
+                                hyperlinks: vec![]
                             }
                         });
 
                         let Endpoint {
                             handler,
                             variables,
-                            hypermedia
+                            hyperlinks
                         } = endpoint;
 
                         if let Some(handler) = handler.or(self.fallback_handler.as_ref()) {
-                            context.hypermedia = hypermedia;
+                            context.hyperlinks = hyperlinks;
                             context.variables = variables.into();
                             handler.handle_request(context, response);
                         } else {
