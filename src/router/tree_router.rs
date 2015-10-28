@@ -256,42 +256,46 @@ impl<T: Handler> Router for TreeRouter<T> {
 
                 //Only register hyperlinks on the first pass.
                 if branch == Static {
-                    for (other_method, _) in &current.items {
+                    for (other_method, &(ref item, _)) in &current.items {
                         if other_method != method {
-                            result.hypermedia.links.push(Link {
+                            result.hyperlinks.push(Link {
                                 method: Some(other_method.clone()),
-                                path: vec![]
+                                path: vec![],
+                                handler: Some(item)
                             });
                         }
                     }
 
                     for (segment, _next) in &current.static_routes {
-                        result.hypermedia.links.push(Link {
+                        result.hyperlinks.push(Link {
                             method: None,
                             path: vec![LinkSegment {
                                 label: segment.as_slice(),
                                 ty: SegmentType::Static
-                            }]
+                            }],
+                            handler: None
                         });
                     }
 
                     if let Some(ref _next) = current.variable_route {
-                        result.hypermedia.links.push(Link {
+                        result.hyperlinks.push(Link {
                             method: None,
                             path: vec![LinkSegment {
                                 label: MaybeUtf8Slice::new(),
                                 ty: SegmentType::VariableSegment
-                            }]
+                            }],
+                            handler: None
                         });
                     }
 
                     if let Some(ref _next) = current.wildcard_route {
-                        result.hypermedia.links.push(Link {
+                        result.hyperlinks.push(Link {
                             method: None,
                             path: vec![LinkSegment {
                                 label: MaybeUtf8Slice::new(),
                                 ty: SegmentType::VariableSequence
-                            }]
+                            }],
+                            handler: None
                         });
                     }
                 }
@@ -460,8 +464,7 @@ mod test {
                 let expected_links = [$(link!($($links)*)),*];
                 for link in &expected_links {
                     let index = endpoint
-                                .hypermedia
-                                .links
+                                .hyperlinks
                                 .iter()
                                 .map(|link| (link.method.as_ref(), &link.path))
                                 .position(|other| match (other, link) {
@@ -470,12 +473,12 @@ mod test {
                                    _ => false
                                 });
                     if let Some(index) = index {
-                        endpoint.hypermedia.links.swap_remove(index);
+                        endpoint.hyperlinks.swap_remove(index);
                     } else {
                         panic!("missing link: {:?}", link);
                     }
                 }
-                assert_eq!(endpoint.hypermedia.links, vec![]);
+                assert!(endpoint.hyperlinks.is_empty());
             }
         );
         

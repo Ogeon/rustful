@@ -1,4 +1,5 @@
 //!Request handlers.
+use std::borrow::Cow;
 
 use context::Context;
 use response::Response;
@@ -9,6 +10,11 @@ pub trait Handler: Send + Sync + 'static {
     ///Handle a request from the client. Panicking within this method is
     ///discouraged, to allow the server to run smoothly.
     fn handle_request(&self, context: Context, response: Response);
+
+    ///Get a description for the handler.
+    fn description(&self) -> Option<Cow<'static, str>> {
+        None
+    }
 }
 
 impl<F: Fn(Context, Response) + Send + Sync + 'static> Handler for F {
