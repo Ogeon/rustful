@@ -1,3 +1,5 @@
+set -e
+
 #List of features to test
 features=""
 
