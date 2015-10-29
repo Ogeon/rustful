@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+#[cfg(feature = "ssl")]
+use std::path::PathBuf;
 
 use time;
 
@@ -14,8 +17,9 @@ use hyper::server::Handler as HyperHandler;
 use hyper::header::{Date, ContentType};
 use hyper::mime::Mime;
 use hyper::uri::RequestUri;
+use hyper::net::HttpListener;
 #[cfg(feature = "ssl")]
-use hyper::net::Openssl;
+use hyper::net::{Openssl, HttpsListener};
 
 pub use hyper::server::Listening;
 
@@ -29,7 +33,7 @@ use router::{Router, Endpoint};
 use handler::Handler;
 use response::Response;
 use header::HttpDate;
-use server::{Scheme, Global};
+use server::{Scheme, Global, KeepAlive};
 
 use HttpResult;
 use Server;
@@ -65,7 +69,7 @@ pub struct ServerInstance<R: Router> {
     content_type: Mime,
 
     threads: usize,
-    available_threads: usize,
+    keep_alive: Option<KeepAlive>,
     threads_in_use: AtomicUsize,
 
     context_filters: Vec<Box<ContextFilter>>,
@@ -85,7 +89,7 @@ impl<R: Router> ServerInstance<R> {
             server: config.server,
             content_type: config.content_type,
             threads: config.threads.unwrap_or_else(|| (num_cpus::get() * 5) / 4),
-            available_threads: config.available_threads,
+            keep_alive: config.keep_alive,
             threads_in_use: AtomicUsize::new(0),
             context_filters: config.context_filters,
             response_filters: config.response_filters,
@@ -99,17 +103,14 @@ impl<R: Router> ServerInstance<R> {
     pub fn run(self, scheme: Scheme) -> HttpResult<Listening> {
         let host = self.host;
         let threads = self.threads;
-        match scheme {
-            Scheme::Http => hyper::server::Server::http(host).and_then(|http| {
-                http.handle_threads(self, threads)
-            }),
-            Scheme::Https {cert, key} => {
-                let ssl = try!(Openssl::with_cert_and_key(cert, key));
-                hyper::server::Server::https(host, ssl).and_then(|https| {
-                    https.handle_threads(self, threads)
-                })
-            }
+        let mut server = match scheme {
+            Scheme::Http => try!(HyperServer::http(host)),
+            Scheme::Https {cert, key} => try!(HyperServer::https(host, cert, key)),
+        };
+        if let Some(ref keep_alive) = self.keep_alive {
+            server.keep_alive(keep_alive.timeout);
         }
+        server.run(self, threads)
     }
 
     ///Start the server.
@@ -117,9 +118,11 @@ impl<R: Router> ServerInstance<R> {
     pub fn run(self, _scheme: Scheme) -> HttpResult<Listening> {
         let host = self.host;
         let threads = self.threads;
-        hyper::server::Server::http(host).and_then(|http| {
-            http.handle_threads(self, threads)
-        })
+        let mut server = try!(HyperServer::http(host));
+        if let Some(ref keep_alive) = self.keep_alive {
+            server.keep_alive(keep_alive.timeout);
+        }
+        server.run(self, threads)
     }
 
     fn modify_context(&self, filter_storage: &mut AnyMap, context: &mut Context) -> ContextAction {
@@ -161,7 +164,12 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
             request_reader
         ) = request.deconstruct();
 
-        let force_close = self.threads_in_use.load(Ordering::SeqCst) + self.available_threads > self.threads;
+        let force_close = if let Some(ref keep_alive) = self.keep_alive {
+            self.threads_in_use.load(Ordering::SeqCst) + keep_alive.free_threads > self.threads
+        } else {
+            false
+        };
+
         let mut response = Response::new(writer, &self.response_filters, &self.global, force_close);
         response.headers_mut().set(Date(HttpDate(time::now_utc())));
         response.headers_mut().set(ContentType(self.content_type.clone()));
@@ -323,6 +331,55 @@ fn parse_url(url: Url) -> ParsedUri {
         uri: Uri::Path(path.into()),
         query: query,
         fragment: url.fragment.map(|f| percent_decode(f.as_bytes()).into())
+    }
+}
+
+//Helper to handle multiple protocols.
+enum HyperServer {
+    Http(hyper::server::Server<HttpListener>),
+    #[cfg(feature = "ssl")]
+    Https(hyper::server::Server<HttpsListener<Openssl>>),
+}
+
+impl HyperServer {
+    fn http(host: SocketAddr) -> HttpResult<HyperServer> {
+        hyper::server::Server::http(host).map(HyperServer::Http)
+    }
+
+    #[cfg(feature = "ssl")]
+    fn https(host: SocketAddr, cert: PathBuf, key: PathBuf) -> HttpResult<HyperServer> {
+        let ssl = try!(Openssl::with_cert_and_key(cert, key));
+        hyper::server::Server::https(host, ssl).map(HyperServer::Https)
+    }
+
+    #[cfg(feature = "ssl")]
+    fn keep_alive(&mut self, timeout: Duration) {
+        match *self {
+            HyperServer::Http(ref mut s) => s.keep_alive(timeout),
+            HyperServer::Https(ref mut s) => s.keep_alive(timeout),
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn keep_alive(&mut self, timeout: Duration) {
+        match *self {
+            HyperServer::Http(ref mut s) => s.keep_alive(timeout),
+        }
+    }
+
+    #[cfg(feature = "ssl")]
+    fn run<R: Router>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> {
+        match self {
+            HyperServer::Http(s) => s.handle_threads(server, threads),
+            HyperServer::Https(s) => s.handle_threads(server, threads),
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn run<R: Router>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> {
+        match self {
+            HyperServer::Http(s) => s.handle_threads(server, threads),
+        }
     }
 }
 

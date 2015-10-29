@@ -14,7 +14,7 @@ use handler::Handler;
 use HttpResult;
 
 pub use self::instance::ServerInstance;
-pub use self::config::{Host, Global, Scheme};
+pub use self::config::{Host, Global, Scheme, KeepAlive};
 
 mod instance;
 mod config;
@@ -62,10 +62,10 @@ pub struct Server<R: Router> {
     ///`(num_cores * 5) / 4`.
     pub threads: Option<usize>,
 
-    ///The the minimal number of threads in the thread pool that are required
-    ///to be available for new connections. This can be used to prevent hangs
-    ///during high load. Default is `1`.
-    pub available_threads: usize,
+    ///The server's `keep-alive` policy. Setting this to `Some(...)` will
+    ///allow `keep-alive` connections with a timeout, and keeping it as `None`
+    ///will force connections to close after each request. Default is `None`.
+    pub keep_alive: Option<KeepAlive>,
 
     ///The content of the server header. Default is `"rustful"`.
     pub server: String,
@@ -106,7 +106,7 @@ impl<R: Router> Server<R> {
             host: 80.into(),
             scheme: Scheme::Http,
             threads: None,
-            available_threads: 1,
+            keep_alive: None,
             server: "rustful".to_owned(),
             content_type: Mime(
                 hyper::mime::TopLevel::Text,

@@ -2,6 +2,7 @@ use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6, Ipv4Addr};
 use std::str::FromStr;
 use std::any::TypeId;
 use std::mem::swap;
+use std::time::Duration;
 
 use anymap::Map;
 use anymap::any::{Any, UncheckedAnyExt};
@@ -240,4 +241,15 @@ enum GlobalState {
     None,
     One(TypeId, Box<Any + Send + Sync>),
     Many(Map<Any + Send + Sync>),
+}
+
+///Settings for `keep-alive` connections to the server.
+pub struct KeepAlive {
+    ///How long a `keep-alive` connection may idle before it's forced close.
+    pub timeout: Duration,
+
+    ///The number of threads in the thread pool that should be kept free from
+    ///idling threads. Connections will be closed if the number of idle
+    ///threads goes below this.
+    pub free_threads: usize,
 }
