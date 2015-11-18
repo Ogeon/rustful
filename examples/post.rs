@@ -12,7 +12,6 @@ extern crate log;
 extern crate env_logger;
 
 use rustful::{Server, Context, Response};
-use rustful::context::body::ExtQueryBody;
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
 fn say_hello(mut context: Context, mut response: Response) {
