@@ -6,14 +6,11 @@ skip_tags: true
 platform: x64
 os: MinGW
 environment:
-  RUST_INSTALL_DIR: C:\Rust
-  RUST_INSTALL_TRIPLE: i686-pc-windows-gnu
-  RUST_VERSION: 1.3.0
   OPENSSL_VERSION: 1_0_2d
 install:
-  - ps: Start-FileDownload "https://static.rust-lang.org/dist/rust-$Env:RUST_VERSION-$Env:RUST_INSTALL_TRIPLE.exe"
-  - cmd: rust-%RUST_VERSION%-%RUST_INSTALL_TRIPLE%.exe /VERYSILENT /NORESTART /COMPONENTS="rust,gcc,cargo" /DIR="%RUST_INSTALL_DIR%"
-  - cmd: SET PATH=%PATH%;%RUST_INSTALL_DIR%\bin;C:\MINGW\bin\
+  - cmd: SET PATH=C:\MINGW\bin\;C:\MINGW\msys\1.0\bin\;%LOCALAPPDATA%\.multirust\toolchains\stable\bin\;%PATH%
+  - ps: Start-FileDownload "https://github.com/Diggsey/multirust-rs-binaries/raw/master/i686-pc-windows-gnu/multirust-rs.exe"
+  - multirust-rs -v update stable
   - rustc --version
   - cargo --version
   - ps: Start-FileDownload "http://slproweb.com/download/Win32OpenSSL-$Env:OPENSSL_VERSION.exe"
