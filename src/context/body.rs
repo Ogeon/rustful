@@ -25,7 +25,43 @@ pub struct BodyReader<'a, 'b: 'a> {
     multipart_boundary: Option<String>
 }
 
-#[cfg(feature = "multipart")]
+impl<'a, 'b> BodyReader<'a, 'b> {
+    #[doc(hidden)]
+    #[cfg(feature = "multipart")]
+    ///Internal and may change without warning.
+    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, headers: &Headers) -> BodyReader<'a, 'b> {
+        use header::ContentType;
+        use mime::{Mime, TopLevel, SubLevel, Attr, Value};
+
+        let boundary = match headers.get() {
+            Some(&ContentType(Mime(TopLevel::Multipart, SubLevel::FormData, ref attrs))) => {
+                attrs.iter()
+                    .find(|&&(ref attr, _)| attr == &Attr::Boundary)
+                    .and_then(|&(_, ref val)| if let Value::Ext(ref boundary) = *val {
+                        Some(boundary.clone())
+                    } else {
+                        None
+                    })
+            },
+            _ => None
+        };
+
+        BodyReader {
+            reader: reader,
+            multipart_boundary: boundary
+        }
+    }
+
+    #[doc(hidden)]
+    #[cfg(not(feature = "multipart"))]
+    ///Internal and may change without warning.
+    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, _headers: &Headers) -> BodyReader<'a, 'b> {
+        BodyReader {
+            reader: reader
+        }
+    }
+}
+
 impl<'a, 'b> BodyReader<'a, 'b> {
     ///Try to create a `multipart/form-data` reader from the request body.
     ///
@@ -65,6 +101,7 @@ impl<'a, 'b> BodyReader<'a, 'b> {
     ///}
     ///# fn main() {}
     ///```
+    #[cfg(feature = "multipart")]
     pub fn as_multipart<'r>(&'r mut self) -> Option<Multipart<MultipartRequest<'r, 'a, 'b>>> {
         let reader = &mut self.reader;
         self.multipart_boundary.as_ref().and_then(move |boundary|
@@ -75,45 +112,6 @@ impl<'a, 'b> BodyReader<'a, 'b> {
         )
     }
 
-    #[doc(hidden)]
-    ///Internal and may change without warning.
-    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, headers: &Headers) -> BodyReader<'a, 'b> {
-        use header::ContentType;
-        use mime::{Mime, TopLevel, SubLevel, Attr, Value};
-
-        let boundary = match headers.get() {
-            Some(&ContentType(Mime(TopLevel::Multipart, SubLevel::FormData, ref attrs))) => {
-                attrs.iter()
-                    .find(|&&(ref attr, _)| attr == &Attr::Boundary)
-                    .and_then(|&(_, ref val)| if let Value::Ext(ref boundary) = *val {
-                        Some(boundary.clone())
-                    } else {
-                        None
-                    })
-            },
-            _ => None
-        };
-
-        BodyReader {
-            reader: reader,
-            multipart_boundary: boundary
-        }
-    }
-}
-
-#[cfg(not(feature = "multipart"))]
-impl<'a, 'b> BodyReader<'a, 'b> {
-    #[doc(hidden)]
-    ///Internal and may change without warning.
-    pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, _headers: &Headers) -> BodyReader<'a, 'b> {
-        BodyReader {
-            reader: reader
-        }
-    }
-}
-
-///`BodyReader` extension for reading and parsing a query string.
-pub trait ExtQueryBody {
     ///Read and parse the request body as a query string. The body will be
     ///decoded as UTF-8 and plain '+' characters will be replaced with spaces.
     ///
@@ -121,7 +119,6 @@ pub trait ExtQueryBody {
     ///
     ///```
     ///use rustful::{Context, Response};
-    ///use rustful::context::body::ExtQueryBody;
     ///
     ///fn my_handler(mut context: Context, response: Response) {
     ///    //Parse the request body as a query string
@@ -134,24 +131,13 @@ pub trait ExtQueryBody {
     ///    response.send(format!("{} + {} = {}", a, b, a + b));
     ///}
     ///```
-    fn read_query_body(&mut self) -> io::Result<Parameters>;
-}
-
-impl<'a, 'b> ExtQueryBody for BodyReader<'a, 'b> {
     #[inline]
-    fn read_query_body(&mut self) -> io::Result<Parameters> {
+    pub fn read_query_body(&mut self) -> io::Result<Parameters> {
         let mut buf = Vec::new();
         try!(self.read_to_end(&mut buf));
-        Ok(::utils::parse_parameters(&buf)    )
+        Ok(::utils::parse_parameters(&buf))
     }
-}
 
-///`BodyReader` extension for reading and parsing a JSON body.
-///
-///It is available by default and can be toggled using the `rustc_json_body`
-///feature.
-#[cfg(feature = "rustc_json_body")]
-pub trait ExtJsonBody {
     ///Read the request body into a generic JSON structure. This structure can
     ///then be navigated and parsed freely.
     ///
@@ -159,7 +145,6 @@ pub trait ExtJsonBody {
     ///
     ///```
     ///use rustful::{Context, Response};
-    ///use rustful::context::body::ExtJsonBody;
     ///
     ///fn my_handler(mut context: Context, response: Response) {
     ///    //Parse the request body as JSON
@@ -172,7 +157,10 @@ pub trait ExtJsonBody {
     ///    response.send(format!("{} + {} = {}", a, b, a + b));
     ///}
     ///```
-    fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError>;
+    #[cfg(feature = "rustc_json_body")]
+    pub fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError> {
+        json::Json::from_reader(self)
+    }
 
     ///Read and decode a request body as a type `T`. The target type must
     ///implement `rustc_serialize::Decodable`.
@@ -184,7 +172,6 @@ pub trait ExtJsonBody {
     ///extern crate rustc_serialize;
     ///
     ///use rustful::{Context, Response};
-    ///use rustful::context::body::ExtJsonBody;
     ///
     ///#[derive(RustcDecodable)]
     ///struct Foo {
@@ -200,16 +187,8 @@ pub trait ExtJsonBody {
     ///}
     ///# fn main() {}
     ///```
-    fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T>;
-}
-
-#[cfg(feature = "rustc_json_body")]
-impl<'a, 'b> ExtJsonBody for BodyReader<'a, 'b> {
-    fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError> {
-        json::Json::from_reader(self)
-    }
-
-    fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T> {
+    #[cfg(feature = "rustc_json_body")]
+    pub fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T> {
         let mut buf = String::new();
         try!(self.read_to_string(&mut buf).map_err(|e| {
             let parse_err = json::ParserError::IoError(e);
