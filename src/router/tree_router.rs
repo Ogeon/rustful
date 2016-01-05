@@ -226,7 +226,7 @@ impl<T: Handler> Router for TreeRouter<T> {
         let path = route.segments().collect::<Vec<_>>();
         let mut variables = vec![None; path.len()];
         let mut stack = vec![(self, Wildcard, 0, 0), (self, Variable, 0, 0), (self, Static, 0, 0)];
-        
+
         let mut result: Endpoint<T> = None.into();
 
         while let Some((current, branch, index, var_index)) = stack.pop() {
@@ -481,7 +481,7 @@ mod test {
                 assert!(endpoint.hyperlinks.is_empty());
             }
         );
-        
+
         ($res: expr => $handler: expr, {$($key: expr => $val: expr),*}) => (
             check!($res => $handler, {$($key => $val),*}, []);
         );
@@ -564,7 +564,7 @@ mod test {
     }
 
     #[derive(Debug)]
-    enum LinkType<'a> {
+    pub enum LinkType<'a> {
         SelfLink(Method),
         ForwardLink(Vec<LinkSegment<'a>>)
     }
@@ -785,7 +785,7 @@ mod test {
         let router2 = routes2.into_iter().collect::<TreeRouter<_>>();
 
         router1.insert_router(":a", router2);
-        
+
         check!(router1.find(&Get, b"path/to/test1") => Some("test 2"), {"a" => "path", "b" => "to", "c" => "test1"}, [["test"]]);
         check!(router1.find(&Get, b"path/to/test1/test") => Some("test 1"), {"a" => "path", "b" => "to", "c" => "test1"});
     }
@@ -809,7 +809,7 @@ mod test {
         check!(router1.find(&Get, b"path") => None, [["to"], [*""]]);
     }
 
-    
+
     #[bench]
     #[cfg(feature = "benchmark")]
     fn search_speed(b: &mut Bencher) {
@@ -851,7 +851,7 @@ mod test {
         });
     }
 
-    
+
     #[bench]
     #[cfg(feature = "benchmark")]
     fn wildcard_speed(b: &mut Bencher) {

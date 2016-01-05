@@ -9,7 +9,6 @@ pub use hyper::server::Listening;
 
 use filter::{ContextFilter, ResponseFilter};
 use router::Router;
-use handler::Handler;
 
 use HttpResult;
 
