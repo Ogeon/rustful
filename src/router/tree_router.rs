@@ -568,7 +568,7 @@ mod test {
         SelfLink(Method),
         ForwardLink(Vec<LinkSegment<'a>>)
     }
-    pub use self::LinkType::{SelfLink, ForwardLink};
+    use self::LinkType::{SelfLink, ForwardLink};
 
     #[test]
     fn one_static_route() {
