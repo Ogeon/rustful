@@ -102,9 +102,9 @@ macro_rules! insert_routes {
 #[macro_export]
 macro_rules! __rustful_insert_internal {
     ($router:ident, [$($steps:expr),*],$(,)*) => {{}};
-    ($router:ident, [$($steps:expr),*], $path:expr => {$($paths:tt)+}, $($next:tt)*) => {
+    ($router:ident, [$($steps:expr),*], $path:tt => {$($paths:tt)+}, $($next:tt)*) => {
         {
-            __rustful_insert_internal!($router, [$($steps,)* $path], $($paths)*);
+            __rustful_insert_internal!($router, [$($steps,)* __rustful_to_expr!($path)], $($paths)*);
             __rustful_insert_internal!($router, [$($steps),*], $($next)*);
         }
     };
@@ -113,7 +113,7 @@ macro_rules! __rustful_insert_internal {
             __rustful_insert_internal!($router, [$($steps,)* __rustful_to_expr!($path)], $($paths)*);
         }
     };
-    ($router:ident, [$($steps:expr),*], $($method:tt)::+: $handler:expr, $($next:tt)*) => {
+    ($router:ident, [$($steps:expr),*], $($method:tt)::+ : $handler:expr, $($next:tt)*) => {
         {
             let method = {
                 #[allow(unused_imports)]
@@ -125,19 +125,19 @@ macro_rules! __rustful_insert_internal {
             __rustful_insert_internal!($router, [$($steps),*], $($next)*);
         }
     };
-    ($router:ident, [$($steps:expr),*], $path:tt => $method:path: $handler:expr, $($next:tt)*) => {
+    ($router:ident, [$($steps:expr),*], $path:tt => $($method:tt)::+ : $handler:expr, $($next:tt)*) => {
         {
             let method = {
                 #[allow(unused_imports)]
                 use $crate::Method::*;
-                $method
+                __rustful_to_path!($($method)::+)
             };
             let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
             $router.insert(method, &path, $handler);
             __rustful_insert_internal!($router, [$($steps),*], $($next)*);
         }
     };
-    ($router:ident, [$($steps:expr),*], $($method:tt)::+: $handler:expr) => {
+    ($router:ident, [$($steps:expr),*], $($method:tt)::+ : $handler:expr) => {
         {
             let method = {
                 #[allow(unused_imports)]
@@ -148,12 +148,12 @@ macro_rules! __rustful_insert_internal {
             $router.insert(method, &path, $handler);
         }
     };
-    ($router:ident, [$($steps:expr),*], $path:tt => $method:path: $handler:expr) => {
+    ($router:ident, [$($steps:expr),*], $path:tt => $($method:tt)::+ : $handler:expr) => {
         {
             let method = {
                 #[allow(unused_imports)]
                 use $crate::Method::*;
-                $method
+                __rustful_to_path!($($method)::+)
             };
             let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
             $router.insert(method, &path, $handler);
