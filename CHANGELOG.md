@@ -1,5 +1,9 @@
 # Changelog
 
+## Version 0.6.1 - 2016-01-12
+
+ * [#90][90]: Edit insert_routes! to avoid type ascription conflicts, and some fixes.
+
 ## Version 0.6.0 - 2015-11-24
 
  * [#81][81]: Remove the extension traits for BodyReader. Closes [#76][76].
@@ -55,6 +59,7 @@
 
 ## Version 0.1.1 - 2015-05-16
 
+[90]: https://github.com/Ogeon/rustful/pull/90
 [81]: https://github.com/Ogeon/rustful/pull/81
 [82]: https://github.com/Ogeon/rustful/pull/82
 [79]: https://github.com/Ogeon/rustful/pull/79
