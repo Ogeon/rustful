@@ -260,7 +260,7 @@ impl<'a> Into<Data<'a>> for &'a str {
 ///its size is known.
 pub struct Response<'a, 'b> {
     writer: Option<hyper::server::response::Response<'a>>,
-    filters: &'b Vec<Box<ResponseFilter>>,
+    filters: &'b [Box<ResponseFilter>],
     global: &'b Global,
     filter_storage: Option<AnyMap>,
     force_close: bool
@@ -271,7 +271,7 @@ impl<'a, 'b> Response<'a, 'b> {
     ///Internal and may change without warning.
     pub fn new(
         response: hyper::server::response::Response<'a>,
-        filters: &'b Vec<Box<ResponseFilter>>,
+        filters: &'b [Box<ResponseFilter>],
         global: &'b Global,
         force_close: bool
     ) -> Response<'a, 'b> {
@@ -621,7 +621,7 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 ///an overhead for each time `send` or `try_send` is called (simply put).
 pub struct Chunked<'a, 'b> {
     writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
-    filters: &'b Vec<Box<ResponseFilter>>,
+    filters: &'b [Box<ResponseFilter>],
     global: &'b Global,
     filter_storage: AnyMap
 }
