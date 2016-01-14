@@ -220,13 +220,13 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     ContextAction::Next => {
                         *response.filter_storage_mut() = filter_storage;
 
-                        let endpoint = context.uri.as_path().map(|path| self.handlers.find(&context.method, &path)).unwrap_or_else(|| {
+                        let endpoint = context.uri.as_path().map_or_else(|| {
                             Endpoint {
                                 handler: None,
                                 variables: HashMap::new(),
                                 hyperlinks: vec![]
                             }
-                        });
+                        }, |path| self.handlers.find(&context.method, &path));
 
                         let Endpoint {
                             handler,
@@ -298,7 +298,7 @@ fn parse_path(path: &str) -> ParsedUri {
     }
 }
 
-fn parse_fragment<'a>(path: &'a str) -> (&'a str, Option<&'a str>) {
+fn parse_fragment(path: &str) -> (&str, Option<&str>) {
     match path.find('#') {
         Some(index) => (&path[..index], Some(&path[index+1..])),
         None => (path, None)
@@ -316,7 +316,7 @@ fn parse_url(url: Url) -> ParsedUri {
     }
 
     let query = url.query_pairs()
-            .unwrap_or_else(|| Vec::new())
+            .unwrap_or_default()
             .into_iter()
             .collect();
 

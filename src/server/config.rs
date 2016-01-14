@@ -96,7 +96,7 @@ impl FromStr for Host {
     type Err = <SocketAddr as FromStr>::Err;
 
     fn from_str(s: &str) -> Result<Host, Self::Err> {
-        s.parse().map(|s| Host(s))
+        s.parse().map(Host)
     }
 }
 
