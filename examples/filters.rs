@@ -13,21 +13,29 @@ use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilt
 use rustful::response::Data;
 use rustful::StatusCode;
 use rustful::header::Headers;
+use rustful::header::ContentType;
 use rustful::context::{Uri, MaybeUtf8Owned};
 
 fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     //Take the name of the JSONP function from the query variables
-    let mut quote_msg = if let Some(jsonp_name) = context.query.remove("jsonp") {
+    let is_jsonp = if let Some(jsonp_name) = context.query.remove("jsonp") {
         response.filter_storage_mut().insert(JsonpFn(jsonp_name.into()));
         true
     } else {
         false
     };
 
+    //Set appropriate Content-Type, and decide if we need to quote it
+    let (mime_type, quote_msg) = match *format {
+        _ if is_jsonp => (content_type!(Application / Javascript; Charset = Utf8), true),
+        Format::Json => (content_type!(Application / Json; Charset = Utf8), true),
+        Format::Text => (content_type!(Text / Plain; Charset = Utf8), false)
+    };
+    response.headers_mut().set(ContentType(mime_type));
+
     //Is the format supposed to be a JSON structure? Then set a variable name
     if let Format::Json = *format {
         response.filter_storage_mut().insert(JsonVar("message"));
-        quote_msg = true;
     }
 
     let person = match context.variables.get("person") {
