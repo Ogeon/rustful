@@ -230,16 +230,16 @@ impl<I: Iterator> Iterator for RouteIter<I> {
     type Item = <I as Iterator>::Item;
 
     fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        match self {
-            &mut RouteIter::Path(ref mut i) => i.next(),
-            &mut RouteIter::Root => None
+        match *self {
+            RouteIter::Path(ref mut i) => i.next(),
+            RouteIter::Root => None
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        match self {
-            &RouteIter::Path(ref i) => i.size_hint(),
-            &RouteIter::Root => (0, Some(0))
+        match *self {
+            RouteIter::Path(ref i) => i.size_hint(),
+            RouteIter::Root => (0, Some(0))
         }
     }
 }

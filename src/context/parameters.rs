@@ -91,7 +91,7 @@ impl Parameters {
         T: FromStr
     {
         if let Some(val) = self.0.get(key.as_ref()) {
-            val.as_utf8_lossy().parse().map_err(|e| Some(e))
+            val.as_utf8_lossy().parse().map_err(Some)
         } else {
             Err(None)
         }

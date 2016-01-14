@@ -47,7 +47,7 @@ impl<S, V> MaybeUtf8<S, V> {
     ///let string = MaybeUtf8Owned::from("abc");
     ///assert_eq!(Some("abc"), string.as_utf8());
     ///```
-    pub fn as_utf8<'a>(&'a self) -> Option<&'a str> where S: AsRef<str> {
+    pub fn as_utf8(&self) -> Option<&str> where S: AsRef<str> {
         match *self {
             MaybeUtf8::Utf8(ref s) => Some(s.as_ref()),
             MaybeUtf8::NotUtf8(_) => None

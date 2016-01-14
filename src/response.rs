@@ -197,9 +197,9 @@ pub enum Data<'a> {
 impl<'a> Data<'a> {
     ///Borrow the content as a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            &Data::Bytes(ref bytes) => bytes,
-            &Data::String(ref string) => string.as_bytes(),
+        match *self {
+            Data::Bytes(ref bytes) => bytes,
+            Data::String(ref string) => string.as_bytes(),
         }
     }
 
@@ -213,9 +213,9 @@ impl<'a> Data<'a> {
 
     ///Borrow the content as a UTF-8 string slice, if possible.
     pub fn as_string(&self) -> Result<&str, Utf8Error> {
-        match self {
-            &Data::Bytes(ref bytes) => from_utf8(bytes),
-            &Data::String(ref string) => Ok(string),
+        match *self {
+            Data::Bytes(ref bytes) => from_utf8(bytes),
+            Data::String(ref string) => Ok(string),
         }
     }
 
@@ -537,14 +537,14 @@ impl<'a, 'b> Response<'a, 'b> {
 
         let mut writer = unsafe { self.into_raw(metadata.len()) };
 
-        io::copy(&mut file, &mut writer).map_err(|e| FileError::Send(e)).map(|_| ())
+        io::copy(&mut file, &mut writer).map_err(FileError::Send).map(|_| ())
     }
 
     ///Write the status code and headers to the client and turn the `Response`
     ///into a `Chunked` response.
     pub fn into_chunked(mut self) -> Chunked<'a, 'b> {
         let mut writer = self.writer.take().expect("response used after drop");
-        
+
         //Make sure it's chunked
         writer.headers_mut().remove::<::header::ContentLength>();
         writer.headers_mut().remove_raw("content-length");
@@ -738,7 +738,7 @@ impl<'a, 'b> Chunked<'a, 'b> {
             }
         }
 
-        writer.end().map_err(|e| Error::Io(e))
+        writer.end().map_err(Error::Io)
     }
 
     fn borrow_writer(&mut self) -> Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>, Error> {
@@ -982,8 +982,8 @@ fn filter_end<'a>(filters: &'a [Box<ResponseFilter>], global: &Global, filter_st
 
             filter.end(filter_context)
         })
-        .take_while(|a| if let &Action::Next(_) = a { true } else { false })
-        .map(|a| Some(a))
+        .take_while(|a| if let Action::Next(_) = *a { true } else { false })
+        .map(Some)
         .collect();
 
     let mut write_queue = vec![];

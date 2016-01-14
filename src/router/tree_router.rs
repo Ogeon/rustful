@@ -39,7 +39,7 @@ impl<'a, I: Iterator<Item=(usize, &'a [u8])>> Iterator for VariableIter<'a, I> {
     type Item=(MaybeUtf8Owned, MaybeUtf8Owned);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((next_index, next_segment)) = self.iter.next() {
+        for (next_index, next_segment) in &mut self.iter {
             //validate next_index and check if the variable has a name
             debug_assert!(next_index < self.names.len(), format!("invalid variable name index! variable_names.len(): {}, index: {}", self.names.len(), next_index));
             let next_name = match self.names.get(next_index) {
@@ -226,14 +226,14 @@ impl<T: Handler> Router for TreeRouter<T> {
         let path = route.segments().collect::<Vec<_>>();
         let mut variables = vec![None; path.len()];
         let mut stack = vec![(self, Wildcard, 0, 0), (self, Variable, 0, 0), (self, Static, 0, 0)];
-        
+
         let mut result: Endpoint<T> = None.into();
 
         while let Some((current, branch, index, var_index)) = stack.pop() {
             if index == path.len() && result.handler.is_none() {
                 if let Some(&(ref item, ref variable_names)) = current.items.get(&method) {
                     let values = path.iter().zip(variables.iter()).filter_map(|(v, keep)| {
-                        if let &Some(index) = keep {
+                        if let Some(index) = *keep {
                             Some((index, v.clone()))
                         } else {
                             None
@@ -438,7 +438,7 @@ mod test {
                 use context::MaybeUtf8Slice;
 
                 let handler: Option<&str> = $handler;
-                let handler = handler.map(|h| TestHandler::from(h));
+                let handler = handler.map(TestHandler::from);
                 let mut endpoint = $res;
                 assert_eq!(endpoint.handler, handler.as_ref());
                 let expected_vars: HashMap<MaybeUtf8Slice, MaybeUtf8Slice> = map!($($key => $val),*);
