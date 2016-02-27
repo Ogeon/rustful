@@ -118,7 +118,7 @@ impl<'a, I: Iterator<Item=(usize, &'a [u8])>> Iterator for VariableIter<'a, I> {
 ///#Hyperlinks
 ///
 ///The 'TreeRouter` has support for shallow hyperlinks to children, siblings,
-///cousins, ans so forth. The use of variable sequences complicates this
+///cousins, and so forth. The use of variable sequences complicates this
 ///process and may cause confusing results in certain situations. The
 ///hyperlinks may or may not point to a handler.
 ///
