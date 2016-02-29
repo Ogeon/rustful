@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
-use std::borrow::ToOwned;
 use std::iter::{Iterator, IntoIterator, FromIterator};
 use std::ops::Deref;
 use hyper::method::Method;
 
-use router::{Router, Route, Endpoint};
+use router::{Router, Route, Endpoint, MethodRouter, InsertState, RouteState};
 use context::{MaybeUtf8Owned, MaybeUtf8Slice};
 use context::hypermedia::{Link, LinkSegment, SegmentType};
 use handler::Handler;
@@ -17,57 +16,6 @@ enum Branch {
     Static,
     Variable,
     Wildcard
-}
-
-struct VariableIter<'a, I> {
-    iter: I,
-    names: &'a [MaybeUtf8Owned],
-    current: Option<(usize, MaybeUtf8Owned, MaybeUtf8Owned)>
-}
-
-impl<'a, I: Iterator<Item=(usize, &'a [u8])>> VariableIter<'a, I> {
-    fn new(iter: I, names: &'a [MaybeUtf8Owned]) -> VariableIter<'a, I> {
-        VariableIter {
-            iter: iter,
-            names: names,
-            current: None
-        }
-    }
-}
-
-impl<'a, I: Iterator<Item=(usize, &'a [u8])>> Iterator for VariableIter<'a, I> {
-    type Item=(MaybeUtf8Owned, MaybeUtf8Owned);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for (next_index, next_segment) in &mut self.iter {
-            //validate next_index and check if the variable has a name
-            debug_assert!(next_index < self.names.len(), format!("invalid variable name index! variable_names.len(): {}, index: {}", self.names.len(), next_index));
-            let next_name = match self.names.get(next_index) {
-                None => continue,
-                Some(n) if n.is_empty() => continue,
-                Some(n) => n
-            };
-
-            if let Some((index, name, mut segment)) = self.current.take() {
-                if index == next_index {
-                    //this is a part of the current sequence
-                    segment.push_char('/');
-                    segment.push_bytes(next_segment);
-                    self.current = Some((index, name, segment));
-                } else {
-                    //the current sequence has ended
-                    self.current = Some((next_index, (*next_name).clone(), next_segment.to_owned().into()));
-                    return Some((name, segment));
-                }
-            } else {
-                //this is the first named variable
-                self.current = Some((next_index, (*next_name).clone(), next_segment.to_owned().into()));
-            }
-        }
-
-        //return the last variable
-        self.current.take().map(|(_, name, segment)| (name, segment))
-    }
 }
 
 ///Stores handlers, using an HTTP method and a route as key.
@@ -125,8 +73,8 @@ impl<'a, I: Iterator<Item=(usize, &'a [u8])>> Iterator for VariableIter<'a, I> {
 ///Hyperlinks has to be activated by setting `find_hyperlinks` to  `true`.
 
 #[derive(Clone)]
-pub struct TreeRouter<T> {
-    items: HashMap<Method, (T, Vec<MaybeUtf8Owned>)>,
+pub struct TreeRouter<T: Router> {
+    item: T,
     static_routes: HashMap<MaybeUtf8Owned, TreeRouter<T>>,
     variable_route: Option<Box<TreeRouter<T>>>,
     wildcard_route: Option<Box<TreeRouter<T>>>,
@@ -135,118 +83,87 @@ pub struct TreeRouter<T> {
     pub find_hyperlinks: bool
 }
 
-impl<T> TreeRouter<T> {
+impl<H: Handler> TreeRouter<MethodRouter<H>> {
     ///Creates an empty `TreeRouter`.
-    pub fn new() -> TreeRouter<T> {
+    pub fn new() -> TreeRouter<MethodRouter<H>> {
         TreeRouter::default()
     }
+}
 
+
+impl<T: Router + Default> TreeRouter<T> {
     //Tries to find a router matching the key or inserts a new one if none exists.
     fn find_or_insert_router<'a>(&'a mut self, key: &[u8]) -> &'a mut TreeRouter<T> {
         if let Some(&b'*') = key.get(0) {
             if self.wildcard_route.is_none() {
-                self.wildcard_route = Some(Box::new(TreeRouter::new()));
+                self.wildcard_route = Some(Box::new(TreeRouter::default()));
             }
             &mut **self.wildcard_route.as_mut::<'a>().unwrap()
         } else if let Some(&b':') = key.get(0) {
             if self.variable_route.is_none() {
-                self.variable_route = Some(Box::new(TreeRouter::new()));
+                self.variable_route = Some(Box::new(TreeRouter::default()));
             }
             &mut **self.variable_route.as_mut::<'a>().unwrap()
         } else {
             match self.static_routes.entry(key.to_owned().into()) {
                 Occupied(entry) => entry.into_mut(),
-                Vacant(entry) => entry.insert(TreeRouter::new())
+                Vacant(entry) => entry.insert(TreeRouter::default())
             }
         }
-    }
-
-    ///Insert an other TreeRouter at a path. The content of the other TreeRouter will be merged with this one and
-    ///content with the same path and method will be overwritten.
-    pub fn insert_router<'r, R: Route<'r> + ?Sized>(&mut self, route: &'r R, router: TreeRouter<T>) {
-        let (endpoint, variable_names) = route.segments().fold((self, Vec::new()),
-
-            |(current, mut variable_names), piece| {
-                let next = current.find_or_insert_router(&piece);
-                match piece.get(0) {
-                    Some(&b'*') | Some(&b':') => variable_names.push(piece[1..].to_owned().into()),
-                    _ => {}
-                }
-
-                (next, variable_names)
-            }
-
-        );
-
-        endpoint.merge_router(variable_names, router);
     }
 
     //Mergers this TreeRouter with an other TreeRouter.
-    fn merge_router(&mut self, variable_names: Vec<MaybeUtf8Owned>, router: TreeRouter<T>) {
-        for (key, (item, var_names)) in router.items {
-            let mut new_var_names = variable_names.clone();
-            new_var_names.extend(var_names);
-            self.items.insert(key, (item, new_var_names));
-        }
+    fn merge_router<'a, I: Iterator<Item = &'a [u8]> + Clone>(&mut self, state: InsertState<'a, I>, router: TreeRouter<T>) {
+        self.item.insert_router(state.clone(), router.item);
 
         for (key, router) in router.static_routes {
             let next = match self.static_routes.entry(key.clone()) {
                 Occupied(entry) => entry.into_mut(),
-                Vacant(entry) => entry.insert(TreeRouter::new())
+                Vacant(entry) => entry.insert(TreeRouter::default())
             };
-            next.merge_router(variable_names.clone(), router);
+            next.merge_router(state.clone(), router);
         }
 
         if let Some(router) = router.variable_route {
             if self.variable_route.is_none() {
-                self.variable_route = Some(Box::new(TreeRouter::new()));
+                self.variable_route = Some(Box::new(TreeRouter::default()));
             }
 
             if let Some(ref mut next) = self.variable_route {
-                next.merge_router(variable_names.clone(), *router);
+                next.merge_router(state.clone(), *router);
             }
         }
 
         if let Some(router) = router.wildcard_route {
             if self.wildcard_route.is_none() {
-                self.wildcard_route = Some(Box::new(TreeRouter::new()));
+                self.wildcard_route = Some(Box::new(TreeRouter::default()));
             }
 
             if let Some(ref mut next) = self.wildcard_route {
-                next.merge_router(variable_names.clone(), *router);
+                next.merge_router(state, *router);
             }
         }
     }
 }
 
-impl<T: Handler> Router for TreeRouter<T> {
-    type Handler = T;
+impl<T: Router + Default> Router for TreeRouter<T> {
+    type Handler = T::Handler;
 
-    fn find<'a>(&'a self, method: &Method, route: &[u8]) -> Endpoint<'a, T> {
-        let path = route.segments().collect::<Vec<_>>();
-        let mut variables = vec![None; path.len()];
-        let mut stack = vec![(self, Wildcard, 0, 0), (self, Variable, 0, 0), (self, Static, 0, 0)];
+    fn find<'a>(&'a self, method: &Method, route: &mut RouteState) -> Endpoint<'a, Self::Handler> {
+        //let path = route.segments().collect::<Vec<_>>();
+        //let mut variables = vec![None; path.len()];
+        let now = route.snapshot();
+        let mut stack = vec![(self, Wildcard, now), (self, Variable, now), (self, Static, now)];
 
-        let mut result: Endpoint<T> = None.into();
+        let mut result: Endpoint<Self::Handler> = None.into();
 
-        while let Some((current, branch, index, var_index)) = stack.pop() {
-            if index == path.len() && result.handler.is_none() {
-                if let Some(&(ref item, ref variable_names)) = current.items.get(&method) {
-                    let values = path.iter().zip(variables.iter()).filter_map(|(v, keep)| {
-                        if let Some(index) = *keep {
-                            Some((index, v.clone()))
-                        } else {
-                            None
-                        }
-                    });
-
-                    let mut var_map = HashMap::<MaybeUtf8Owned, MaybeUtf8Owned>::with_capacity(variable_names.len());
-                    for (name, value) in VariableIter::new(values, variable_names) {
-                        var_map.insert(name, value);
-                    }
-
-                    result.handler = Some(item);
-                    result.variables = var_map;
+        while let Some((current, branch, snapshot)) = stack.pop() {
+            route.go_to(snapshot);
+            if route.is_empty() && result.handler.is_none() {
+                let endpoint = current.item.find(&method, route);
+                if endpoint.handler.is_some() {
+                    result.handler = endpoint.handler;
+                    result.variables = endpoint.variables;
                     if !self.find_hyperlinks {
                         return result;
                     }
@@ -256,13 +173,15 @@ impl<T: Handler> Router for TreeRouter<T> {
 
                 //Only register hyperlinks on the first pass.
                 if branch == Static {
-                    for (other_method, &(ref item, _)) in &current.items {
-                        if other_method != method {
-                            result.hyperlinks.push(Link {
-                                method: Some(other_method.clone()),
-                                path: vec![],
-                                handler: Some(item)
-                            });
+                    let base_link = Link {
+                        method: None,
+                        path: vec![],
+                        handler: None
+                    };
+
+                    for link in current.item.hyperlinks(base_link) {
+                        if link.method != Some(method.clone()) || !link.path.is_empty() {
+                            result.hyperlinks.push(link);
                         }
                     }
 
@@ -299,40 +218,38 @@ impl<T: Handler> Router for TreeRouter<T> {
                         });
                     }
                 }
-            }
-
-            match branch {
-                Static => {
-                    if index < path.len() {
-                        current.static_routes.get(path[index]).map(|next| {
-                            variables.get_mut(index).map(|v| *v = None);
-
-                            stack.push((next, Wildcard, index+1, var_index));
-                            stack.push((next, Variable, index+1, var_index));
-                            stack.push((next, Static, index+1, var_index));
+            } else if let Some(segment) = route.get() {
+                match branch {
+                    Static => {
+                        current.static_routes.get(segment).map(|next| {
+                            route.skip();
+                            let snapshot = route.snapshot();
+                            stack.push((next, Wildcard, snapshot));
+                            stack.push((next, Variable, snapshot));
+                            stack.push((next, Static, snapshot));
                         });
-                    }
-                },
-                Variable => {
-                    if index < path.len() {
+                    },
+                    Variable => {
                         current.variable_route.as_ref().map(|next| {
-                            variables.get_mut(index).map(|v| *v = Some(var_index));
-
-                            stack.push((next, Wildcard, index+1, var_index+1));
-                            stack.push((next, Variable, index+1, var_index+1));
-                            stack.push((next, Static, index+1, var_index+1));
+                            route.keep();
+                            let snapshot = route.snapshot();
+                            stack.push((next, Wildcard, snapshot));
+                            stack.push((next, Variable, snapshot));
+                            stack.push((next, Static, snapshot));
                         });
-                    }
-                },
-                Wildcard => {
-                    if index < path.len() {
+                    },
+                    Wildcard => {
                         current.wildcard_route.as_ref().map(|next| {
-                            variables.get_mut(index).map(|v| *v = Some(var_index));
+                            route.fuse();
+                            let s = route.snapshot();
+                            stack.push((current, Wildcard, s));
+                            route.go_to(snapshot);
 
-                            stack.push((current, Wildcard, index+1, var_index));
-                            stack.push((next, Wildcard, index+1, var_index+1));
-                            stack.push((next, Variable, index+1, var_index+1));
-                            stack.push((next, Static, index+1, var_index+1));
+                            route.keep();
+                            let snapshot = route.snapshot();
+                            stack.push((next, Wildcard, snapshot));
+                            stack.push((next, Variable, snapshot));
+                            stack.push((next, Static, snapshot));
                         });
                     }
                 }
@@ -342,25 +259,59 @@ impl<T: Handler> Router for TreeRouter<T> {
         result
     }
 
-    fn insert<'a, D: ?Sized + Deref<Target=R> + 'a, R: ?Sized + Route<'a> + 'a>(&mut self, method: Method, route: &'a D, item: T) {
-        let (endpoint, variable_names) = route.segments().fold((self, Vec::new()),
-            |(current, mut variable_names), piece| {
-                let next = current.find_or_insert_router(&piece);
-                match piece.get(0) {
-                    Some(&b'*') | Some(&b':') => variable_names.push(piece[1..].to_owned().into()),
-                    _ => {}
-                }
+    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>> {
+        let mut links = self.item.hyperlinks(base.clone());
 
-                (next, variable_names)
-            }
+        for (segment, _next) in &self.static_routes {
+            let mut link = base.clone();
+            link.path.push(LinkSegment {
+                label: segment.as_slice(),
+                ty: SegmentType::Static
+            });
+            links.push(link);
+        }
 
-        );
+        if let Some(ref _next) = self.variable_route {
+            let mut link = base.clone();
+            link.path.push(LinkSegment {
+                label: MaybeUtf8Slice::new(),
+                ty: SegmentType::VariableSegment
+            });
+            links.push(link);
+        }
 
-        endpoint.items.insert(method, (item, variable_names));
+        if let Some(ref _next) = self.wildcard_route {
+            let mut link = base;
+            link.path.push(LinkSegment {
+                label: MaybeUtf8Slice::new(),
+                ty: SegmentType::VariableSequence
+            });
+            links.push(link);
+        }
+
+        links
+    }
+
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler) {
+        let mut route = route.into();
+        let mut endpoint = (&mut route).fold(self, |endpoint, segment| {
+            endpoint.find_or_insert_router(segment)
+        });
+
+        endpoint.item.insert(method, route, item);
+    }
+
+    fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: TreeRouter<T>) {
+        let mut route = route.into();
+        let mut endpoint = (&mut route).fold(self, |endpoint, segment| {
+            endpoint.find_or_insert_router(segment)
+        });
+
+        endpoint.merge_router(route, router);
     }
 }
 
-impl<T: Handler, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> FromIterator<(Method, D, T)> for TreeRouter<T> {
+impl<T: Handler, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> FromIterator<(Method, D, T)> for TreeRouter<MethodRouter<T>> {
     ///Create a `TreeRouter` from a collection of routes.
     ///
     ///```
@@ -394,21 +345,21 @@ impl<T: Handler, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> FromIterator
     ///let router: TreeRouter<_> = routes.into_iter().collect();
     ///# }
     ///```
-    fn from_iter<I: IntoIterator<Item=(Method, D, T)>>(iterator: I) -> TreeRouter<T> {
+    fn from_iter<I: IntoIterator<Item=(Method, D, T)>>(iterator: I) -> TreeRouter<MethodRouter<T>> {
         let mut root = TreeRouter::new();
 
         for (method, route, item) in iterator {
-            root.insert(method, &route, item);
+            root.insert(method, &*route, item);
         }
 
         root
     }
 }
 
-impl<T> Default for TreeRouter<T> {
+impl<T: Default + Router> Default for TreeRouter<T> {
     fn default() -> TreeRouter<T> {
         TreeRouter {
-            items: HashMap::new(),
+            item: T::default(),
             static_routes: HashMap::new(),
             variable_route: None,
             wildcard_route: None,
@@ -432,14 +383,14 @@ mod test {
     use Method;
 
     macro_rules! check {
-        ($res: expr => $handler: expr, {$($key: expr => $val: expr),*}, [$([$($links: tt)*]),*]) => (
+        ($router: ident ($method: expr, $path: expr) => $handler: expr, {$($key: expr => $val: expr),*}, [$([$($links: tt)*]),*]) => (
             {
                 use std::collections::HashMap;
                 use context::MaybeUtf8Slice;
 
                 let handler: Option<&str> = $handler;
                 let handler = handler.map(TestHandler::from);
-                let mut endpoint = $res;
+                let mut endpoint = $router.find($method, &mut ((&$path[..]).into()));
                 assert_eq!(endpoint.handler, handler.as_ref());
                 let expected_vars: HashMap<MaybeUtf8Slice, MaybeUtf8Slice> = map!($($key => $val),*);
                 for (key, expected) in &expected_vars {
@@ -482,16 +433,16 @@ mod test {
             }
         );
         
-        ($res: expr => $handler: expr, {$($key: expr => $val: expr),*}) => (
-            check!($res => $handler, {$($key => $val),*}, []);
+        ($router: ident ($method: expr, $path: expr) => $handler: expr, {$($key: expr => $val: expr),*}) => (
+            check!($router ($method, $path) => $handler, {$($key => $val),*}, []);
         );
 
-        ($res: expr => $handler: expr, [$([$($links: tt)*]),*]) => (
-            check!($res => $handler, {}, [$([$($links)*]),*]);
+        ($router: ident ($method: expr, $path: expr) => $handler: expr, [$([$($links: tt)*]),*]) => (
+            check!($router ($method, $path) => $handler, {}, [$([$($links)*]),*]);
         );
 
-        ($res: expr => $handler: expr) => (
-            check!($res => $handler, {}, []);
+        ($router: ident ($method: expr, $path: expr) => $handler: expr) => (
+            check!($router ($method, $path) => $handler, {}, []);
         );
     }
 
@@ -577,9 +528,9 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"));
-        check!(router.find(&Get, b"path/to") => None, [["test1"]]);
-        check!(router.find(&Get, b"path/to/test1/nothing") => None);
+        check!(router(&Get, b"path/to/test1") => Some("test 1"));
+        check!(router(&Get, b"path/to") => None, [["test1"]]);
+        check!(router(&Get, b"path/to/test1/nothing") => None);
     }
 
     #[test]
@@ -593,10 +544,10 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"") => Some("test 1"), [["path"]]);
-        check!(router.find(&Get, b"path/to/test/no2") => Some("test 2"));
-        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test 3"));
-        check!(router.find(&Get, b"path/to/test1/no") => None, [["test3"]]);
+        check!(router(&Get, b"") => Some("test 1"), [["path"]]);
+        check!(router(&Get, b"path/to/test/no2") => Some("test 2"));
+        check!(router(&Get, b"path/to/test1/no/test3") => Some("test 3"));
+        check!(router(&Get, b"path/to/test1/no") => None, [["test3"]]);
     }
 
     #[test]
@@ -606,9 +557,9 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test_var"), {"a" => "to"});
-        check!(router.find(&Get, b"path/to") => None, [["test1"]]);
-        check!(router.find(&Get, b"path/to/test1/nothing") => None);
+        check!(router(&Get, b"path/to/test1") => Some("test_var"), {"a" => "to"});
+        check!(router(&Get, b"path/to") => None, [["test1"]]);
+        check!(router(&Get, b"path/to/test1/nothing") => None);
     }
 
     #[test]
@@ -623,11 +574,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test_var"));
-        check!(router.find(&Get, b"path/to/test/no2") => Some("test_var"), {"a" => "to"}, [[:""]]);
-        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test_var"), {"a" => "test3", "b" => "test1", "c" => "no"}, [[./Post]]);
-        check!(router.find(&Post, b"path/to/test1/no/test3") => Some("test_var"), {"a" => "no", "b" => "test3", "c" => "test1"}, [[./Get]]);
-        check!(router.find(&Get, b"path/to/test1/no") => None, [[:""]]);
+        check!(router(&Get, b"path/to/test1") => Some("test_var"));
+        check!(router(&Get, b"path/to/test/no2") => Some("test_var"), {"a" => "to"}, [[:""]]);
+        check!(router(&Get, b"path/to/test1/no/test3") => Some("test_var"), {"a" => "test3", "b" => "test1", "c" => "no"}, [[./Post]]);
+        check!(router(&Post, b"path/to/test1/no/test3") => Some("test_var"), {"a" => "no", "b" => "test3", "c" => "test1"}, [[./Get]]);
+        check!(router(&Get, b"path/to/test1/no") => None, [[:""]]);
     }
 
     #[test]
@@ -637,11 +588,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), {"tail" => "test1"});
-        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"), {"tail" => "same/test1"});
-        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"), {"tail" => "the/same/test1"});
-        check!(router.find(&Get, b"path/to") => None, [[*""]]);
-        check!(router.find(&Get, b"path") => None, [["to"]]);
+        check!(router(&Get, b"path/to/test1") => Some("test 1"), {"tail" => "test1"});
+        check!(router(&Get, b"path/to/same/test1") => Some("test 1"), {"tail" => "same/test1"});
+        check!(router(&Get, b"path/to/the/same/test1") => Some("test 1"), {"tail" => "the/same/test1"});
+        check!(router(&Get, b"path/to") => None, [[*""]]);
+        check!(router(&Get, b"path") => None, [["to"]]);
     }
 
 
@@ -652,11 +603,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), {"middle" => "to"});
-        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"), {"middle" => "to/same"});
-        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"), {"middle" => "to/the/same"});
-        check!(router.find(&Get, b"path/to") => None, [["test1"]]);
-        check!(router.find(&Get, b"path") => None, [[*""]]);
+        check!(router(&Get, b"path/to/test1") => Some("test 1"), {"middle" => "to"});
+        check!(router(&Get, b"path/to/same/test1") => Some("test 1"), {"middle" => "to/same"});
+        check!(router(&Get, b"path/to/the/same/test1") => Some("test 1"), {"middle" => "to/the/same"});
+        check!(router(&Get, b"path/to") => None, [["test1"]]);
+        check!(router(&Get, b"path") => None, [[*""]]);
    }
 
     #[test]
@@ -666,12 +617,12 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), {"all" => "path/to/test1"});
-        check!(router.find(&Get, b"path/to/same/test1") => Some("test 1"), {"all" => "path/to/same/test1"});
-        check!(router.find(&Get, b"path/to/the/same/test1") => Some("test 1"), {"all" => "path/to/the/same/test1"});
-        check!(router.find(&Get, b"path/to") => Some("test 1"), {"all" => "path/to"});
-        check!(router.find(&Get, b"path") => Some("test 1"), {"all" => "path"});
-        check!(router.find(&Get, b"") => None, [[*""]]);
+        check!(router(&Get, b"path/to/test1") => Some("test 1"), {"all" => "path/to/test1"});
+        check!(router(&Get, b"path/to/same/test1") => Some("test 1"), {"all" => "path/to/same/test1"});
+        check!(router(&Get, b"path/to/the/same/test1") => Some("test 1"), {"all" => "path/to/the/same/test1"});
+        check!(router(&Get, b"path/to") => Some("test 1"), {"all" => "path/to"});
+        check!(router(&Get, b"path") => Some("test 1"), {"all" => "path"});
+        check!(router(&Get, b"") => None, [[*""]]);
     }
 
     #[test]
@@ -685,11 +636,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), [[*""]]);
-        check!(router.find(&Get, b"path/for/test/no2") => Some("test 2"));
-        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test 3"));
-        check!(router.find(&Get, b"path/to/test1/no/test3/again") => Some("test 3"));
-        check!(router.find(&Get, b"path/to") => None, [[*""], ["test"]]);
+        check!(router(&Get, b"path/to/test1") => Some("test 1"), [[*""]]);
+        check!(router(&Get, b"path/for/test/no2") => Some("test 2"));
+        check!(router(&Get, b"path/to/test1/no/test3") => Some("test 3"));
+        check!(router(&Get, b"path/to/test1/no/test3/again") => Some("test 3"));
+        check!(router(&Get, b"path/to") => None, [[*""], ["test"]]);
     }
 
     #[test]
@@ -702,11 +653,11 @@ mod test {
 
         let router = routes.into_iter().collect::<TreeRouter<_>>();
 
-        check!(router.find(&Get, b"path/to/test1") => Some("test 1"), {"tail" => "test1"});
-        check!(router.find(&Get, b"path/for/test/no2") => Some("test 2"), {"middle" => "for"});
-        check!(router.find(&Get, b"path/to/test1/no/test3") => Some("test 3"), {"a" => "test1", "b" => "no", "c" => "test3"});
-        check!(router.find(&Get, b"path/to/test1/no/test3/again") => Some("test 3"), {"a" => "test1", "b" => "no", "c" => "test3/again"});
-        check!(router.find(&Get, b"path/to") => None);
+        check!(router(&Get, b"path/to/test1") => Some("test 1"), {"tail" => "test1"});
+        check!(router(&Get, b"path/for/test/no2") => Some("test 2"), {"middle" => "for"});
+        check!(router(&Get, b"path/to/test1/no/test3") => Some("test 3"), {"a" => "test1", "b" => "no", "c" => "test3"});
+        check!(router(&Get, b"path/to/test1/no/test3/again") => Some("test 3"), {"a" => "test1", "b" => "no", "c" => "test3/again"});
+        check!(router(&Get, b"path/to") => None);
     }
 
     #[test]
@@ -721,11 +672,11 @@ mod test {
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
 
-        check!(router.find(&Get, b"") => Some("test 1"), [["path"]]);
-        check!(router.find(&Get, b"path/to/test/no2/") => Some("test 2"));
-        check!(router.find(&Get, b"path/to/test3") => Some("test 3"), [["again"]]);
-        check!(router.find(&Get, b"/path/to/test3/again") => Some("test 3"));
-        check!(router.find(&Get, b"//path/to/test3") => None);
+        check!(router(&Get, b"") => Some("test 1"), [["path"]]);
+        check!(router(&Get, b"path/to/test/no2/") => Some("test 2"));
+        check!(router(&Get, b"path/to/test3") => Some("test 3"), [["again"]]);
+        check!(router(&Get, b"/path/to/test3/again") => Some("test 3"));
+        check!(router(&Get, b"//path/to/test3") => None);
     }
 
     #[test]
@@ -739,11 +690,11 @@ mod test {
 
         let mut router = routes.into_iter().collect::<TreeRouter<_>>();
         router.find_hyperlinks = true;
-        check!(router.find(&Get, b"/") => Some("get"), [[./Post], [./Delete], [./Put]]);
-        check!(router.find(&Post, b"/") => Some("post"), [[./Get], [./Delete], [./Put]]);
-        check!(router.find(&Delete, b"/") => Some("delete"), [[./Get], [./Post], [./Put]]);
-        check!(router.find(&Put, b"/") => Some("put"), [[./Get], [./Post], [./Delete]]);
-        check!(router.find(&Head, b"/") => None, [[./Get], [./Post], [./Delete], [./Put]]);
+        check!(router(&Get, b"/") => Some("get"), [[./Post], [./Delete], [./Put]]);
+        check!(router(&Post, b"/") => Some("post"), [[./Get], [./Delete], [./Put]]);
+        check!(router(&Delete, b"/") => Some("delete"), [[./Get], [./Post], [./Put]]);
+        check!(router(&Put, b"/") => Some("put"), [[./Get], [./Post], [./Delete]]);
+        check!(router(&Head, b"/") => None, [[./Get], [./Post], [./Delete], [./Put]]);
     }
 
     #[test]
@@ -766,12 +717,12 @@ mod test {
 
         router1.insert_router("path/to", router2);
 
-        check!(router1.find(&Get, b"") => Some("test 1"), [["path"]]);
-        check!(router1.find(&Get, b"path/to/test/no2") => Some("test 2"));
-        check!(router1.find(&Get, b"path/to/test1/no/test3") => Some("test 3"), [[./Post]]);
-        check!(router1.find(&Post, b"path/to/test1/no/test3") => Some("test 3 post"), [[./Get]]);
-        check!(router1.find(&Get, b"path/to/test/no5") => Some("test 5"));
-        check!(router1.find(&Get, b"path/to") => Some("test 1"), [["test"], ["test1"]]);
+        check!(router1(&Get, b"") => Some("test 1"), [["path"]]);
+        check!(router1(&Get, b"path/to/test/no2") => Some("test 2"));
+        check!(router1(&Get, b"path/to/test1/no/test3") => Some("test 3"), [[./Post]]);
+        check!(router1(&Post, b"path/to/test1/no/test3") => Some("test 3 post"), [[./Get]]);
+        check!(router1(&Get, b"path/to/test/no5") => Some("test 5"));
+        check!(router1(&Get, b"path/to") => Some("test 1"), [["test"], ["test1"]]);
     }
 
 
@@ -786,8 +737,8 @@ mod test {
 
         router1.insert_router(":a", router2);
         
-        check!(router1.find(&Get, b"path/to/test1") => Some("test 2"), {"a" => "path", "b" => "to", "c" => "test1"}, [["test"]]);
-        check!(router1.find(&Get, b"path/to/test1/test") => Some("test 1"), {"a" => "path", "b" => "to", "c" => "test1"});
+        check!(router1(&Get, b"path/to/test1") => Some("test 2"), {"a" => "path", "b" => "to", "c" => "test1"}, [["test"]]);
+        check!(router1(&Get, b"path/to/test1/test") => Some("test 1"), {"a" => "path", "b" => "to", "c" => "test1"});
     }
 
 
@@ -802,18 +753,18 @@ mod test {
 
         router1.insert_router("path", router2);
 
-        check!(router1.find(&Get, b"path/to/test1") => Some("test 1"));
-        check!(router1.find(&Get, b"path/to/same/test1") => Some("test 1"));
-        check!(router1.find(&Get, b"path/to/the/same/test1") => Some("test 1"));
-        check!(router1.find(&Get, b"path/to") => Some("test 2"));
-        check!(router1.find(&Get, b"path") => None, [["to"], [*""]]);
+        check!(router1(&Get, b"path/to/test1") => Some("test 1"));
+        check!(router1(&Get, b"path/to/same/test1") => Some("test 1"));
+        check!(router1(&Get, b"path/to/the/same/test1") => Some("test 1"));
+        check!(router1(&Get, b"path/to") => Some("test 2"));
+        check!(router1(&Get, b"path") => None, [["to"], [*""]]);
     }
 
     
     #[bench]
     #[cfg(feature = "benchmark")]
     fn search_speed(b: &mut Bencher) {
-        let routes = vec![
+        let routes: Vec<(_, _, TestHandler)> = vec![
             (Get, "path/to/test1", "test 1".into()),
             (Get, "path/to/test/no2", "test 1".into()),
             (Get, "path/to/test1/no/test3", "test 1".into()),
@@ -842,11 +793,11 @@ mod test {
             "path/to/test1/nothing/at/all"
         ];
 
-        let router = routes.into_iter().collect::<TreeRouter<TestHandler>>();
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
         let mut counter = 0;
 
         b.iter(|| {
-            router.find(&Get, bpaths[counter]);
+            router.find(&Get, &mut (paths[counter].into()));
             counter = (counter + 1) % paths.len()
         });
     }
@@ -855,7 +806,7 @@ mod test {
     #[bench]
     #[cfg(feature = "benchmark")]
     fn wildcard_speed(b: &mut Bencher) {
-        let routes = vec![
+        let routes: Vec<(_, _, TestHandler)> = vec![
             (Get, "*/to/*/*/a", "test 1".into())
         ];
 
@@ -874,11 +825,11 @@ mod test {
             "path/to/test1/nothing/at/all/and/all/and/all/and/a"
         ];
 
-        let router = routes.into_iter().collect::<TreeRouter<TestHandler>>();
+        let router = routes.into_iter().collect::<TreeRouter<_>>();
         let mut counter = 0;
 
         b.iter(|| {
-            router.find(&Get, bpaths[counter]);
+            router.find(&Get, &mut (paths[counter].into()));
             counter = (counter + 1) % paths.len()
         });
     }

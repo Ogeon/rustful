@@ -6,6 +6,7 @@ use Handler;
 use context::MaybeUtf8Slice;
 
 ///A hyperlink.
+#[derive(Clone)]
 pub struct Link<'a> {
     ///The HTTP method for which an endpoint is available. It can be left
     ///unspecified if the method doesn't matter.
@@ -23,7 +24,7 @@ impl<'a> fmt::Debug for Link<'a> {
 }
 
 ///A segment of a hyperlink path.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct LinkSegment<'a> {
     ///The expected static segment or the name of a variable segment. Variable
     ///segments are allowed to have an empty string as label if it's unknown or
@@ -34,7 +35,7 @@ pub struct LinkSegment<'a> {
 }
 
 ///The type of a hyperlink segment.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum SegmentType {
     ///A static part of a path.
     Static,

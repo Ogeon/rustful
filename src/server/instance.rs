@@ -226,7 +226,7 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                                 variables: HashMap::new(),
                                 hyperlinks: vec![]
                             }
-                        }, |path| self.handlers.find(&context.method, &path));
+                        }, |path| self.handlers.find(&context.method, &mut (&path[..]).into()));
 
                         let Endpoint {
                             handler,
