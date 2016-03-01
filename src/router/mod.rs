@@ -168,6 +168,29 @@ impl<H: Handler> Router for H {
     }
 }
 
+impl<H: Handler> Router for Option<H> {
+    type Handler = H;
+
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, _method: Method, _route: R, item: H) {
+        *self = Some(item);
+    }
+
+    fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R, router: Option<H>) {
+        if router.is_some() {
+            *self = router;
+        }
+    }
+
+    fn find<'a>(&'a self, _method: &Method, _route: &mut RouteState) -> Endpoint<'a, H> {
+        self.as_ref().into()
+    }
+
+    fn hyperlinks<'a>(&'a self, mut base: Link<'a>) -> Vec<Link<'a>> {
+        base.handler = self.as_ref().map(|h| h as &Handler);
+        vec![base]
+    }
+}
+
 ///A segmented route.
 pub trait Route<'a> {
     ///An iterator over route segments.
