@@ -4,7 +4,7 @@ use std::iter::{Iterator, IntoIterator, FromIterator};
 use std::ops::Deref;
 use hyper::method::Method;
 
-use router::{Router, Route, Endpoint, MethodRouter, InsertState, RouteState};
+use router::{Router, Route, Endpoint, MethodRouter, InsertState, RouteState, Variables};
 use context::{MaybeUtf8Owned, MaybeUtf8Slice};
 use context::hypermedia::{Link, LinkSegment, SegmentType};
 use handler::Handler;
@@ -83,9 +83,9 @@ pub struct TreeRouter<T: Router> {
     pub find_hyperlinks: bool
 }
 
-impl<H: Handler> TreeRouter<MethodRouter<H>> {
+impl<H: Handler> TreeRouter<MethodRouter<Variables<H>>> {
     ///Creates an empty `TreeRouter`.
-    pub fn new() -> TreeRouter<MethodRouter<H>> {
+    pub fn new() -> TreeRouter<MethodRouter<Variables<H>>> {
         TreeRouter::default()
     }
 }
@@ -292,6 +292,12 @@ impl<T: Router + Default> Router for TreeRouter<T> {
         links
     }
 
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> TreeRouter<T> {
+        let mut router = TreeRouter::default();
+        router.insert(method, route, item);
+        router
+    }
+
     fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler) {
         let mut route = route.into();
         let mut endpoint = (&mut route).fold(self, |endpoint, segment| {
@@ -309,9 +315,39 @@ impl<T: Router + Default> Router for TreeRouter<T> {
 
         endpoint.merge_router(route, router);
     }
+
+    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R) {
+        let mut route = route.into();
+        if !route.is_empty() {
+            let mut new_root = TreeRouter::default();
+            new_root.find_hyperlinks = self.find_hyperlinks;
+            {
+                let mut endpoint = (&mut route).fold(&mut new_root, |endpoint, segment| {
+                    endpoint.find_or_insert_router(segment)
+                });
+
+                ::std::mem::swap(endpoint, self);
+            }
+            *self = new_root;
+        }
+
+        for (_, router) in &mut self.static_routes {
+            router.prefix(route.clone());
+        }
+
+        if let Some(router) = self.variable_route.as_mut() {
+            router.prefix(route.clone());
+        }
+
+        if let Some(router) = self.wildcard_route.as_mut() {
+            router.prefix(route.clone());
+        }
+
+        self.item.prefix(route);
+    }
 }
 
-impl<T: Handler, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> FromIterator<(Method, D, T)> for TreeRouter<MethodRouter<T>> {
+impl<T: Handler, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> FromIterator<(Method, D, T)> for TreeRouter<MethodRouter<Variables<T>>> {
     ///Create a `TreeRouter` from a collection of routes.
     ///
     ///```
@@ -345,7 +381,7 @@ impl<T: Handler, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> FromIterator
     ///let router: TreeRouter<_> = routes.into_iter().collect();
     ///# }
     ///```
-    fn from_iter<I: IntoIterator<Item=(Method, D, T)>>(iterator: I) -> TreeRouter<MethodRouter<T>> {
+    fn from_iter<I: IntoIterator<Item=(Method, D, T)>>(iterator: I) -> TreeRouter<MethodRouter<Variables<T>>> {
         let mut root = TreeRouter::new();
 
         for (method, route, item) in iterator {
@@ -429,7 +465,9 @@ mod test {
                         panic!("missing link: {:?}", link);
                     }
                 }
-                assert!(endpoint.hyperlinks.is_empty());
+                for link in endpoint.hyperlinks {
+                    panic!("unexpected hyperlink: {:?}", link);
+                }
             }
         );
         
@@ -760,6 +798,38 @@ mod test {
         check!(router1(&Get, b"path") => None, [["to"], [*""]]);
     }
 
+    #[test]
+    fn prefix_router_variables() {
+        let routes1 = vec![
+            (Get, ":b/:c", "test 2".into()),
+            (Get, ":b/:c/test", "test 1".into())
+        ];
+
+        let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
+        router1.find_hyperlinks = true;
+        router1.prefix(":a");
+        
+        check!(router1(&Get, b"path/to/test1") => Some("test 2"), {"a" => "path", "b" => "to", "c" => "test1"}, [["test"]]);
+        check!(router1(&Get, b"path/to/test1/test") => Some("test 1"), {"a" => "path", "b" => "to", "c" => "test1"});
+    }
+
+    #[test]
+    fn prefix_router_wildcard() {
+        let routes1 = vec![
+            (Get, "path/to", "test 2".into()),
+            (Get, "*/test1", "test 1".into()),
+        ];
+
+        let mut router1 = routes1.into_iter().collect::<TreeRouter<_>>();
+        router1.find_hyperlinks = true;
+        router1.prefix(":a");
+
+        check!(router1(&Get, b"a/path/to/test1") => Some("test 1"), {"a" => "a"});
+        check!(router1(&Get, b"a/path/to/same/test1") => Some("test 1"), {"a" => "a"});
+        check!(router1(&Get, b"a/path/to/the/same/test1") => Some("test 1"), {"a" => "a"});
+        check!(router1(&Get, b"a/path/to") => Some("test 2"), {"a" => "a"});
+        check!(router1(&Get, b"a/path") => None, [["to"], ["test1"]]);
+    }
     
     #[bench]
     #[cfg(feature = "benchmark")]

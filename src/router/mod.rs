@@ -81,7 +81,7 @@
 //![insert_routes]: ../macro.insert_routes!.html
 
 use std::collections::HashMap;
-use std::iter::{Iterator, FlatMap};
+use std::iter::{Iterator, FlatMap, Peekable};
 use std::slice::Split;
 use std::ops::Deref;
 use std::marker::PhantomData;
@@ -93,9 +93,11 @@ use context::hypermedia::Link;
 
 pub use self::tree_router::TreeRouter;
 pub use self::method_router::MethodRouter;
+pub use self::variables::Variables;
 
 mod tree_router;
 mod method_router;
+mod variables;
 
 ///API endpoint data.
 pub struct Endpoint<'a, T: 'a> {
@@ -126,6 +128,10 @@ pub trait Router: Send + Sync + 'static {
     ///The request handler type that is stored within this router.
     type Handler: Handler;
 
+    ///Build a new router from a route. The router may choose to ignore
+    ///both `method` and `route`, depending on its implementation.
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> Self;
+
     ///Insert a new route into the router. The router may choose to ignore
     ///both `method` and `route`, depending on its implementation.
     fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler);
@@ -133,6 +139,9 @@ pub trait Router: Send + Sync + 'static {
     ///Insert an other router at a path. The content of the other router will
     ///be merged with this one and conflicting content will be overwritten.
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: Self);
+
+    ///Change the router as if it was placed under the provided route.
+    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R);
 
     ///Merge this router with an other one, overwriting conflicting parts.
     fn merge(&mut self, other: Self) where Self: Sized {
@@ -150,6 +159,10 @@ pub trait Router: Send + Sync + 'static {
 impl<H: Handler> Router for H {
     type Handler = H;
 
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> H {
+        item
+    }
+
     fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, _method: Method, _route: R, item: H) {
         *self = item;
     }
@@ -157,6 +170,8 @@ impl<H: Handler> Router for H {
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R, router: H) {
         *self = router;
     }
+
+    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R) {}
 
     fn find<'a>(&'a self, _method: &Method, _route: &mut RouteState) -> Endpoint<'a, H> {
         Some(self).into()
@@ -171,6 +186,10 @@ impl<H: Handler> Router for H {
 impl<H: Handler> Router for Option<H> {
     type Handler = H;
 
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> Option<H> {
+        Some(item)
+    }
+
     fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, _method: Method, _route: R, item: H) {
         *self = Some(item);
     }
@@ -180,6 +199,8 @@ impl<H: Handler> Router for Option<H> {
             *self = router;
         }
     }
+
+    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R) {}
 
     fn find<'a>(&'a self, _method: &Method, _route: &mut RouteState) -> Endpoint<'a, H> {
         self.as_ref().into()
@@ -304,7 +325,7 @@ impl<I: Iterator> Iterator for RouteIter<I> {
 ///record the variable names.
 #[derive(Clone)]
 pub struct InsertState<'a, I: Iterator<Item=&'a [u8]>> {
-    route: I,
+    route: Peekable<I>,
     variables: Vec<MaybeUtf8Owned>,
     _p: PhantomData<&'a [u8]>,
 }
@@ -313,6 +334,11 @@ impl<'a, I: Iterator<Item=&'a [u8]>> InsertState<'a, I> {
     ///Extract the variable names from the parsed path.
     pub fn variables(self) -> Vec<MaybeUtf8Owned> {
         self.variables
+    }
+
+    ///Check if there are no more segments.
+    pub fn is_empty(&mut self) -> bool {
+        self.route.peek().is_none()
     }
 }
 
@@ -333,7 +359,7 @@ impl<'a, I: Iterator<Item=&'a [u8]>> Iterator for InsertState<'a, I> {
 impl<'a, R: Route<'a> + ?Sized> From<&'a R> for InsertState<'a, R::Segments> {
     fn from(route: &'a R) -> InsertState<'a, R::Segments> {
         InsertState {
-            route: route.segments(),
+            route: route.segments().peekable(),
             variables: vec![],
             _p: PhantomData,
         }
