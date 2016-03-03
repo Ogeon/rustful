@@ -1,5 +1,7 @@
 //!Routers stores request handlers, using an HTTP method and a path as keys.
 //!
+//!# Building Routers
+//!
 //!Rustful provides a tree structured all-round router called `TreeRouter`,
 //!but any other type of router can be used, as long as it implements the
 //!`Router` trait. This will also make it possible to initialize it using the
@@ -79,6 +81,95 @@
 //!```
 //!
 //![insert_routes]: ../macro.insert_routes!.html
+//!
+//!#Variables
+//!
+//!Routes may contain variables, that are useful for capturing parts of the
+//!requested path as input to the handler. The syntax for a variable is simply
+//!an indicator character (`:` or `*`) followed by a label. Variables without
+//!labels are also valid, but their values will be discarded.
+//!
+//!##Variable Segments (:label)
+//!
+//!A variable segment will match a single arbitrary segment. They are probably
+//!the most commonly used variables and may, for example, be used to select a
+//!blog post: `"posts/:year/:month/:day/:title_slug"`.
+//!
+//!```text
+//!pattern = "a/:v/b"
+//!"a/c/b" -> v = "c"
+//!"a/c/d/b" -> no match
+//!"a/b" -> no match
+//!"a/c/b/d" -> no match
+//!```
+//!
+//!##Variable Sequences (*label)
+//!
+//!A variable sequence is similar to a variable segment, but with the
+//!difference that it may consume multiple segments until the rest of the path
+//!gives a match. An example use case is a route for downloadable files that
+//!may be arranged in arbitrary directories: `"downloads/*file_path"`.
+//!
+//!```text
+//!pattern = "a/*v/b"
+//!"a/c/b" -> v = "c"
+//!"a/c/d/b" -> v = "c/d"
+//!"a/b" -> no match
+//!"a/c/b/d" -> no match
+//!```
+//!
+//!```text
+//!pattern = "a/b/*v"
+//!"a/b/c" -> v = "c"
+//!"a/b/c/d" -> v = "c/d"
+//!"a/b" -> no match
+//!```
+//!
+//!# Router Composition
+//!
+//!The default tree router is actually a composition of three routers:
+//![`TreeRouter`][tree_router], [`MethodRouter`][method_router] and
+//![`Variables`][variables]. They come together as the type
+//!`TreeRouter<MethodRouter<Variables<_>>>`, but the `TreeRouter` assumes that
+//!this is most probably what you want, so this is what `TreeRouter::new()`
+//!gives you. No need to write it all out in most of the cases.
+//!
+//!There may, however, be cases where you want something else. What if you
+//!don't care about the HTTP method? Maybe your handler takes care of that
+//!internally. Sure, no problem:
+//!
+//!```
+//!use rustful::TreeRouter;
+//!use rustful::router::Variables;
+//!
+//!let my_router = TreeRouter::<Option<Variables<_>>>::default();
+//!# let _r: TreeRouter<Option<Variables<DummyHandler>>> = my_router;
+//!# struct DummyHandler;
+//!# impl rustful::Handler for DummyHandler {
+//!#     fn handle_request(&self, _: rustful::Context, _: rustful::Response){}
+//!# }
+//!```
+//!
+//!And what about those route variables? Not using them at all? Well, just
+//!remove them too, if you don't want them:
+//!
+//!```
+//!use rustful::TreeRouter;
+//!
+//!let my_router = TreeRouter::<Option<_>>::default();
+//!# let _r: TreeRouter<Option<DummyHandler>> = my_router;
+//!# struct DummyHandler;
+//!# impl rustful::Handler for DummyHandler {
+//!#     fn handle_request(&self, _: rustful::Context, _: rustful::Response){}
+//!# }
+//!```
+//!
+//!You can simply recombine and reorder the router types however you want, or
+//!why not make your own router? Just implement the `Router` trait.
+//!
+//![tree_router]: struct.TreeRouter.html
+//![method_router]: struct.MethodRouter.html
+//![variables]: struct.Variables.html
 
 use std::collections::HashMap;
 use std::iter::{Iterator, FlatMap, Peekable};

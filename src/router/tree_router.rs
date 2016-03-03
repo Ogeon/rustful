@@ -18,54 +18,14 @@ enum Branch {
     Wildcard
 }
 
-///Stores handlers, using an HTTP method and a route as key.
+///A tree shaped router that selects handlers using paths.
 ///
-///#Variables
+///Each tree node stores an other router of type `T`, which has to implement
+///`Default` to allow "empty" nodes, and a number of child references. The
+///requested path must always be exhausted before sub-routers are searched, so
+///there is no point in storing other path based routers in a `TreeRouter`.
 ///
-///Routes may contain variables, that are useful for capturing parts of the
-///requested path as input to the handler. The syntax for a variable is simply
-///an indicator character (`:` or `*`) followed by a label. Variables without
-///labels are also valid, but their values will be discarded.
-///
-///##Variable Segments (:label)
-///
-///A variable segment will match a single arbitrary segment. They are probably
-///the most commonly used variables and may, for example, be used to select a
-///blog post: `"posts/:year/:month/:day/:title_slug"`.
-///
-///```text
-///pattern = "a/:v/b"
-///"a/c/b" -> v = "c"
-///"a/c/d/b" -> no match
-///"a/b" -> no match
-///"a/c/b/d" -> no match
-///```
-///
-///##Variable Sequences (*label)
-///
-///A variable sequence is similar to a variable segment, but with the
-///difference that it may consume multiple segments until the rest of the path
-///gives a match. An example use case is a route for downloadable files that
-///may be arranged in arbitrary directories: `"downloads/*file_path"`.
-///
-///```text
-///pattern = "a/*v/b"
-///"a/c/b" -> v = "c"
-///"a/c/d/b" -> v = "c/d"
-///"a/b" -> no match
-///"a/c/b/d" -> no match
-///```
-///
-///```text
-///pattern = "a/b/*v"
-///"a/b/c" -> v = "c"
-///"a/b/c/d" -> v = "c/d"
-///"a/b" -> no match
-///```
-///
-///#Hyperlinks
-///
-///The 'TreeRouter` has support for shallow hyperlinks to children, siblings,
+///The `TreeRouter` has support for shallow hyperlinks to children, siblings,
 ///cousins, and so forth. The use of variable sequences complicates this
 ///process and may cause confusing results in certain situations. The
 ///hyperlinks may or may not point to a handler.
@@ -73,7 +33,7 @@ enum Branch {
 ///Hyperlinks has to be activated by setting `find_hyperlinks` to  `true`.
 
 #[derive(Clone)]
-pub struct TreeRouter<T: Router> {
+pub struct TreeRouter<T: Router + Default> {
     item: T,
     static_routes: HashMap<MaybeUtf8Owned, TreeRouter<T>>,
     variable_route: Option<Box<TreeRouter<T>>>,
@@ -84,7 +44,11 @@ pub struct TreeRouter<T: Router> {
 }
 
 impl<H: Handler> TreeRouter<MethodRouter<Variables<H>>> {
-    ///Creates an empty `TreeRouter`.
+    ///Creates an empty `TreeRouter<MethodRouter<Variables<H>>>`, which is
+    ///probably the most common composition. It will select handlers based on
+    ///path and then HTTP method, and collect any variables on the way.
+    ///
+    ///Use `TreeRouter::default()` if this is not the desired composition.
     pub fn new() -> TreeRouter<MethodRouter<Variables<H>>> {
         TreeRouter::default()
     }
@@ -150,8 +114,6 @@ impl<T: Router + Default> Router for TreeRouter<T> {
     type Handler = T::Handler;
 
     fn find<'a>(&'a self, method: &Method, route: &mut RouteState) -> Endpoint<'a, Self::Handler> {
-        //let path = route.segments().collect::<Vec<_>>();
-        //let mut variables = vec![None; path.len()];
         let now = route.snapshot();
         let mut stack = vec![(self, Wildcard, now), (self, Variable, now), (self, Static, now)];
 

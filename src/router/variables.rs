@@ -3,10 +3,13 @@ use context::MaybeUtf8Owned;
 use context::hypermedia::Link;
 use {Method, Handler};
 
-///An endpoint which assigns names to route variables.
+///A router endpoint that assigns names to route variables.
 ///
 ///It's technically a single-item router, with the purpose of pairing route
-///variable names with input values.
+///variable names with input values, but it can't contain other routers, since
+///it has be at the end of a router chain to know what variables to use. It
+///won't do any other routing work, so make sure to pair it with, at least, a
+///path based router.
 #[derive(Clone)]
 pub struct Variables<H: Handler> {
     handler: H,

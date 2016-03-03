@@ -4,7 +4,11 @@ use router::{Router, Endpoint, InsertState, RouteState};
 use context::hypermedia::Link;
 use Method;
 
-///A router which selects a handler from an HTTP method.
+///A router that selects an item from an HTTP method.
+///
+///It's a simple mapping between `Method` and a router `T`, while the
+///requested path is ignored. It's therefore a good idea to pair a
+///`MethodRouter` with an exhaustive path router of some sort.
 #[derive(Clone)]
 pub struct MethodRouter<T> {
     items: HashMap<Method, T>,
