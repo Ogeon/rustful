@@ -183,32 +183,50 @@ impl<H: Handler> Router for H {
     }
 }
 
-impl<H: Handler> Router for Option<H> {
-    type Handler = H;
+impl<T: Router> Router for Option<T> {
+    type Handler = T::Handler;
 
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> Option<H> {
-        Some(item)
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> Option<T> {
+        Some(T::build(method, route, item))
     }
 
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, _method: Method, _route: R, item: H) {
-        *self = Some(item);
-    }
-
-    fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R, router: Option<H>) {
-        if router.is_some() {
-            *self = router;
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler) {
+        match *self {
+            Some(ref mut r) => r.insert(method, route, item),
+            ref mut s @ None => *s = Some(T::build(method, route, item)),
         }
     }
 
-    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R) {}
-
-    fn find<'a>(&'a self, _method: &Method, _route: &mut RouteState) -> Endpoint<'a, H> {
-        self.as_ref().into()
+    fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: Option<T>) {
+        if let Some(mut other) = router {
+            match *self {
+                Some(ref mut r) => r.insert_router(route, other),
+                ref mut s @ None => {
+                    other.prefix(route);
+                    *s = Some(other)
+                }
+            }
+        }
     }
 
-    fn hyperlinks<'a>(&'a self, mut base: Link<'a>) -> Vec<Link<'a>> {
-        base.handler = self.as_ref().map(|h| h as &Handler);
-        vec![base]
+    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R) {
+        self.as_mut().map(|r| r.prefix(route));
+    }
+
+    fn find<'a>(&'a self, method: &Method, route: &mut RouteState) -> Endpoint<'a, Self::Handler> {
+        if let Some(ref router) = *self {
+            router.find(method, route)
+        } else {
+            None.into()
+        }
+    }
+
+    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>> {
+        if let Some(ref router) = *self {
+            router.hyperlinks(base)
+        } else {
+            vec![]
+        }
     }
 }
 
