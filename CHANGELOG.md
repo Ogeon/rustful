@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 0.7.0 - 2016-03-09
+
+ * [#96][96]: Router composition. Closes [#86][86].
+ * [#99][99]: Update dependencies. Closes [#84][84].
+ * [#92][92]: Minor todo example refactoring.
+ * [#91][91]: Cleanup some warnings from Clippy.
+
 ## Version 0.6.1 - 2016-01-12
 
  * [#90][90]: Edit insert_routes! to avoid type ascription conflicts, and some fixes.
@@ -59,6 +66,10 @@
 
 ## Version 0.1.1 - 2015-05-16
 
+[96]: https://github.com/Ogeon/rustful/pull/96
+[99]: https://github.com/Ogeon/rustful/pull/99
+[92]: https://github.com/Ogeon/rustful/pull/92
+[91]: https://github.com/Ogeon/rustful/pull/91
 [90]: https://github.com/Ogeon/rustful/pull/90
 [81]: https://github.com/Ogeon/rustful/pull/81
 [82]: https://github.com/Ogeon/rustful/pull/82
@@ -89,6 +100,8 @@
 [43]: https://github.com/Ogeon/rustful/pull/43
 [40]: https://github.com/Ogeon/rustful/pull/40
 [38]: https://github.com/Ogeon/rustful/pull/38
+[86]: https://github.com/Ogeon/rustful/issues/86
+[84]: https://github.com/Ogeon/rustful/issues/84
 [76]: https://github.com/Ogeon/rustful/issues/76
 [77]: https://github.com/Ogeon/rustful/issues/77
 [71]: https://github.com/Ogeon/rustful/issues/71
