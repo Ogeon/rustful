@@ -107,9 +107,7 @@ impl<R: Router> ServerInstance<R> {
             Scheme::Http => try!(HyperServer::http(host)),
             Scheme::Https {cert, key} => try!(HyperServer::https(host, cert, key)),
         };
-        if let Some(ref keep_alive) = self.keep_alive {
-            server.keep_alive(keep_alive.timeout);
-        }
+        server.keep_alive(self.keep_alive.as_ref().map(|k| k.timeout));
         server.run(self, threads)
     }
 
@@ -119,9 +117,7 @@ impl<R: Router> ServerInstance<R> {
         let host = self.host;
         let threads = self.threads;
         let mut server = try!(HyperServer::http(host));
-        if let Some(ref keep_alive) = self.keep_alive {
-            server.keep_alive(keep_alive.timeout);
-        }
+        server.keep_alive(self.keep_alive.as_ref().map(|k| k.timeout));
         server.run(self, threads)
     }
 
@@ -353,7 +349,7 @@ impl HyperServer {
     }
 
     #[cfg(feature = "ssl")]
-    fn keep_alive(&mut self, timeout: Duration) {
+    fn keep_alive(&mut self, timeout: Option<Duration>) {
         match *self {
             HyperServer::Http(ref mut s) => s.keep_alive(timeout),
             HyperServer::Https(ref mut s) => s.keep_alive(timeout),
@@ -361,7 +357,7 @@ impl HyperServer {
     }
 
     #[cfg(not(feature = "ssl"))]
-    fn keep_alive(&mut self, timeout: Duration) {
+    fn keep_alive(&mut self, timeout: Option<Duration>) {
         match *self {
             HyperServer::Http(ref mut s) => s.keep_alive(timeout),
         }
