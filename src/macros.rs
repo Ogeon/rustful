@@ -89,7 +89,7 @@
 macro_rules! insert_routes {
     ($router:expr => {$($paths:tt)+}) => {
         {
-            use $crate::Router;
+            use $crate::router::Router;
             let mut router = $router;
             __rustful_insert_internal!(router, [], $($paths)+);
             router
@@ -121,7 +121,7 @@ macro_rules! __rustful_insert_internal {
                 __rustful_to_path!($($method)::+)
             };
             let path = __rustful_route_expr!($($steps),*);
-            $router.insert(method, &path, $handler);
+            $router.insert(method, path, $handler);
             __rustful_insert_internal!($router, [$($steps),*], $($next)*);
         }
     };
@@ -133,7 +133,7 @@ macro_rules! __rustful_insert_internal {
                 __rustful_to_path!($($method)::+)
             };
             let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
-            $router.insert(method, &path, $handler);
+            $router.insert(method, path, $handler);
             __rustful_insert_internal!($router, [$($steps),*], $($next)*);
         }
     };
@@ -145,7 +145,7 @@ macro_rules! __rustful_insert_internal {
                 __rustful_to_path!($($method)::+)
             };
             let path = __rustful_route_expr!($($steps),*);
-            $router.insert(method, &path, $handler);
+            $router.insert(method, path, $handler);
         }
     };
     ($router:ident, [$($steps:expr),*], $path:tt => $($method:tt)::+ : $handler:expr) => {
@@ -156,7 +156,7 @@ macro_rules! __rustful_insert_internal {
                 __rustful_to_path!($($method)::+)
             };
             let path = __rustful_route_expr!($($steps,)* __rustful_to_expr!($path));
-            $router.insert(method, &path, $handler);
+            $router.insert(method, path, $handler);
         }
     };
 }
