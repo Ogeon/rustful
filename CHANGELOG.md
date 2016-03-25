@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 0.8.0 - 2016-03-26
+
+
+## Version 0.8.0 - 2016-03-25
+
+ * [#101][101]: Bypass the prompt in multirust-rs.
+
 ## Version 0.7.0 - 2016-03-09
 
  * [#96][96]: Router composition. Closes [#86][86].
@@ -66,6 +73,7 @@
 
 ## Version 0.1.1 - 2015-05-16
 
+[101]: https://github.com/Ogeon/rustful/pull/101
 [96]: https://github.com/Ogeon/rustful/pull/96
 [99]: https://github.com/Ogeon/rustful/pull/99
 [92]: https://github.com/Ogeon/rustful/pull/92
