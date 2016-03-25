@@ -32,7 +32,8 @@ phf = "0.7"
 num_cpus = "0.2"
 
 [dependencies.hyper]
-version = "0.9"
+git = "https://github.com/hyperium/hyper"
+branch = "mio"
 default-features = false
 
 [dependencies.multipart]

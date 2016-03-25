@@ -18,7 +18,7 @@
 //!use rustful::header::UserAgent;
 //!
 //!fn my_handler(context: Context, response: Response) {
-//!    if let Some(&UserAgent(ref user_agent)) = context.headers.get() {
+//!    if let Some(&UserAgent(ref user_agent)) = context.request.headers().get() {
 //!        response.send(format!("got user agent string \"{}\"", user_agent));
 //!    } else {
 //!        response.send("no user agent string provided");
@@ -75,7 +75,7 @@
 //!        response.send(format!("food for thought: {}", some_wise_words));
 //!    } else {
 //!        error!("there should be a string literal in `global`");
-//!        response.set_status(InternalServerError);
+//!        response.status = InternalServerError;
 //!    }
 //!}
 //!
@@ -90,7 +90,8 @@
 //!and query strings. The documentation for [`BodyReader`][body_reader] gives
 //!more examples.
 //!
-//!```
+
+/*//!```
 //!use std::io::{BufReader, BufRead};
 //!use rustful::{Context, Response};
 //!
@@ -102,7 +103,8 @@
 //!        writer.send(format!("{}: {}", line_no + 1, line));
 //!    }
 //!}
-//!```
+//!```*/
+
 //!
 //![context]: struct.Context.html
 //![headers]: ../header/struct.Headers.html
@@ -112,11 +114,13 @@
 use std::net::SocketAddr;
 use std::fmt;
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use HttpVersion;
 use Method;
 use header::Headers;
 use server::Global;
+use handler::Control;
 
 use self::body::BodyReader;
 use self::hypermedia::Link;
@@ -129,10 +133,11 @@ pub use self::maybe_utf8::{MaybeUtf8, MaybeUtf8Owned, MaybeUtf8Slice, Buffer};
 
 mod parameters;
 pub use self::parameters::Parameters;
+pub use hyper::server::Request;
 
 ///A container for handler input, like request data and utilities.
-pub struct Context<'a, 'b: 'a, 's> {
-    ///Headers from the HTTP request.
+pub struct Context<'a> {
+    /*///Headers from the HTTP request.
     pub headers: Headers,
 
     ///The HTTP version used in the request.
@@ -142,13 +147,15 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub address: SocketAddr,
 
     ///The HTTP method.
-    pub method: Method,
+    pub method: Method,*/
 
     ///The requested path.
     pub uri_path: UriPath,
 
+    pub request: Request,
+
     ///Hyperlinks from the current endpoint.
-    pub hyperlinks: Vec<Link<'s>>,
+    pub hyperlinks: Vec<Link<'a>>,
 
     ///Route variables.
     pub variables: Parameters,
@@ -160,10 +167,48 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub fragment: Option<MaybeUtf8Owned>,
 
     ///Globally accessible data.
-    pub global: &'s Global,
+    pub global: Arc<Global>,
 
     ///A reader for the request body.
-    pub body: BodyReader<'a, 'b>,
+    pub body: BodyReader<'a>,
+}
+
+///A more primitive `Context`, for `RawHandler`.
+pub struct RawContext<'a> {
+    /*///Headers from the HTTP request.
+    pub headers: Headers,
+
+    ///The HTTP version used in the request.
+    pub http_version: HttpVersion,
+
+    ///The client address
+    pub address: SocketAddr,
+
+    ///The HTTP method.
+    pub method: Method,*/
+
+    ///The requested path.
+    pub uri_path: UriPath,
+
+    pub request: Request,
+
+    ///Hyperlinks from the current endpoint.
+    pub hyperlinks: Vec<Link<'a>>,
+
+    ///Route variables.
+    pub variables: Parameters,
+
+    ///Query variables from the path.
+    pub query: Parameters,
+
+    ///The fragment part of the URL (after #), if provided.
+    pub fragment: Option<MaybeUtf8Owned>,
+
+    ///Globally accessible data.
+    pub global: Arc<Global>,
+
+    ///The event loop controller.
+    pub control: Control,
 }
 
 ///A URI Path that can be a path or an asterisk (`*`).

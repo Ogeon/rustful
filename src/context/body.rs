@@ -10,22 +10,128 @@ use multipart::server::{HttpRequest, Multipart};
 
 use std::io::{self, Read};
 
-use hyper::buffer::BufReader;
-use hyper::http::h1::HttpReader;
-use hyper::net::NetworkStream;
+use utils::FnBox;
+
+//use hyper::buffer::BufReader;
+//use hyper::http::h1::HttpReader;
+//use hyper::net::NetworkStream;
 
 use context::Parameters;
 use header::Headers;
 
 ///A reader for a request body.
-pub struct BodyReader<'a, 'b: 'a> {
-    reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>,
+pub struct BodyReader<'a> {
+    on_body: &'a mut Option<Box<FnBox<io::Result<Vec<u8>>, Output=()> + Send>>,
 
-    #[cfg(feature = "multipart")]
-    multipart_boundary: Option<String>
+    //#[cfg(feature = "multipart")]
+    //multipart_boundary: Option<String>
 }
 
-impl<'a, 'b> BodyReader<'a, 'b> {
+impl<'a> BodyReader<'a> {
+    #[doc(hidden)]
+    pub fn new(on_body: &'a mut Option<Box<FnBox<io::Result<Vec<u8>>, Output=()> + Send>>) -> BodyReader<'a> {
+        BodyReader {
+            on_body: on_body,
+        }
+    }
+
+    ///Read the body, and use it when everything has arrived.
+    pub fn read_to_end<F: FnOnce(io::Result<Vec<u8>>) + Send + 'static>(mut self, on_body: F) {
+        *self.on_body = Some(Box::new(on_body) as Box<FnBox<io::Result<Vec<u8>>, Output=()> + Send>);
+    }
+
+    ///Read and parse the request body as a query string. The body will be
+    ///decoded as UTF-8 and plain '+' characters will be replaced with spaces.
+    ///
+    ///A simplified example of how to parse `a=number&b=number`:
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    //Parse the request body as a query string
+    ///    context.body.read_query_body(move |query| {
+    ///        let query = query.expect("failed to decode query body");
+    ///
+    ///        //Find "a" and "b" and assume that they are numbers
+    ///        let a: f64 = query.get("a").and_then(|number| number.parse().ok()).unwrap();
+    ///        let b: f64 = query.get("b").and_then(|number| number.parse().ok()).unwrap();
+    ///
+    ///        response.send(format!("{} + {} = {}", a, b, a + b));
+    ///    });
+    ///}
+    ///```
+    #[inline]
+    pub fn read_query_body<F: FnOnce(io::Result<Parameters>) + Send + 'static>(self, on_body: F) {
+        self.read_to_end(move |body| on_body(body.map(|buf| ::utils::parse_parameters(&buf))))
+    }
+
+    ///Read the request body into a generic JSON structure. This structure can
+    ///then be navigated and parsed freely.
+    ///
+    ///A simplified example of how to parse `{ "a": number, "b": number }`:
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    //Parse the request body as JSON
+    ///    context.body.read_json_body(move |json| {
+    ///        let json = json.expect("failed to decode josn");
+    ///
+    ///        //Find "a" and "b" in the root object and assume that they are numbers
+    ///        let a = json.find("a").and_then(|number| number.as_f64()).unwrap();
+    ///        let b = json.find("b").and_then(|number| number.as_f64()).unwrap();
+    ///
+    ///        response.send(format!("{} + {} = {}", a, b, a + b));
+    ///    });
+    ///}
+    ///```
+    #[cfg(feature = "rustc_json_body")]
+    pub fn read_json_body<F: FnOnce(Result<json::Json, json::BuilderError>) + Send + 'static>(self, on_body: F) {
+        self.read_to_end(move |body| on_body(match body {
+            Ok(body) => json::Json::from_str(&String::from_utf8_lossy(&body)),
+            Err(e) => Err(e.into()),
+        }))
+    }
+
+    ///Read and decode a request body as a type `T`. The target type must
+    ///implement `rustc_serialize::Decodable`.
+    ///
+    ///A simplified example of how to parse `{ "a": number, "b": number }`:
+    ///
+    ///```
+    ///extern crate rustful;
+    ///extern crate rustc_serialize;
+    ///
+    ///use rustful::{Context, Response};
+    ///
+    ///#[derive(RustcDecodable)]
+    ///struct Foo {
+    ///    a: f64,
+    ///    b: f64
+    ///}
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    //Decode a JSON formatted request body into Foo
+    ///    context.body.decode_json_body(move |foo| {
+    ///        let foo: Foo = foo.expect("failed to decode 'Foo'");
+    ///
+    ///        response.send(format!("{} + {} = {}", foo.a, foo.b, foo.a + foo.b));
+    ///    });
+    ///}
+    ///# fn main() {}
+    ///```
+    #[cfg(feature = "rustc_json_body")]
+    pub fn decode_json_body<T: Decodable, F: FnOnce(Result<T, json::DecoderError>) + Send + 'static>(self, on_body: F) {
+        self.read_to_end(move |body| on_body(match body {
+            Ok(body) => json::decode(&String::from_utf8_lossy(&body)),
+            Err(e) => Err(json::ParserError::from(e).into()),
+        }))
+    }
+}
+
+/*impl<'a, 'b> BodyReader<'a, 'b> {
     #[doc(hidden)]
     #[cfg(feature = "multipart")]
     ///Internal and may change without warning.
@@ -111,91 +217,6 @@ impl<'a, 'b> BodyReader<'a, 'b> {
             }).ok()
         )
     }
-
-    ///Read and parse the request body as a query string. The body will be
-    ///decoded as UTF-8 and plain '+' characters will be replaced with spaces.
-    ///
-    ///A simplified example of how to parse `a=number&b=number`:
-    ///
-    ///```
-    ///use rustful::{Context, Response};
-    ///
-    ///fn my_handler(mut context: Context, response: Response) {
-    ///    //Parse the request body as a query string
-    ///    let query = context.body.read_query_body().unwrap();
-    ///
-    ///    //Find "a" and "b" and assume that they are numbers
-    ///    let a: f64 = query.get("a").and_then(|number| number.parse().ok()).unwrap();
-    ///    let b: f64 = query.get("b").and_then(|number| number.parse().ok()).unwrap();
-    ///
-    ///    response.send(format!("{} + {} = {}", a, b, a + b));
-    ///}
-    ///```
-    #[inline]
-    pub fn read_query_body(&mut self) -> io::Result<Parameters> {
-        let mut buf = Vec::new();
-        try!(self.read_to_end(&mut buf));
-        Ok(::utils::parse_parameters(&buf))
-    }
-
-    ///Read the request body into a generic JSON structure. This structure can
-    ///then be navigated and parsed freely.
-    ///
-    ///A simplified example of how to parse `{ "a": number, "b": number }`:
-    ///
-    ///```
-    ///use rustful::{Context, Response};
-    ///
-    ///fn my_handler(mut context: Context, response: Response) {
-    ///    //Parse the request body as JSON
-    ///    let json = context.body.read_json_body().unwrap();
-    ///
-    ///    //Find "a" and "b" in the root object and assume that they are numbers
-    ///    let a = json.find("a").and_then(|number| number.as_f64()).unwrap();
-    ///    let b = json.find("b").and_then(|number| number.as_f64()).unwrap();
-    ///
-    ///    response.send(format!("{} + {} = {}", a, b, a + b));
-    ///}
-    ///```
-    #[cfg(feature = "rustc_json_body")]
-    pub fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError> {
-        json::Json::from_reader(self)
-    }
-
-    ///Read and decode a request body as a type `T`. The target type must
-    ///implement `rustc_serialize::Decodable`.
-    ///
-    ///A simplified example of how to parse `{ "a": number, "b": number }`:
-    ///
-    ///```
-    ///extern crate rustful;
-    ///extern crate rustc_serialize;
-    ///
-    ///use rustful::{Context, Response};
-    ///
-    ///#[derive(RustcDecodable)]
-    ///struct Foo {
-    ///    a: f64,
-    ///    b: f64
-    ///}
-    ///
-    ///fn my_handler(mut context: Context, response: Response) {
-    ///    //Decode a JSON formatted request body into Foo
-    ///    let foo: Foo = context.body.decode_json_body().unwrap();
-    ///
-    ///    response.send(format!("{} + {} = {}", foo.a, foo.b, foo.a + foo.b));
-    ///}
-    ///# fn main() {}
-    ///```
-    #[cfg(feature = "rustc_json_body")]
-    pub fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T> {
-        let mut buf = String::new();
-        try!(self.read_to_string(&mut buf).map_err(|e| {
-            let parse_err = json::ParserError::IoError(e);
-            json::DecoderError::ParseError(parse_err)
-        }));
-        json::decode(&buf)
-    }
 }
 
 impl<'a, 'b> Read for BodyReader<'a, 'b> {
@@ -231,4 +252,4 @@ impl<'r, 'a, 'b> Read for MultipartRequest<'r, 'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.reader.read(buf)
     }
-}
+}*/

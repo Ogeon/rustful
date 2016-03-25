@@ -78,3 +78,17 @@ mod test {
         assert_eq!(parameters.get_raw("ab"), Some(&ab));
     }
 }
+
+pub trait FnBox<A> {
+    type Output;
+
+    fn call_box(self: Box<Self>, args: A) -> Self::Output;
+}
+
+impl<A, R, F> FnBox<A> for F where F: FnOnce(A) -> R {
+    type Output = R;
+
+    fn call_box(self: Box<F>, arg: A) -> R {
+        self(arg)
+    }
+}

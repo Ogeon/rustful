@@ -178,7 +178,7 @@ use std::ops::Deref;
 use std::marker::PhantomData;
 use hyper::method::Method;
 
-use handler::Handler;
+use handler::Factory;
 use context::MaybeUtf8Owned;
 use context::hypermedia::Link;
 
@@ -217,7 +217,7 @@ impl<'a, T> From<Option<&'a T>> for Endpoint<'a, T> {
 ///trait will also make the router compatible with the `insert_routes!` macro.
 pub trait Router: Send + Sync + 'static {
     ///The request handler type that is stored within this router.
-    type Handler: Handler;
+    type Handler: Factory;
 
     ///Build a new router from a route. The router may choose to ignore
     ///both `method` and `route`, depending on its implementation.
@@ -247,7 +247,7 @@ pub trait Router: Send + Sync + 'static {
     fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>>;
 }
 
-impl<H: Handler> Router for H {
+impl<H: Factory> Router for H {
     type Handler = H;
 
     fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> H {

@@ -1,11 +1,12 @@
 //!Request and context filters.
 
-use anymap::AnyMap;
+use anymap::Map;
+use anymap::any::Any;
 
 use StatusCode;
 use header::Headers;
 
-use context::Context;
+use context::RawContext;
 
 use response::Data;
 use server::Global;
@@ -15,7 +16,7 @@ pub struct FilterContext<'a> {
     ///Shared storage for filters. It is local to the current request and
     ///accessible from the handler and all of the filters. It can be used to
     ///send data between these units.
-    pub storage: &'a mut AnyMap,
+    pub storage: &'a mut Map<Any + Send + 'static>,
 
     ///Globally accessible data.
     pub global: &'a Global,
@@ -23,10 +24,10 @@ pub struct FilterContext<'a> {
 
 ///A trait for context filters.
 ///
-///They are able to modify and react to a `Context` before it's sent to the handler.
+///They are able to modify and react to a `RawContext` before it's sent to the handler.
 pub trait ContextFilter: Send + Sync {
-    ///Try to modify the handler `Context`.
-    fn modify(&self, context: FilterContext, request_context: &mut Context) -> ContextAction;
+    ///Try to modify the handler `RawContext`.
+    fn modify(&self, context: FilterContext, request_context: &mut RawContext) -> ContextAction;
 }
 
 ///The result from a context filter.

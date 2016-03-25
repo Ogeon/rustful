@@ -7,7 +7,7 @@ use hyper::method::Method;
 use router::{Router, Route, Endpoint, MethodRouter, InsertState, RouteState, Variables};
 use context::{MaybeUtf8Owned, MaybeUtf8Slice};
 use context::hypermedia::{Link, LinkSegment, SegmentType};
-use handler::Handler;
+use handler::Factory;
 
 use self::Branch::{Static, Variable, Wildcard};
 
@@ -43,7 +43,7 @@ pub struct TreeRouter<T: Router + Default> {
     pub find_hyperlinks: bool
 }
 
-impl<H: Handler> TreeRouter<MethodRouter<Variables<H>>> {
+impl<H: Factory> TreeRouter<MethodRouter<Variables<H>>> {
     ///Creates an empty `TreeRouter<MethodRouter<Variables<H>>>`, which is
     ///probably the most common composition. It will select handlers based on
     ///path and then HTTP method, and collect any variables on the way.
@@ -309,7 +309,7 @@ impl<T: Router + Default> Router for TreeRouter<T> {
     }
 }
 
-impl<T: Handler, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> FromIterator<(Method, D, T)> for TreeRouter<MethodRouter<Variables<T>>> {
+impl<T: Factory, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> FromIterator<(Method, D, T)> for TreeRouter<MethodRouter<Variables<T>>> {
     ///Create a `TreeRouter` from a collection of routes.
     ///
     ///```

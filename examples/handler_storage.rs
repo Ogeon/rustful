@@ -20,6 +20,7 @@ use rustful::{
     StatusCode
 };
 use rustful::file::check_path;
+use rustful::response::FileError;
 
 fn main() {
     env_logger::init().unwrap();
@@ -115,22 +116,21 @@ impl Handler for Api {
                         //Make a full path from the file name and send it
                         let path = Path::new("examples/handler_storage").join(file_path);
                         let res = response.send_file(path)
-                            .or_else(|e| e.send_not_found("the file was not found"))
-                            .or_else(|e| e.ignore_send_error());
+                            .or_else(|e| e.send_not_found("the file was not found"));
 
                         //Check if a more fatal file error than "not found" occurred
-                        if let Err((error, mut response)) = res {
+                        if let Err(FileError { error, mut response }) = res {
                             //Something went horribly wrong
                             error!("failed to open '{}': {}", file, error);
-                            response.set_status(StatusCode::InternalServerError);
+                            response.status = StatusCode::InternalServerError;
                         }
                     } else {
                         //Accessing parent directories is forbidden
-                        response.set_status(StatusCode::Forbidden);
+                        response.status = StatusCode::Forbidden;
                     }
                 } else {
                     //No file name was specified
-                    response.set_status(StatusCode::Forbidden);
+                    response.status = StatusCode::Forbidden;
                 }
             }
         }

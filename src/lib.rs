@@ -99,6 +99,7 @@ pub use self::router::Router;
 pub use self::router::TreeRouter;
 
 mod utils;
+mod interface;
 #[macro_use]
 #[doc(hidden)]
 pub mod macros;

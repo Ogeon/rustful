@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::sync::Arc;
+use std::io::{Read, Write};
+
 #[cfg(feature = "ssl")]
 use std::path::PathBuf;
 
@@ -12,33 +13,48 @@ use num_cpus;
 use url::percent_encoding::percent_decode;
 use url::Url;
 
-use hyper;
+use hyper::{self, Encoder, Decoder, Next, Control};
 use hyper::server::Handler as HyperHandler;
+use hyper::server::Response as HyperResponse;
+use hyper::server::{HandlerFactory, Request};
 use hyper::header::{Date, ContentType};
 use hyper::mime::Mime;
 use hyper::uri::RequestUri;
-use hyper::net::HttpListener;
+use hyper::net::{HttpListener, HttpStream};
 #[cfg(feature = "ssl")]
 use hyper::net::{Openssl, HttpsListener};
 
 pub use hyper::server::Listening;
 
-use anymap::AnyMap;
+use anymap::Map;
+use anymap::any::Any;
 
 use StatusCode;
 
-use context::{self, Context, UriPath, MaybeUtf8Owned, Parameters};
+use context::{RawContext, UriPath, MaybeUtf8Owned, Parameters};
 use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::{Router, Endpoint};
-use handler::Handler;
-use response::Response;
-use header::HttpDate;
+use handler::{RawHandler, Factory};
+use header::{Headers, HttpDate};
 use server::{Scheme, Global, KeepAlive};
+use response::{RawResponse, ResponseHead};
 
 use HttpResult;
 use Server;
 
 use utils;
+
+struct Config<R: Router> {
+    handlers: R,
+    fallback_handler: Option<R::Handler>,
+
+    host: SocketAddr,
+
+    server: String,
+    content_type: Mime,
+
+    context_filters: Vec<Box<ContextFilter>>,
+}
 
 ///A runnable instance of a server.
 ///
@@ -60,22 +76,10 @@ use utils;
 ///}.build();
 ///```
 pub struct ServerInstance<R: Router> {
-    handlers: R,
-    fallback_handler: Option<R::Handler>,
-
-    host: SocketAddr,
-
-    server: String,
-    content_type: Mime,
-
+    config: Arc<Config<R>>,
+    response_filters: Arc<Vec<Box<ResponseFilter>>>,
+    global: Arc<Global>,
     threads: usize,
-    keep_alive: Option<KeepAlive>,
-    threads_in_use: AtomicUsize,
-
-    context_filters: Vec<Box<ContextFilter>>,
-    response_filters: Vec<Box<ResponseFilter>>,
-
-    global: Global,
 }
 
 impl<R: Router> ServerInstance<R> {
@@ -83,17 +87,17 @@ impl<R: Router> ServerInstance<R> {
     ///the same as `Server{...}.build()`.
     pub fn new(config: Server<R>) -> (ServerInstance<R>, Scheme) {
         (ServerInstance {
-            handlers: config.handlers,
-            fallback_handler: config.fallback_handler,
-            host: config.host.into(),
-            server: config.server,
-            content_type: config.content_type,
+            config: Arc::new(Config {
+                handlers: config.handlers,
+                fallback_handler: config.fallback_handler,
+                host: config.host.into(),
+                server: config.server,
+                content_type: config.content_type,
+                context_filters: config.context_filters,
+            }),
+            response_filters: Arc::new(config.response_filters),
+            global: Arc::new(config.global),
             threads: config.threads.unwrap_or_else(|| (num_cpus::get() * 5) / 4),
-            keep_alive: config.keep_alive,
-            threads_in_use: AtomicUsize::new(0),
-            context_filters: config.context_filters,
-            response_filters: config.response_filters,
-            global: config.global,
         },
         config.scheme)
     }
@@ -101,43 +105,20 @@ impl<R: Router> ServerInstance<R> {
     ///Start the server.
     #[cfg(feature = "ssl")]
     pub fn run(self, scheme: Scheme) -> HttpResult<Listening> {
-        let host = self.host;
         let threads = self.threads;
-        let mut server = match scheme {
-            Scheme::Http => try!(HyperServer::http(host)),
-            Scheme::Https {cert, key} => try!(HyperServer::https(host, cert, key)),
+        let server = match scheme {
+            Scheme::Http => try!(HyperServer::http(&self.config.host)),
+            Scheme::Https {cert, key} => try!(HyperServer::https(&self.config.host, cert, key)),
         };
-        server.keep_alive(self.keep_alive.as_ref().map(|k| k.timeout));
         server.run(self, threads)
     }
 
     ///Start the server.
     #[cfg(not(feature = "ssl"))]
     pub fn run(self, _scheme: Scheme) -> HttpResult<Listening> {
-        let host = self.host;
         let threads = self.threads;
-        let mut server = try!(HyperServer::http(host));
-        server.keep_alive(self.keep_alive.as_ref().map(|k| k.timeout));
+        let server = try!(HyperServer::http(&self.config.host));
         server.run(self, threads)
-    }
-
-    fn modify_context(&self, filter_storage: &mut AnyMap, context: &mut Context) -> ContextAction {
-        let mut result = ContextAction::Next;
-
-        for filter in &self.context_filters {
-            result = match result {
-                ContextAction::Next => {
-                    let filter_context = FilterContext {
-                        storage: filter_storage,
-                        global: &self.global,
-                    };
-                    filter.modify(filter_context, context)
-                },
-                _ => return result
-            };
-        }
-
-        result
     }
 
 }
@@ -149,113 +130,11 @@ struct ParsedUri {
     fragment: Option<MaybeUtf8Owned>
 }
 
-impl<R: Router> HyperHandler for ServerInstance<R> {
-    fn handle(&self, request: hyper::server::request::Request, writer: hyper::server::response::Response) {
-        let (
-            request_addr,
-            request_method,
-            mut request_headers,
-            request_uri,
-            request_version,
-            request_reader
-        ) = request.deconstruct();
+impl<R: Router> HandlerFactory<HttpStream> for ServerInstance<R> {
+    type Output = RequestHandler<R>;
 
-        let force_close = if let Some(ref keep_alive) = self.keep_alive {
-            self.threads_in_use.load(Ordering::SeqCst) + keep_alive.free_threads > self.threads
-        } else {
-            false
-        };
-
-        let mut response = Response::new(writer, &self.response_filters, &self.global, force_close);
-        response.headers_mut().set(Date(HttpDate(time::now_utc())));
-        response.headers_mut().set(ContentType(self.content_type.clone()));
-        response.headers_mut().set(hyper::header::Server(self.server.clone()));
-
-        let path_components = match request_uri {
-            RequestUri::AbsoluteUri(url) => Some(parse_url(&url)),
-            RequestUri::AbsolutePath(path) => Some(parse_path(&path)),
-            RequestUri::Star => {
-                Some(ParsedUri {
-                    host: None,
-                    uri_path: UriPath::Asterisk,
-                    query: Parameters::new(),
-                    fragment: None
-                })
-            },
-            _ => None
-        };
-
-        match path_components {
-            Some(ParsedUri{ host, uri_path, query, fragment }) => {
-                if let Some((name, port)) = host {
-                    request_headers.set(::header::Host {
-                        hostname: name,
-                        port: port
-                    });
-                }
-
-                let body = context::body::BodyReader::from_reader(request_reader, &request_headers);
-
-                let mut context = Context {
-                    headers: request_headers,
-                    http_version: request_version,
-                    method: request_method,
-                    address: request_addr,
-                    uri_path: uri_path,
-                    hyperlinks: vec![],
-                    variables: Parameters::new(),
-                    query: query.into(),
-                    fragment: fragment,
-                    global: &self.global,
-                    body: body
-                };
-
-                let mut filter_storage = AnyMap::new();
-
-                match self.modify_context(&mut filter_storage, &mut context) {
-                    ContextAction::Next => {
-                        *response.filter_storage_mut() = filter_storage;
-
-                        let endpoint = context.uri_path.as_path().map_or_else(|| {
-                            Endpoint {
-                                handler: None,
-                                variables: HashMap::new(),
-                                hyperlinks: vec![]
-                            }
-                        }, |path| self.handlers.find(&context.method, &mut (&path[..]).into()));
-
-                        let Endpoint {
-                            handler,
-                            variables,
-                            hyperlinks
-                        } = endpoint;
-
-                        if let Some(handler) = handler.or(self.fallback_handler.as_ref()) {
-                            context.hyperlinks = hyperlinks;
-                            context.variables = variables.into();
-                            handler.handle_request(context, response);
-                        } else {
-                            response.set_status(StatusCode::NotFound);
-                        }
-                    },
-                    ContextAction::Abort(status) => {
-                        *response.filter_storage_mut() = filter_storage;
-                        response.set_status(status);
-                    }
-                }
-            },
-            None => {
-                response.set_status(StatusCode::BadRequest);
-            }
-        }
-    }
-
-    fn on_connection_start(&self) {
-        self.threads_in_use.fetch_add(1, Ordering::SeqCst);
-    }
-
-    fn on_connection_end(&self) {
-        self.threads_in_use.fetch_sub(1, Ordering::SeqCst);
+    fn create(&mut self, control: Control) -> RequestHandler<R> {
+        RequestHandler::new(self.config.clone(), self.response_filters.clone(), self.global.clone(), control)
     }
 }
 
@@ -327,45 +206,228 @@ enum HyperServer {
 }
 
 impl HyperServer {
-    fn http(host: SocketAddr) -> HttpResult<HyperServer> {
+    fn http(host: &SocketAddr) -> HttpResult<HyperServer> {
         hyper::server::Server::http(host).map(HyperServer::Http)
     }
 
     #[cfg(feature = "ssl")]
-    fn https(host: SocketAddr, cert: PathBuf, key: PathBuf) -> HttpResult<HyperServer> {
+    fn https(host: &SocketAddr, cert: PathBuf, key: PathBuf) -> HttpResult<HyperServer> {
         let ssl = try!(Openssl::with_cert_and_key(cert, key));
         hyper::server::Server::https(host, ssl).map(HyperServer::Https)
     }
 
     #[cfg(feature = "ssl")]
-    fn keep_alive(&mut self, timeout: Option<Duration>) {
-        match *self {
-            HyperServer::Http(ref mut s) => s.keep_alive(timeout),
-            HyperServer::Https(ref mut s) => s.keep_alive(timeout),
-        }
-    }
-
-    #[cfg(not(feature = "ssl"))]
-    fn keep_alive(&mut self, timeout: Option<Duration>) {
-        match *self {
-            HyperServer::Http(ref mut s) => s.keep_alive(timeout),
-        }
-    }
-
-    #[cfg(feature = "ssl")]
     fn run<R: Router>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> {
         match self {
-            HyperServer::Http(s) => s.handle_threads(server, threads),
-            HyperServer::Https(s) => s.handle_threads(server, threads),
+            HyperServer::Http(s) => s.handle(server),
+            HyperServer::Https(s) => s.handle(server),
         }
     }
 
     #[cfg(not(feature = "ssl"))]
     fn run<R: Router>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> {
         match self {
-            HyperServer::Http(s) => s.handle_threads(server, threads),
+            HyperServer::Http(s) => s.handle(server),
         }
     }
+}
+
+pub struct RequestHandler<R: Router> {
+    config: Arc<Config<R>>,
+    global: Arc<Global>,
+    response_filters: Arc<Vec<Box<ResponseFilter>>>,
+    write_method: Option<WriteMethod<<R::Handler as ::handler::Factory>::Handler>>,
+
+    control: Option<Control>,
+}
+
+impl<R: Router> RequestHandler<R> {
+    fn new(config: Arc<Config<R>>, response_filters: Arc<Vec<Box<ResponseFilter>>>, global: Arc<Global>, control: Control) -> RequestHandler<R> {
+        RequestHandler {
+            config: config,
+            global: global,
+            response_filters: response_filters,
+            write_method: None,
+
+            control: Some(control),
+        }
+    }
+}
+
+fn modify_context(context_filters: &[Box<ContextFilter>], global: &Global, filter_storage: &mut Map<Any + Send + 'static>, context: &mut RawContext) -> ContextAction {
+    let mut result = ContextAction::Next;
+
+    for filter in context_filters {
+        result = match result {
+            ContextAction::Next => {
+                let filter_context = FilterContext {
+                    storage: filter_storage,
+                    global: global,
+                };
+                filter.modify(filter_context, context)
+            },
+            _ => return result
+        };
+    }
+
+    result
+}
+
+impl<R: Router> HyperHandler<HttpStream> for RequestHandler<R> {
+    fn on_request(&mut self, request: Request) -> Next {
+        if let Some(control) = self.control.take() {
+            let mut response = RawResponse {
+                status: StatusCode::Ok,
+                headers: Headers::new(),
+                filters: ::interface::response::make_response_filters(
+                    self.response_filters.clone(),
+                    self.global.clone(),
+                ),
+            };
+
+            response.headers.set(Date(HttpDate(time::now_utc())));
+            response.headers.set(ContentType(self.config.content_type.clone()));
+            response.headers.set(::header::Server(self.config.server.clone()));
+
+            let path_components = match *request.uri() {
+                RequestUri::AbsoluteUri(ref url) => Some(parse_url(url)),
+                RequestUri::AbsolutePath(ref path) => Some(parse_path(path)),
+                RequestUri::Star => {
+                    Some(ParsedUri {
+                        host: None,
+                        uri_path: UriPath::Asterisk,
+                        query: Parameters::new(),
+                        fragment: None
+                    })
+                },
+                _ => None
+            };
+
+            let (write_method, next) = match path_components {
+                Some(ParsedUri{ host, uri_path, query, fragment }) => {
+                    /*if let Some((name, port)) = host {
+                        request_headers.set(::header::Host {
+                            hostname: name,
+                            port: port
+                        });
+                    }*/
+
+                    let mut context = RawContext {
+                        request: request,
+                        uri_path: uri_path,
+                        hyperlinks: vec![],
+                        variables: Parameters::new(),
+                        query: query,
+                        fragment: fragment,
+                        global: self.global.clone(),
+                        control: control,
+                    };
+
+                    let mut filter_storage = Map::new();
+
+                    match modify_context(&self.config.context_filters, &self.global, &mut filter_storage, &mut context) {
+                        ContextAction::Next => {
+                            response.filters.storage = filter_storage;
+                            let config = &self.config;
+
+                            let endpoint = context.uri_path.as_path().map_or_else(|| {
+                                Endpoint {
+                                    handler: None,
+                                    variables: HashMap::new(),
+                                    hyperlinks: vec![]
+                                }
+                            }, |path| config.handlers.find(&context.request.method(), &mut (&path[..]).into()));
+
+                            let Endpoint {
+                                handler,
+                                variables,
+                                hyperlinks
+                            } = endpoint;
+
+                            if let Some(handler) = handler.or(config.fallback_handler.as_ref()) {
+                                context.hyperlinks = hyperlinks;
+                                context.variables = variables.into();
+                                let mut handler = handler.create(context, response);
+                                let next = handler.on_request();
+                                (WriteMethod::Handler(handler), next)
+                            } else {
+                                response.status = StatusCode::NotFound;
+                                (
+                                    WriteMethod::Error(Some(ResponseHead {
+                                        status: response.status,
+                                        headers: response.headers,
+                                    })),
+                                    Next::write()
+                                )
+                            }
+                        },
+                        ContextAction::Abort(status) => {
+                            response.status = status;
+                            (
+                                WriteMethod::Error(Some(ResponseHead {
+                                    status: response.status,
+                                    headers: response.headers,
+                                })),
+                                Next::write()
+                            )
+                        }
+                    }
+                },
+                None => {
+                    response.status = StatusCode::BadRequest;
+                    (
+                        WriteMethod::Error(Some(ResponseHead {
+                            status: response.status,
+                            headers: response.headers,
+                        })),
+                        Next::write()
+                    )
+                }
+            };
+
+            self.write_method = Some(write_method);
+            next
+        } else {
+            panic!("RequestHandler reused");
+        }
+    }
+
+    fn on_request_readable(&mut self, decoder: &mut Decoder<HttpStream>) -> Next {
+        if let Some(WriteMethod::Handler(ref mut handler)) = self.write_method {
+            handler.on_request_readable(decoder)
+        } else {
+            Next::write()
+        }
+    }
+
+    fn on_response(&mut self, response: &mut HyperResponse) -> Next {
+        if let Some(ref mut method) = self.write_method {
+            let (head, next) = match *method {
+                WriteMethod::Handler(ref mut handler) => handler.on_response(),
+                WriteMethod::Error(ref mut head) => (head.take().expect("missing response head"), Next::end()),
+            };
+
+            response.set_status(head.status);
+            response.headers_mut().extend(head.headers.iter());
+
+            next
+        } else {
+            panic!("missing write method")
+        }
+    }
+
+    fn on_response_writable(&mut self, encoder: &mut Encoder<HttpStream>) -> Next {
+        if let Some(WriteMethod::Handler(ref mut handler)) = self.write_method {
+            handler.on_response_writable(encoder)
+        } else {
+            Next::end()
+        }
+    }
+}
+
+enum WriteMethod<H: RawHandler> {
+    Handler(H),
+    Error(Option<ResponseHead>),
 }
 
 
