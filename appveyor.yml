@@ -8,9 +8,9 @@ os: MinGW
 environment:
   OPENSSL_VERSION: 1_0_2g
 install:
-  - cmd: SET PATH=C:\MINGW\bin\;C:\MINGW\msys\1.0\bin\;%LOCALAPPDATA%\.multirust\toolchains\stable\bin\;%PATH%
-  - ps: Start-FileDownload "https://github.com/Diggsey/multirust-rs-binaries/raw/master/i686-pc-windows-gnu/multirust-rs.exe"
-  - multirust-rs -v update stable
+  - cmd: SET PATH=C:\MINGW\bin\;C:\MINGW\msys\1.0\bin\;C:\Users\appveyor\.multirust\toolchains\stable\bin\;%PATH%
+  - ps: Start-FileDownload "https://github.com/rust-lang-nursery/multirust-rs-binaries/raw/master/i686-pc-windows-gnu/multirust-setup.exe"
+  - multirust-setup -y -v
   - rustc --version
   - cargo --version
   - ps: Start-FileDownload "http://slproweb.com/download/Win32OpenSSL-$Env:OPENSSL_VERSION.exe"
