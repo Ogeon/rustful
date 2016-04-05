@@ -5,11 +5,11 @@ use context::Parameters;
 pub fn parse_parameters(source: &[u8]) -> Parameters {
     let mut parameters = Parameters::new();
     let source: Vec<u8> = source.iter()
-                                .map(|&e| if e == '+' as u8 { ' ' as u8 } else { e })
+                                .map(|&e| if e == b'+' { b' ' } else { e })
                                 .collect();
 
-    for parameter in source.split(|&e| e == '&' as u8) {
-        let mut parts = parameter.split(|&e| e == '=' as u8);
+    for parameter in source.split(|&e| e == b'&') {
+        let mut parts = parameter.split(|&e| e == b'=');
 
         match (parts.next(), parts.next()) {
             (Some(name), Some(value)) => {
