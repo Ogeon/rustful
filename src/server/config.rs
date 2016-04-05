@@ -48,9 +48,9 @@ impl Host {
     ///Change the port of the host address.
     pub fn port(&mut self, port: u16) {
         self.0 = match self.0 {
-            SocketAddr::V4(addr) => SocketAddr::V4(SocketAddrV4::new(addr.ip().clone(), port)),
+            SocketAddr::V4(addr) => SocketAddr::V4(SocketAddrV4::new(*addr.ip(), port)),
             SocketAddr::V6(addr) => {
-                SocketAddr::V6(SocketAddrV6::new(addr.ip().clone(), port, addr.flowinfo(), addr.scope_id()))
+                SocketAddr::V6(SocketAddrV6::new(*addr.ip(), port, addr.flowinfo(), addr.scope_id()))
             }
         };
     }
