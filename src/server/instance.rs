@@ -266,7 +266,7 @@ fn parse_path(path: &str) -> ParsedUri {
 
             let mut path = percent_decode(path[..index].as_bytes());
             if path.is_empty() {
-                path.push('/' as u8);
+                path.push(b'/');
             }
 
             ParsedUri {
@@ -281,7 +281,7 @@ fn parse_path(path: &str) -> ParsedUri {
 
             let mut path = percent_decode(path.as_bytes());
             if path.is_empty() {
-                path.push('/' as u8);
+                path.push(b'/');
             }
 
             ParsedUri {
@@ -304,11 +304,11 @@ fn parse_fragment(path: &str) -> (&str, Option<&str>) {
 fn parse_url(url: Url) -> ParsedUri {
     let mut path = Vec::new();
     for component in url.path().unwrap_or(&[]) {
-        path.push('/' as u8);
+        path.push(b'/');
         percent_decode_to(component.as_bytes(), &mut path);
     }
     if path.is_empty() {
-        path.push('/' as u8);
+        path.push(b'/');
     }
 
     let query = url.query_pairs()

@@ -147,7 +147,7 @@ impl<T: Router + Default> Router for TreeRouter<T> {
                         }
                     }
 
-                    for (segment, _next) in &current.static_routes {
+                    for segment in current.static_routes.keys() {
                         result.hyperlinks.push(Link {
                             method: None,
                             path: vec![LinkSegment {
@@ -224,7 +224,7 @@ impl<T: Router + Default> Router for TreeRouter<T> {
     fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>> {
         let mut links = self.item.hyperlinks(base.clone());
 
-        for (segment, _next) in &self.static_routes {
+        for segment in self.static_routes.keys() {
             let mut link = base.clone();
             link.path.push(LinkSegment {
                 label: segment.as_slice(),

@@ -62,7 +62,7 @@ impl<S, V> MaybeUtf8<S, V> {
     ///let string = MaybeUtf8Owned::from("abc");
     ///assert_eq!("abc", string.as_utf8_lossy());
     ///```
-    pub fn as_utf8_lossy<'a>(&'a self) -> Cow<'a, str> where S: AsRef<str>, V: AsRef<[u8]> {
+    pub fn as_utf8_lossy(&self) -> Cow<str> where S: AsRef<str>, V: AsRef<[u8]> {
         match *self {
             MaybeUtf8::Utf8(ref s) => s.as_ref().into(),
             MaybeUtf8::NotUtf8(ref v) => String::from_utf8_lossy(v.as_ref())

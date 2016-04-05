@@ -144,8 +144,7 @@ impl<'a, 'b> FileError<'a, 'b> {
 impl<'a, 'b> Into<io::Error> for FileError<'a, 'b> {
     fn into(self) -> io::Error {
         match self {
-            FileError::Open(e, _) => e,
-            FileError::Send(e) => e
+            FileError::Open(e, _) | FileError::Send(e) => e
         }
     }
 }
@@ -171,15 +170,13 @@ impl<'a, 'b> std::fmt::Display for FileError<'a, 'b> {
 impl<'a, 'b> error::Error for FileError<'a, 'b> {
     fn description(&self) -> &str {
         match *self {
-            FileError::Open(ref e, _) => e.description(),
-            FileError::Send(ref e) => e.description()
+            FileError::Open(ref e, _) | FileError::Send(ref e) => e.description()
         }
     }
 
     fn cause(&self) -> Option<&std::error::Error> {
         match *self {
-            FileError::Open(ref e, _) => Some(e),
-            FileError::Send(ref e) => Some(e)
+            FileError::Open(ref e, _) | FileError::Send(ref e) => Some(e)
         }
     }
 }
@@ -522,7 +519,7 @@ impl<'a, 'b> Response<'a, 'b> {
         let mime = path
             .extension()
             .and_then(|ext| to_mime(&ext.to_string_lossy()))
-            .unwrap_or(Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
+            .unwrap_or_else(|| Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
 
         let mut file = match File::open(path) {
             Ok(file) => file,
@@ -900,8 +897,7 @@ fn filter_headers<'a>(
 
     for filter in filters {
         header_result = match header_result {
-            (_, Action::SilentAbort) => break,
-            (_, Action::Abort(_)) => break,
+            (_, Action::SilentAbort) | (_, Action::Abort(_)) => break,
             (status, r) => {
                 write_queue.push(r);
 
@@ -917,7 +913,7 @@ fn filter_headers<'a>(
                     (status, Action::Abort(e)) => (status, Action::Abort(e)),
                     (status, result) => {
                         let mut error = None;
-                        
+
                         write_queue = write_queue.into_iter().filter_map(|action| match action {
                             Action::Next(content) => {
                                 let filter_context = FilterContext {
