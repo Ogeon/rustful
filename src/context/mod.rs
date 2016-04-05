@@ -197,7 +197,7 @@ impl Uri {
 
     ///Borrow the URI as a UTF-8 path, if valid, or convert it to a valid
     ///UTF-8 string.
-    pub fn as_utf8_path_lossy<'a>(&'a self) -> Option<Cow<'a, str>> {
+    pub fn as_utf8_path_lossy(&self) -> Option<Cow<str>> {
         match *self {
             Uri::Path(ref path) => Some(path.as_utf8_lossy()),
             Uri::Asterisk => None
