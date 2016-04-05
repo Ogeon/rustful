@@ -519,7 +519,7 @@ impl<'a, 'b> Response<'a, 'b> {
         let mime = path
             .extension()
             .and_then(|ext| to_mime(&ext.to_string_lossy()))
-            .unwrap_or(Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
+            .unwrap_or_else(|| Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
 
         let mut file = match File::open(path) {
             Ok(file) => file,
