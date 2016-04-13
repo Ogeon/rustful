@@ -22,62 +22,24 @@ pub type Encoder<'a, 'b> = &'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream
 pub type Decoder<'a, 'b> = &'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>;
 
 #[cfg(feature = "ssl")]
-pub struct Encoder<'a, 'b>(&'a mut Write, ::std::marker::PhantomData<&'b mut ()>);
-
-#[cfg(feature = "ssl")]
-impl<'a, 'b> Write for Encoder<'a, 'b> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
-    }
-}
-
-#[cfg(feature = "ssl")]
-impl<'a, 'b, E: Write> From<&'a mut E> for Encoder<'a, 'b> {
-    fn from(encoder: &'a mut E) -> Encoder<'a, 'b> {
-        Encoder(encoder, ::std::marker::PhantomData)
-    }
-}
-
-#[cfg(feature = "ssl")]
-pub struct Decoder<'a, 'b>(&'a mut Read, ::std::marker::PhantomData<&'b mut ()>);
-
-#[cfg(feature = "ssl")]
-impl<'a, 'b> Read for Decoder<'a, 'b> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
-    }
-}
-
-#[cfg(feature = "ssl")]
-impl<'a, 'b, D: Read> From<&'a mut D> for Decoder<'a, 'b> {
-    fn from(encoder: &'a mut D) -> Decoder<'a, 'b> {
-        Decoder(encoder, ::std::marker::PhantomData)
-    }
-}
-
-/*#[cfg(feature = "ssl")]
 pub enum Encoder<'a, 'b: 'a> {
     Http(&'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>),
-    Https(&'a mut ::hyper::Encoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>),
+    Https(&'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>),
 }
 
 #[cfg(feature = "ssl")]
 impl<'a, 'b> Write for Encoder<'a, 'b> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match *self {
-            Encoder::Http(decoder) => decoder.write(buf),
-            Encoder::Https(decoder) => decoder.write(buf),
+            Encoder::Http(ref mut decoder) => decoder.write(buf),
+            Encoder::Https(ref mut decoder) => decoder.write(buf),
         }
     }
 
     fn flush(&mut self) -> io::Result<()> {
         match *self {
-            Encoder::Http(decoder) => decoder.flush(),
-            Encoder::Https(decoder) => decoder.flush(),
+            Encoder::Http(ref mut decoder) => decoder.flush(),
+            Encoder::Https(ref mut decoder) => decoder.flush(),
         }
     }
 }
@@ -90,8 +52,8 @@ impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>> for En
 }
 
 #[cfg(feature = "ssl")]
-impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>> for Encoder<'a, 'b> {
-    fn from(encoder: &'a mut ::hyper::Encoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>) -> Encoder<'a, 'b> {
+impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>> for Encoder<'a, 'b> {
+    fn from(encoder: &'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>) -> Encoder<'a, 'b> {
         Encoder::Https(encoder)
     }
 }
@@ -99,15 +61,15 @@ impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, <::hyper::net::Openssl as ::hyper
 #[cfg(feature = "ssl")]
 pub enum Decoder<'a, 'b: 'a> {
     Http(&'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>),
-    Https(&'a mut ::hyper::Decoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>),
+    Https(&'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>),
 }
 
 #[cfg(feature = "ssl")]
 impl<'a, 'b> Read for Decoder<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match *self {
-            Decoder::Http(ref decoder) => decoder.read(buf),
-            Decoder::Https(ref decoder) => decoder.read(buf),
+            Decoder::Http(ref mut decoder) => decoder.read(buf),
+            Decoder::Https(ref mut decoder) => decoder.read(buf),
         }
     }
 }
@@ -120,11 +82,11 @@ impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>> for De
 }
 
 #[cfg(feature = "ssl")]
-impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>> for Decoder<'a, 'b> {
-    fn from(decoder: &'a mut ::hyper::Decoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>) -> Decoder<'a, 'b> {
+impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>> for Decoder<'a, 'b> {
+    fn from(decoder: &'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>) -> Decoder<'a, 'b> {
         Decoder::Https(decoder)
     }
-}*/
+}
 
 ///A trait for simple request handlers.
 ///
