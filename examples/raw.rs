@@ -30,7 +30,7 @@ impl RawHandler for Handler {
 		Next::write()
 	}
 
-	fn on_request_readable(&mut self, _: &mut Decoder) -> Next {
+	fn on_request_readable(&mut self, _: Decoder) -> Next {
 		Next::write()
 	}
 
@@ -42,7 +42,7 @@ impl RawHandler for Handler {
 		(head, Next::write())
 	}
 
-	fn on_response_writable(&mut self, encoder: &mut Encoder) -> Next {
+	fn on_response_writable(&mut self, mut encoder: Encoder) -> Next {
 		let n = encoder.write(ANSWER).unwrap();
 		debug_assert_eq!(n, ANSWER.len());
 		Next::end()

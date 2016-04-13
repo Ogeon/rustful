@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use std::cmp::min;
 
-use hyper::{Control, Next, Encoder};
+use hyper::{Control, Next};
 use hyper::net::HttpStream;
 
 use anymap::Map;
@@ -24,6 +24,7 @@ use server::Global;
 use utils::BytesExt;
 use response::{Data, Error, FileError};
 use interface::{ResponseMessage, ResponseHead};
+use handler::Encoder;
 
 pub fn make_response(
     raw: RawResponse,
@@ -309,7 +310,7 @@ impl Response {
         let mut written = 0;
         let file_size = metadata.len() as usize;
 
-        unsafe { self.raw_send(metadata.len(), move |writer| {
+        unsafe { self.raw_send(metadata.len(), move |mut writer| {
             if read_pos >= buffer.len() {
                 buffer.resize(min(MAX_BUFFER_SIZE, file_size - written), 0);
                 let len = try!(file.read(&mut buffer[..]));
@@ -396,7 +397,7 @@ impl Response {
     ///__Unsafety__: The content length is set beforehand, which makes it
     ///possible to send responses that are too short.
     pub unsafe fn raw_send<F>(mut self, content_length: u64, on_write: F) where
-        F: FnMut(&mut Encoder<HttpStream>) -> io::Result<usize> + Send + 'static
+        F: FnMut(Encoder) -> io::Result<usize> + Send + 'static
     {
         self.sent = true;
 

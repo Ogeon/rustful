@@ -1,9 +1,10 @@
 use std::io;
 
-use hyper::Encoder;
 use hyper::net::HttpStream;
 use header::Headers;
 use StatusCode;
+
+use handler::Encoder;
 
 use self::response::RawResponse;
 
@@ -26,5 +27,5 @@ impl From<RawResponse> for ResponseHead {
 pub enum ResponseMessage {
     Head(ResponseHead),
     Buffer(Vec<u8>),
-    Callback(Box<FnMut(&mut Encoder<HttpStream>) -> io::Result<usize> + Send>),
+    Callback(Box<FnMut(Encoder) -> io::Result<usize> + Send>),
 }

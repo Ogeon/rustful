@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::io::{Read, Write};
+use std::time::Duration;
 
 #[cfg(feature = "ssl")]
 use std::path::PathBuf;
@@ -20,7 +21,7 @@ use hyper::server::{HandlerFactory, Request};
 use hyper::header::{Date, ContentType};
 use hyper::mime::Mime;
 use hyper::uri::RequestUri;
-use hyper::net::{HttpListener, HttpStream};
+use hyper::net::{HttpListener, Transport};
 #[cfg(feature = "ssl")]
 use hyper::net::{Openssl, HttpsListener};
 
@@ -36,7 +37,7 @@ use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::{Router, Endpoint};
 use handler::{RawHandler, Factory};
 use header::{Headers, HttpDate};
-use server::{Scheme, Global, KeepAlive};
+use server::{Scheme, Global};
 use response::{RawResponse, ResponseHead};
 
 use HttpResult;
@@ -80,6 +81,9 @@ pub struct ServerInstance<R: Router> {
     response_filters: Arc<Vec<Box<ResponseFilter>>>,
     global: Arc<Global>,
     threads: usize,
+    keep_alive: bool,
+    timeout: Duration,
+    max_sockets: usize,
 }
 
 impl<R: Router> ServerInstance<R> {
@@ -98,6 +102,9 @@ impl<R: Router> ServerInstance<R> {
             response_filters: Arc::new(config.response_filters),
             global: Arc::new(config.global),
             threads: config.threads.unwrap_or_else(|| (num_cpus::get() * 5) / 4),
+            keep_alive: config.keep_alive,
+            timeout: config.timeout,
+            max_sockets: config.max_sockets,
         },
         config.scheme)
     }
@@ -110,7 +117,10 @@ impl<R: Router> ServerInstance<R> {
             Scheme::Http => try!(HyperServer::http(&self.config.host)),
             Scheme::Https {cert, key} => try!(HyperServer::https(&self.config.host, cert, key)),
         };
-        server.run(self, threads)
+        server.keep_alive(self.keep_alive)
+            .timeout(self.timeout)
+            .max_sockets(self.max_sockets)
+            .run(self, threads)
     }
 
     ///Start the server.
@@ -118,7 +128,10 @@ impl<R: Router> ServerInstance<R> {
     pub fn run(self, _scheme: Scheme) -> HttpResult<Listening> {
         let threads = self.threads;
         let server = try!(HyperServer::http(&self.config.host));
-        server.run(self, threads)
+        server.keep_alive(self.keep_alive)
+            .timeout(self.timeout)
+            .max_sockets(self.max_sockets)
+            .run(self, threads)
     }
 
 }
@@ -130,7 +143,10 @@ struct ParsedUri {
     fragment: Option<MaybeUtf8Owned>
 }
 
-impl<R: Router> HandlerFactory<HttpStream> for ServerInstance<R> {
+impl<T: Transport, R: Router> HandlerFactory<T> for ServerInstance<R> where
+    for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::Encoder<'a, 'b>>,
+    for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::Decoder<'a, 'b>>,
+{
     type Output = RequestHandler<R>;
 
     fn create(&mut self, control: Control) -> RequestHandler<R> {
@@ -212,8 +228,53 @@ impl HyperServer {
 
     #[cfg(feature = "ssl")]
     fn https(host: &SocketAddr, cert: PathBuf, key: PathBuf) -> HttpResult<HyperServer> {
-        let ssl = try!(Openssl::with_cert_and_key(cert, key));
+        let ssl = try!(Openssl::server_with_cert_and_key(cert, key));
         hyper::server::Server::https(host, ssl).map(HyperServer::Https)
+    }
+
+    #[cfg(feature = "ssl")]
+    fn keep_alive(self, enabled: bool) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.keep_alive(enabled)),
+            HyperServer::Https(s) => HyperServer::Https(s.keep_alive(enabled)),
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn keep_alive(self, enabled: bool) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.keep_alive(enabled)),
+        }
+    }
+
+    #[cfg(feature = "ssl")]
+    fn timeout(self, duration: Duration) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(duration)),
+            HyperServer::Https(s) => HyperServer::Https(s.idle_timeout(duration)),
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn timeout(self, duration: Duration) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(duration)),
+        }
+    }
+
+    #[cfg(feature = "ssl")]
+    fn max_sockets(self, max: usize) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.max_sockets(max)),
+            HyperServer::Https(s) => HyperServer::Https(s.max_sockets(max)),
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn max_sockets(self, max: usize) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.max_sockets(max)),
+        }
     }
 
     #[cfg(feature = "ssl")]
@@ -273,7 +334,10 @@ fn modify_context(context_filters: &[Box<ContextFilter>], global: &Global, filte
     result
 }
 
-impl<R: Router> HyperHandler<HttpStream> for RequestHandler<R> {
+impl<T: Transport, R: Router> HyperHandler<T> for RequestHandler<R> where
+    for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::Encoder<'a, 'b>>,
+    for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::Decoder<'a, 'b>>,
+{
     fn on_request(&mut self, request: Request) -> Next {
         if let Some(control) = self.control.take() {
             let mut response = RawResponse {
@@ -392,9 +456,9 @@ impl<R: Router> HyperHandler<HttpStream> for RequestHandler<R> {
         }
     }
 
-    fn on_request_readable(&mut self, decoder: &mut Decoder<HttpStream>) -> Next {
+    fn on_request_readable(&mut self, decoder: &mut Decoder<T>) -> Next {
         if let Some(WriteMethod::Handler(ref mut handler)) = self.write_method {
-            handler.on_request_readable(decoder)
+            handler.on_request_readable(decoder.into())
         } else {
             Next::write()
         }
@@ -416,16 +480,16 @@ impl<R: Router> HyperHandler<HttpStream> for RequestHandler<R> {
         }
     }
 
-    fn on_response_writable(&mut self, encoder: &mut Encoder<HttpStream>) -> Next {
+    fn on_response_writable(&mut self, encoder: &mut Encoder<T>) -> Next {
         if let Some(WriteMethod::Handler(ref mut handler)) = self.write_method {
-            handler.on_response_writable(encoder)
+            handler.on_response_writable(encoder.into())
         } else {
             Next::end()
         }
     }
 }
 
-enum WriteMethod<H: RawHandler> {
+enum WriteMethod<H> {
     Handler(H),
     Error(Option<ResponseHead>),
 }

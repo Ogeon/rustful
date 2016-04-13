@@ -1,6 +1,7 @@
 //!Server configuration and instance.
 
 use std::borrow::ToOwned;
+use std::time::Duration;
 
 use hyper;
 use hyper::mime::Mime;
@@ -13,7 +14,7 @@ use router::Router;
 use HttpResult;
 
 pub use self::instance::ServerInstance;
-pub use self::config::{Host, Global, Scheme, KeepAlive};
+pub use self::config::{Host, Global, Scheme};
 
 mod instance;
 mod config;
@@ -61,10 +62,14 @@ pub struct Server<R: Router> {
     ///`(num_cores * 5) / 4`.
     pub threads: Option<usize>,
 
-    ///The server's `keep-alive` policy. Setting this to `Some(...)` will
-    ///allow `keep-alive` connections with a timeout, and keeping it as `None`
-    ///will force connections to close after each request. Default is `None`.
-    pub keep_alive: Option<KeepAlive>,
+    ///Enables or disables `keep-alive`. Default is `true` (enabled).
+    pub keep_alive: bool,
+
+    ///Timeout for idle connections. Default is 10 seconds.
+    pub timeout: Duration,
+
+    ///The maximal number of open sockets. Default is 4096.
+    pub max_sockets: usize,
 
     ///The content of the server header. Default is `"rustful"`.
     pub server: String,
@@ -105,7 +110,9 @@ impl<R: Router> Server<R> {
             host: 80.into(),
             scheme: Scheme::Http,
             threads: None,
-            keep_alive: None,
+            keep_alive: true,
+            timeout: Duration::from_secs(10),
+            max_sockets: 4096,
             server: "rustful".to_owned(),
             content_type: Mime(
                 hyper::mime::TopLevel::Text,

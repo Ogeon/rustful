@@ -15,8 +15,116 @@ const MAX_BUFFER_LENGTH: usize = 2048;
 
 pub use hyper::{Next, Control};
 
-pub type Encoder<'a> = ::hyper::Encoder<'a, ::hyper::net::HttpStream>;
-pub type Decoder<'a> = ::hyper::Decoder<'a, ::hyper::net::HttpStream>;
+#[cfg(not(feature = "ssl"))]
+pub type Encoder<'a, 'b> = &'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>;
+
+#[cfg(not(feature = "ssl"))]
+pub type Decoder<'a, 'b> = &'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>;
+
+#[cfg(feature = "ssl")]
+pub struct Encoder<'a, 'b>(&'a mut Write, ::std::marker::PhantomData<&'b mut ()>);
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> Write for Encoder<'a, 'b> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b, E: Write> From<&'a mut E> for Encoder<'a, 'b> {
+    fn from(encoder: &'a mut E) -> Encoder<'a, 'b> {
+        Encoder(encoder, ::std::marker::PhantomData)
+    }
+}
+
+#[cfg(feature = "ssl")]
+pub struct Decoder<'a, 'b>(&'a mut Read, ::std::marker::PhantomData<&'b mut ()>);
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> Read for Decoder<'a, 'b> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b, D: Read> From<&'a mut D> for Decoder<'a, 'b> {
+    fn from(encoder: &'a mut D) -> Decoder<'a, 'b> {
+        Decoder(encoder, ::std::marker::PhantomData)
+    }
+}
+
+/*#[cfg(feature = "ssl")]
+pub enum Encoder<'a, 'b: 'a> {
+    Http(&'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>),
+    Https(&'a mut ::hyper::Encoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>),
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> Write for Encoder<'a, 'b> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match *self {
+            Encoder::Http(decoder) => decoder.write(buf),
+            Encoder::Https(decoder) => decoder.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match *self {
+            Encoder::Http(decoder) => decoder.flush(),
+            Encoder::Https(decoder) => decoder.flush(),
+        }
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>> for Encoder<'a, 'b> {
+    fn from(encoder: &'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>) -> Encoder<'a, 'b> {
+        Encoder::Http(encoder)
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>> for Encoder<'a, 'b> {
+    fn from(encoder: &'a mut ::hyper::Encoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>) -> Encoder<'a, 'b> {
+        Encoder::Https(encoder)
+    }
+}
+
+#[cfg(feature = "ssl")]
+pub enum Decoder<'a, 'b: 'a> {
+    Http(&'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>),
+    Https(&'a mut ::hyper::Decoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>),
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> Read for Decoder<'a, 'b> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match *self {
+            Decoder::Http(ref decoder) => decoder.read(buf),
+            Decoder::Https(ref decoder) => decoder.read(buf),
+        }
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>> for Decoder<'a, 'b> {
+    fn from(decoder: &'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>) -> Decoder<'a, 'b> {
+        Decoder::Http(decoder)
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>> for Decoder<'a, 'b> {
+    fn from(decoder: &'a mut ::hyper::Decoder<'b, <::hyper::net::Openssl as ::hyper::net::Ssl>::Stream>) -> Decoder<'a, 'b> {
+        Decoder::Https(decoder)
+    }
+}*/
 
 ///A trait for simple request handlers.
 ///
@@ -78,14 +186,14 @@ pub trait RawHandler: Send + 'static {
     fn on_request(&mut self) -> Next;
 
     ///Read from the request body.
-    fn on_request_readable(&mut self, decoder: &mut Decoder) -> Next;
+    fn on_request_readable(&mut self, decoder: Decoder) -> Next;
 
     ///Set the response head, including status code and headers.
     fn on_response(&mut self) -> (ResponseHead, Next);
 
     ///Write to the response body. It's up to the handler, itself, to filter
     ///the response data.
-    fn on_response_writable(&mut self, encoder: &mut Encoder) -> Next;
+    fn on_response_writable(&mut self, encoder: Encoder) -> Next;
 }
 
 ///A factory for initializing raw handlers.
@@ -167,7 +275,7 @@ impl RawHandler for RawWrapper {
         }
     }
 
-    fn on_request_readable(&mut self, decoder: &mut Decoder) -> Next {
+    fn on_request_readable(&mut self, mut decoder: Decoder) -> Next {
         while self.body_buffer.len() < self.body_length {
             let read_len = min(self.body_length - self.body_buffer.len(), MAX_BUFFER_LENGTH);
             let start = self.body_buffer.len();
@@ -228,7 +336,7 @@ impl RawHandler for RawWrapper {
         }
     }
 
-    fn on_response_writable(&mut self, encoder: &mut Encoder) -> Next {
+    fn on_response_writable(&mut self, mut encoder: Encoder) -> Next {
         match self.write_method {
             Some(WriteMethod::Buffer(ref buffer, ref mut position, max_length)) => {
                 while *position < max_length {
@@ -262,5 +370,5 @@ impl RawHandler for RawWrapper {
 
 enum WriteMethod {
     Buffer(Vec<u8>, usize, usize),
-    Callback(Box<FnMut(&mut Encoder) -> io::Result<usize> + Send>),
+    Callback(Box<FnMut(Encoder) -> io::Result<usize> + Send>),
 }
