@@ -1,6 +1,5 @@
 use std::io;
 
-use hyper::net::HttpStream;
 use header::Headers;
 use StatusCode;
 

@@ -175,7 +175,7 @@ impl<H: Handler> Factory for H {
         let mut on_body = None;
         let (send, recv) = channel();
 
-        let body_length = if let Some(&::header::ContentLength(length)) = context.request.headers().get() {
+        let body_length = if let Some(&::header::ContentLength(length)) = context.headers.get() {
             length as usize
         } else {
             0
@@ -189,7 +189,9 @@ impl<H: Handler> Factory for H {
             );
 
             let context = Context {
-                request: context.request,
+                method: context.method,
+                http_version: context.http_version,
+                headers: context.headers,
                 uri_path: context.uri_path,
                 hyperlinks: context.hyperlinks,
                 variables: context.variables,

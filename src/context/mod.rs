@@ -18,7 +18,7 @@
 //!use rustful::header::UserAgent;
 //!
 //!fn my_handler(context: Context, response: Response) {
-//!    if let Some(&UserAgent(ref user_agent)) = context.request.headers().get() {
+//!    if let Some(&UserAgent(ref user_agent)) = context.headers.get() {
 //!        response.send(format!("got user agent string \"{}\"", user_agent));
 //!    } else {
 //!        response.send("no user agent string provided");
@@ -104,14 +104,13 @@
 //!    }
 //!}
 //!```*/
-
 //!
 //![context]: struct.Context.html
 //![headers]: ../header/struct.Headers.html
 //![log]: ../log/index.html
 //![body_reader]: body/struct.BodyReader.html
 
-use std::net::SocketAddr;
+//use std::net::SocketAddr;
 use std::fmt;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -137,22 +136,20 @@ pub use hyper::server::Request;
 
 ///A container for handler input, like request data and utilities.
 pub struct Context<'a> {
-    /*///Headers from the HTTP request.
+    ///Headers from the HTTP request.
     pub headers: Headers,
 
     ///The HTTP version used in the request.
     pub http_version: HttpVersion,
 
-    ///The client address
-    pub address: SocketAddr,
+    /*///The client address
+    pub address: SocketAddr,*/
 
     ///The HTTP method.
-    pub method: Method,*/
+    pub method: Method,
 
     ///The requested path.
     pub uri_path: UriPath,
-
-    pub request: Request,
 
     ///Hyperlinks from the current endpoint.
     pub hyperlinks: Vec<Link<'a>>,
@@ -175,22 +172,20 @@ pub struct Context<'a> {
 
 ///A more primitive `Context`, for `RawHandler`.
 pub struct RawContext<'a> {
-    /*///Headers from the HTTP request.
+    ///Headers from the HTTP request.
     pub headers: Headers,
 
     ///The HTTP version used in the request.
     pub http_version: HttpVersion,
 
-    ///The client address
-    pub address: SocketAddr,
+    /*///The client address
+    pub address: SocketAddr,*/
 
     ///The HTTP method.
-    pub method: Method,*/
+    pub method: Method,
 
     ///The requested path.
     pub uri_path: UriPath,
-
-    pub request: Request,
 
     ///Hyperlinks from the current endpoint.
     pub hyperlinks: Vec<Link<'a>>,

@@ -6,7 +6,6 @@ use std::sync::mpsc::Sender;
 use std::cmp::min;
 
 use hyper::{Control, Next};
-use hyper::net::HttpStream;
 
 use anymap::Map;
 use anymap::any::Any;
@@ -170,7 +169,7 @@ impl Response {
             headers: ::std::mem::replace(&mut self.headers, Headers::new()),
         }));
         let _ = self.sender.send(ResponseMessage::Buffer(buffer));
-        self.control.ready(Next::write());
+        self.control.ready(Next::write()).expect("failed to notify the event loop");
         Ok(())
     }
 
@@ -409,7 +408,7 @@ impl Response {
             headers: ::std::mem::replace(&mut self.headers, Headers::new()),
         }));
         let _ = self.sender.send(ResponseMessage::Callback(Box::new(on_write)));
-        self.control.ready(Next::write());
+        self.control.ready(Next::write()).expect("failed to notify the event loop");
     }
 }
 

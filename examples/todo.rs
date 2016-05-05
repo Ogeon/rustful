@@ -103,7 +103,7 @@ fn list_all(context: Context, mut response: Response) {
         return
     };
 
-    let host = or_abort!(context.request.headers().get(), response, MISSING_HOST_HEADER);
+    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
 
     let todos: Vec<_> = database.read().unwrap().iter()
       .map(|(&id, todo)| NetworkTodo::from_todo(todo, host, id))
@@ -115,7 +115,7 @@ fn list_all(context: Context, mut response: Response) {
 //Store a new to-do with data from the request body
 fn store(context: Context, mut response: Response) {
     let Context {
-        request,
+        headers,
         body,
         global,
         ..
@@ -137,7 +137,7 @@ fn store(context: Context, mut response: Response) {
             return
         };
 
-        let host = or_abort!(request.headers().get(), response, MISSING_HOST_HEADER);
+        let host = or_abort!(headers.get(), response, MISSING_HOST_HEADER);
 
         let mut database = database.write().unwrap();
         database.insert(todo.into());
@@ -175,7 +175,7 @@ fn get_todo(context: Context, mut response: Response) {
         return
     };
 
-    let host = or_abort!(context.request.headers().get(), response, MISSING_HOST_HEADER);
+    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
 
     let id = or_abort!(
         context.variables.parse("id").ok(),
@@ -198,7 +198,7 @@ fn get_todo(context: Context, mut response: Response) {
 //Update a to-do, selected by its id with data from the request body
 fn edit_todo(context: Context, mut response: Response) {
     let Context {
-        request,
+        headers,
         variables,
         body,
         global,
@@ -222,7 +222,7 @@ fn edit_todo(context: Context, mut response: Response) {
         };
 
 
-        let host = or_abort!(request.headers().get(), response, MISSING_HOST_HEADER);
+        let host = or_abort!(headers.get(), response, MISSING_HOST_HEADER);
 
         let id = or_abort!(
             variables.parse("id").ok(),
@@ -272,7 +272,7 @@ impl Handler for Api {
     fn handle_request(&self, context: Context, mut response: Response) {
         //Collect the accepted methods from the provided hyperlinks
         let mut methods: Vec<_> = context.hyperlinks.iter().filter_map(|l| l.method.clone()).collect();
-        methods.push(context.request.method().clone());
+        methods.push(context.method.clone());
 
         //Setup cross origin resource sharing
         response.headers.set(AccessControlAllowOrigin::Any);

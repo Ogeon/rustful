@@ -1,7 +1,11 @@
+#[macro_use]
+extern crate log;
+extern crate env_logger;
+
 extern crate rustful;
 
 use std::io::Write;
-use std::thread::spawn;
+use std::error::Error;
 
 use rustful::Server;
 use rustful::handler::{RawHandler, Factory, Next, Encoder, Decoder, Meta};
@@ -50,9 +54,14 @@ impl RawHandler for Handler {
 }
 
 fn main() {
-	Server {
+	let server_result = Server {
 		handlers: HandlerFactory,
 		host: 8080.into(),
 		..Server::default()
 	}.run();
+
+    match server_result {
+        Ok(_server) => {},
+        Err(e) => error!("could not start server: {}", e.description())
+    }
 }
