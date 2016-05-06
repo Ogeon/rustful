@@ -6,8 +6,6 @@ use std::time::Duration;
 use hyper;
 use hyper::mime::Mime;
 
-pub use hyper::server::Listening;
-
 use filter::{ContextFilter, ResponseFilter};
 use router::Router;
 
@@ -126,14 +124,8 @@ impl<R: Router> Server<R> {
     }
 
     ///Start the server.
-    pub fn run(self) -> HttpResult<Listening> {
-        let (server, scheme) = self.build();
-        server.run(scheme)
-    }
-
-    ///Build a runnable instance of the server.
-    pub fn build(self) -> (ServerInstance<R>, Scheme) {
-        ServerInstance::new(self)
+    pub fn run(self) -> HttpResult<ServerInstance> {
+        ServerInstance::run(self)
     }
 }
 

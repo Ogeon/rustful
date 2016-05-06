@@ -4,9 +4,6 @@ use std::sync::Arc;
 use std::io::{Read, Write};
 use std::time::Duration;
 
-#[cfg(feature = "ssl")]
-use std::path::PathBuf;
-
 use time;
 
 use num_cpus;
@@ -24,8 +21,6 @@ use hyper::uri::RequestUri;
 use hyper::net::{HttpListener, Transport};
 #[cfg(feature = "ssl")]
 use hyper::net::{Openssl, HttpsListener};
-
-pub use hyper::server::Listening;
 
 use anymap::Map;
 use anymap::any::Any;
@@ -49,101 +44,215 @@ struct Config<R: Router> {
     handlers: R,
     fallback_handler: Option<R::Handler>,
 
-    host: SocketAddr,
-
     server: String,
     content_type: Mime,
 
     context_filters: Vec<Box<ContextFilter>>,
 }
 
-///A runnable instance of a server.
+///A running instance of a server.
 ///
-///It's not meant to be used directly,
-///unless additional control is required.
-///
-///```no_run
+///```
+///#[macro_use] extern crate log;
+///# extern crate rustful;
 ///# use rustful::{Server, Handler, Context, Response};
 ///# #[derive(Default)]
 ///# struct R;
 ///# impl Handler for R {
 ///#     fn handle_request(&self, _context: Context, _response: Response) {}
 ///# }
+///
+///# fn main() {
 ///# let router = R;
-///let (server_instance, scheme) = Server {
+///let instance = Server {
 ///    host: 8080.into(),
 ///    handlers: router,
 ///    ..Server::default()
-///}.build();
+///}.run();
+///
+/// //...do stuff...
+///
+///match instance {
+///    //This is only neccessary if it has to be closed before the program ends
+///    Ok(instance) => instance.close(),
+///    Err(e) => error!("could not run the server: {}", e),
+///}
+///# }
 ///```
-pub struct ServerInstance<R: Router> {
+pub struct ServerInstance {
+    pub addr: SocketAddr,
+    servers: Vec<::hyper::server::Listening>,
+}
+
+impl ServerInstance {
+    ///Create and start a new server instance, with the provided
+    ///configuration. This is the same as `Server{...}.run()`.
+    pub fn run<R: Router>(config: Server<R>) -> HttpResult<ServerInstance> {
+        let Server {
+            handlers,
+            fallback_handler,
+            server,
+            content_type,
+            context_filters,
+            response_filters,
+            global,
+            host,
+            threads,
+            timeout,
+            max_sockets,
+            keep_alive,
+            scheme,
+        } = config;
+
+        let factory = RequestHandlerFactory {
+            config: Arc::new(Config {
+                handlers: handlers,
+                fallback_handler: fallback_handler,
+                server: server,
+                content_type: content_type,
+                context_filters: context_filters,
+            }),
+            response_filters: Arc::new(response_filters),
+            global: Arc::new(global),
+        };
+        let listener = try!(HttpListener::bind(&host.into()));
+        let threads = threads.unwrap_or_else(|| (num_cpus::get() * 5) / 4);
+
+        let servers: Vec<_> = try!(
+                ::std::iter::repeat(factory)
+                    .take(threads)
+                    .map(|factory| try!(HyperServer::new(&scheme, try!(listener.try_clone())))
+                        .keep_alive(keep_alive)
+                        .timeout(timeout)
+                        .max_sockets(max_sockets)
+                        .run(factory)
+                    ).collect()
+            );
+
+        println!("using {} threads", servers.len());
+
+        Ok(ServerInstance {
+            addr: try!(listener.0.local_addr()),
+            servers: servers,
+        })
+    }
+
+    ///Keep listening forever.
+    pub fn forever(self) {}
+
+    ///Shut down the server.
+    pub fn close(self) {
+        for server in self.servers {
+            server.close();
+        }
+    }
+}
+
+//Helper to handle multiple protocols.
+enum HyperServer {
+    Http(hyper::Server<HttpListener>),
+    #[cfg(feature = "ssl")]
+    Https(hyper::Server<HttpsListener<Openssl>>),
+}
+
+impl HyperServer {
+    #[cfg(feature = "ssl")]
+    fn new(scheme: &Scheme, listener: HttpListener) -> HttpResult<HyperServer> {
+        match *scheme {
+            Scheme::Http => Ok(HyperServer::Http(hyper::Server::new(listener))),
+            Scheme::Https { ref cert, ref key } => {
+                let ssl = try!(Openssl::with_cert_and_key(cert, key));
+                let server = hyper::Server::new(HttpsListener::with_listener(listener.0, ssl));
+                Ok(HyperServer::Https(server))
+            },
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn new(scheme: &Scheme, listener: HttpListener) -> HttpResult<HyperServer> {
+        match *scheme {
+            Scheme::Http => Ok(HyperServer::Http(hyper::Server::new(listener))),
+        }
+    }
+
+    #[cfg(feature = "ssl")]
+    fn keep_alive(self, enabled: bool) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.keep_alive(enabled)),
+            HyperServer::Https(s) => HyperServer::Https(s.keep_alive(enabled)),
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn keep_alive(self, enabled: bool) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.keep_alive(enabled)),
+        }
+    }
+
+    #[cfg(feature = "ssl")]
+    fn timeout(self, duration: Duration) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(duration)),
+            HyperServer::Https(s) => HyperServer::Https(s.idle_timeout(duration)),
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn timeout(self, duration: Duration) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(duration)),
+        }
+    }
+
+    #[cfg(feature = "ssl")]
+    fn max_sockets(self, max: usize) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.max_sockets(max)),
+            HyperServer::Https(s) => HyperServer::Https(s.max_sockets(max)),
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn max_sockets(self, max: usize) -> HyperServer {
+        match self {
+            HyperServer::Http(s) => HyperServer::Http(s.max_sockets(max)),
+        }
+    }
+
+    #[cfg(feature = "ssl")]
+    fn run<R: Router>(self, server: RequestHandlerFactory<R>) -> HttpResult<::hyper::server::Listening> {
+        match self {
+            HyperServer::Http(s) => s.handle(server),
+            HyperServer::Https(s) => s.handle(server),
+        }
+    }
+
+    #[cfg(not(feature = "ssl"))]
+    fn run<R: Router>(self, server: RequestHandlerFactory<R>) -> HttpResult<::hyper::server::Listening> {
+        match self {
+            HyperServer::Http(s) => s.handle(server),
+        }
+    }
+}
+
+struct RequestHandlerFactory<R: Router> {
     config: Arc<Config<R>>,
     response_filters: Arc<Vec<Box<ResponseFilter>>>,
     global: Arc<Global>,
-    threads: usize,
-    keep_alive: bool,
-    timeout: Duration,
-    max_sockets: usize,
 }
 
-impl<R: Router> ServerInstance<R> {
-    ///Create a new server instance, with the provided configuration. This is
-    ///the same as `Server{...}.build()`.
-    pub fn new(config: Server<R>) -> (ServerInstance<R>, Scheme) {
-        (ServerInstance {
-            config: Arc::new(Config {
-                handlers: config.handlers,
-                fallback_handler: config.fallback_handler,
-                host: config.host.into(),
-                server: config.server,
-                content_type: config.content_type,
-                context_filters: config.context_filters,
-            }),
-            response_filters: Arc::new(config.response_filters),
-            global: Arc::new(config.global),
-            threads: config.threads.unwrap_or_else(|| (num_cpus::get() * 5) / 4),
-            keep_alive: config.keep_alive,
-            timeout: config.timeout,
-            max_sockets: config.max_sockets,
-        },
-        config.scheme)
+impl<R: Router> Clone for RequestHandlerFactory<R> {
+    fn clone(&self) -> RequestHandlerFactory<R> {
+        RequestHandlerFactory {
+            config: self.config.clone(),
+            response_filters: self.response_filters.clone(),
+            global: self.global.clone(),
+        }
     }
-
-    ///Start the server.
-    #[cfg(feature = "ssl")]
-    pub fn run(self, scheme: Scheme) -> HttpResult<Listening> {
-        let threads = self.threads;
-        let server = match scheme {
-            Scheme::Http => try!(HyperServer::http(&self.config.host)),
-            Scheme::Https {cert, key} => try!(HyperServer::https(&self.config.host, cert, key)),
-        };
-        server.keep_alive(self.keep_alive)
-            .timeout(self.timeout)
-            .max_sockets(self.max_sockets)
-            .run(self, threads)
-    }
-
-    ///Start the server.
-    #[cfg(not(feature = "ssl"))]
-    pub fn run(self, _scheme: Scheme) -> HttpResult<Listening> {
-        let threads = self.threads;
-        let server = try!(HyperServer::http(&self.config.host));
-        server.keep_alive(self.keep_alive)
-            .timeout(self.timeout)
-            .max_sockets(self.max_sockets)
-            .run(self, threads)
-    }
-
 }
 
-struct ParsedUri {
-    host: Option<(String, Option<u16>)>,
-    uri_path: UriPath,
-    query: Parameters,
-    fragment: Option<MaybeUtf8Owned>
-}
-
-impl<T: Transport, R: Router> HandlerFactory<T> for ServerInstance<R> where
+impl<T: Transport, R: Router> HandlerFactory<T> for RequestHandlerFactory<R> where
     for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::Encoder<'a, 'b>>,
     for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::Decoder<'a, 'b>>,
 {
@@ -152,6 +261,13 @@ impl<T: Transport, R: Router> HandlerFactory<T> for ServerInstance<R> where
     fn create(&mut self, control: Control) -> RequestHandler<R> {
         RequestHandler::new(self.config.clone(), self.response_filters.clone(), self.global.clone(), control)
     }
+}
+
+struct ParsedUri {
+    host: Option<(String, Option<u16>)>,
+    uri_path: UriPath,
+    query: Parameters,
+    fragment: Option<MaybeUtf8Owned>
 }
 
 fn parse_path(path: &str) -> ParsedUri {
@@ -214,86 +330,7 @@ fn parse_url(url: &Url) -> ParsedUri {
     }
 }
 
-//Helper to handle multiple protocols.
-enum HyperServer {
-    Http(hyper::server::Server<HttpListener>),
-    #[cfg(feature = "ssl")]
-    Https(hyper::server::Server<HttpsListener<Openssl>>),
-}
-
-impl HyperServer {
-    fn http(host: &SocketAddr) -> HttpResult<HyperServer> {
-        hyper::server::Server::http(host).map(HyperServer::Http)
-    }
-
-    #[cfg(feature = "ssl")]
-    fn https(host: &SocketAddr, cert: PathBuf, key: PathBuf) -> HttpResult<HyperServer> {
-        let ssl = try!(Openssl::with_cert_and_key(cert, key));
-        hyper::server::Server::https(host, ssl).map(HyperServer::Https)
-    }
-
-    #[cfg(feature = "ssl")]
-    fn keep_alive(self, enabled: bool) -> HyperServer {
-        match self {
-            HyperServer::Http(s) => HyperServer::Http(s.keep_alive(enabled)),
-            HyperServer::Https(s) => HyperServer::Https(s.keep_alive(enabled)),
-        }
-    }
-
-    #[cfg(not(feature = "ssl"))]
-    fn keep_alive(self, enabled: bool) -> HyperServer {
-        match self {
-            HyperServer::Http(s) => HyperServer::Http(s.keep_alive(enabled)),
-        }
-    }
-
-    #[cfg(feature = "ssl")]
-    fn timeout(self, duration: Duration) -> HyperServer {
-        match self {
-            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(duration)),
-            HyperServer::Https(s) => HyperServer::Https(s.idle_timeout(duration)),
-        }
-    }
-
-    #[cfg(not(feature = "ssl"))]
-    fn timeout(self, duration: Duration) -> HyperServer {
-        match self {
-            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(duration)),
-        }
-    }
-
-    #[cfg(feature = "ssl")]
-    fn max_sockets(self, max: usize) -> HyperServer {
-        match self {
-            HyperServer::Http(s) => HyperServer::Http(s.max_sockets(max)),
-            HyperServer::Https(s) => HyperServer::Https(s.max_sockets(max)),
-        }
-    }
-
-    #[cfg(not(feature = "ssl"))]
-    fn max_sockets(self, max: usize) -> HyperServer {
-        match self {
-            HyperServer::Http(s) => HyperServer::Http(s.max_sockets(max)),
-        }
-    }
-
-    #[cfg(feature = "ssl")]
-    fn run<R: Router>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> {
-        match self {
-            HyperServer::Http(s) => s.handle(server),
-            HyperServer::Https(s) => s.handle(server),
-        }
-    }
-
-    #[cfg(not(feature = "ssl"))]
-    fn run<R: Router>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> {
-        match self {
-            HyperServer::Http(s) => s.handle(server),
-        }
-    }
-}
-
-pub struct RequestHandler<R: Router> {
+struct RequestHandler<R: Router> {
     config: Arc<Config<R>>,
     global: Arc<Global>,
     response_filters: Arc<Vec<Box<ResponseFilter>>>,
