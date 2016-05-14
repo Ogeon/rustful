@@ -93,7 +93,7 @@ impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyp
 ///The `Handler` trait makes asynchronous request handling a bit easier, using
 ///a synchronous-like API. It's still not fully synchronous, so be careful
 ///with calls to functions that may block.
-pub trait Handler: Send + Sync + 'static {
+pub trait Handler: Send + Sync {
     ///Handle a request from the client. Panicking within this method is
     ///discouraged, to allow the server to run smoothly.
     fn handle_request(&self, context: Context, response: Response);
@@ -104,7 +104,7 @@ pub trait Handler: Send + Sync + 'static {
     }
 }
 
-impl<F: Fn(Context, Response) + Send + Sync + 'static> Handler for F {
+impl<F: Fn(Context, Response) + Send + Sync> Handler for F {
     fn handle_request(&self, context: Context, response: Response) {
         self(context, response);
     }
@@ -141,7 +141,7 @@ impl<H: Handler> Meta for H {
 ///A raw handler will read and write directly from and to the HTTP decoder and
 ///encoder, which requires extra care, but will also allow more advanced
 ///handlers.
-pub trait RawHandler: Send + 'static {
+pub trait RawHandler: Send {
     ///Return the first state after the request was received. Any necessary
     ///context should be provided through an accompanying `Factory`
     ///implementation.
@@ -159,7 +159,7 @@ pub trait RawHandler: Send + 'static {
 }
 
 ///A factory for initializing raw handlers.
-pub trait Factory: Meta + Send + Sync + 'static {
+pub trait Factory: Meta + Send + Sync {
     ///The resulting handler type.
     type Handler: RawHandler;
 

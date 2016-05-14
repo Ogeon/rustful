@@ -32,7 +32,7 @@ use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::{Router, Endpoint};
 use handler::{RawHandler, Factory};
 use header::{Headers, HttpDate};
-use server::{Scheme, Global};
+use server::{Scheme, Global, ThreadHandle};
 use response::{RawResponse, ResponseHead};
 
 use HttpResult;
@@ -55,6 +55,7 @@ struct Config<R: Router> {
 ///```
 ///#[macro_use] extern crate log;
 ///# extern crate rustful;
+///# use std::error::Error;
 ///# use rustful::{Server, Handler, Context, Response};
 ///# #[derive(Default)]
 ///# struct R;
@@ -64,30 +65,37 @@ struct Config<R: Router> {
 ///
 ///# fn main() {
 ///# let router = R;
-///let instance = Server {
+///let server_result = Server {
 ///    host: 8080.into(),
 ///    handlers: router,
 ///    ..Server::default()
-///}.run();
-///
-/// //...do stuff...
-///
-///match instance {
+///}.run_and_then(|_, instance| {
+///    //...do stuff...
 ///    //This is only neccessary if it has to be closed before the program ends
-///    Ok(instance) => instance.close(),
-///    Err(e) => error!("could not run the server: {}", e),
+///    instance.close();
+///});
+///
+///if let Err(e) = server_result {
+///    error!("could not start server: {}", e.description())
 ///}
+///
+/// //...do more stuff...
+///
 ///# }
 ///```
-pub struct ServerInstance {
+pub struct ServerInstance<H: ThreadHandle> {
+    ///The address where the server is listening.
     pub addr: SocketAddr,
-    servers: Vec<::hyper::server::Listening>,
+    servers: Vec<(Option<::hyper::server::Listening>, Option<H>)>,
 }
 
-impl ServerInstance {
+impl<H: ThreadHandle> ServerInstance<H> {
     ///Create and start a new server instance, with the provided
-    ///configuration. This is the same as `Server{...}.run()`.
-    pub fn run<R: Router>(config: Server<R>) -> HttpResult<ServerInstance> {
+    ///configuration. This is the same as `Server{...}.run_in(...)`.
+    pub fn run<R, F>(config: Server<R>, mut new_thread: F) -> HttpResult<ServerInstance<H>> where
+        R: Router,
+        F: FnMut(ServerLoop<R>) -> H,
+    {
         let Server {
             handlers,
             fallback_handler,
@@ -121,15 +129,18 @@ impl ServerInstance {
         let servers: Vec<_> = try!(
                 ::std::iter::repeat(factory)
                     .take(threads)
-                    .map(|factory| try!(HyperServer::new(&scheme, try!(listener.try_clone())))
-                        .keep_alive(keep_alive)
-                        .timeout(timeout)
-                        .max_sockets(max_sockets)
-                        .run(factory)
-                    ).collect()
+                    .map(|factory| {
+                        HyperServer::new(&scheme, try!(listener.try_clone()))
+                            .and_then(|server| server.keep_alive(keep_alive)
+                                .timeout(timeout)
+                                .max_sockets(max_sockets)
+                                .run(factory)
+                            ).map(|(listening, server)| {
+                                let handle = new_thread(server);
+                                (Some(listening), Some(handle))
+                            })
+                    }).collect()
             );
-
-        println!("using {} threads", servers.len());
 
         Ok(ServerInstance {
             addr: try!(listener.0.local_addr()),
@@ -137,13 +148,18 @@ impl ServerInstance {
         })
     }
 
-    ///Keep listening forever.
-    pub fn forever(self) {}
-
     ///Shut down the server.
-    pub fn close(self) {
-        for server in self.servers {
-            server.close();
+    pub fn close(mut self) {
+        for &mut (ref mut server, _) in &mut self.servers {
+            server.take().map(|s| s.close());
+        }
+    }
+}
+
+impl<H: ThreadHandle> Drop for ServerInstance<H> {
+    fn drop(&mut self) {
+        for &mut (_, ref mut handle) in &mut self.servers {
+            handle.take().map(|h| h.join());
         }
     }
 }
@@ -221,19 +237,44 @@ impl HyperServer {
     }
 
     #[cfg(feature = "ssl")]
-    fn run<R: Router>(self, server: RequestHandlerFactory<R>) -> HttpResult<::hyper::server::Listening> {
+    fn run<R: Router>(self, server: RequestHandlerFactory<R>) -> HttpResult<(::hyper::server::Listening, ServerLoop<R>)> {
         match self {
-            HyperServer::Http(s) => s.handle(server),
-            HyperServer::Https(s) => s.handle(server),
+            HyperServer::Http(s) => s.handle(server).map(|(listening, server_loop)| (listening, ServerLoop::http(server_loop))),
+            HyperServer::Https(s) => s.handle(server).map(|(listening, server_loop)| (listening, ServerLoop::https(server_loop))),
         }
     }
 
     #[cfg(not(feature = "ssl"))]
-    fn run<R: Router>(self, server: RequestHandlerFactory<R>) -> HttpResult<::hyper::server::Listening> {
+    fn run<R: Router>(self, server: RequestHandlerFactory<R>) -> HttpResult<(::hyper::server::Listening, ServerLoop<R>)> {
         match self {
-            HyperServer::Http(s) => s.handle(server),
+            HyperServer::Http(s) => s.handle(server).map(|(listening, server_loop)| (listening, ServerLoop::http(server_loop))),
         }
     }
+}
+
+#[must_use]
+///A server event loop, waiting to be started.
+pub struct ServerLoop<R: Router>(ServerLoopKind<R>);
+
+impl<R: Router> ServerLoop<R> {
+    ///Run the server loop, and block this thread. This will otherwise happen
+    ///automatically when it's dropped.
+    pub fn run(self) {}
+
+    fn http(server: hyper::server::ServerLoop<HttpListener, RequestHandlerFactory<R>>) -> ServerLoop<R> {
+        ServerLoop(ServerLoopKind::Http(server))
+    }
+
+    #[cfg(feature = "ssl")]
+    fn https(server: hyper::server::ServerLoop<HttpsListener<Openssl>, RequestHandlerFactory<R>>) -> ServerLoop<R> {
+        ServerLoop(ServerLoopKind::Https(server))
+    }
+}
+
+enum ServerLoopKind<R: Router> {
+    Http(hyper::server::ServerLoop<HttpListener, RequestHandlerFactory<R>>),
+    #[cfg(feature = "ssl")]
+    Https(hyper::server::ServerLoop<HttpsListener<Openssl>, RequestHandlerFactory<R>>),
 }
 
 struct RequestHandlerFactory<R: Router> {

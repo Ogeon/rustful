@@ -215,7 +215,7 @@ impl<'a, T> From<Option<&'a T>> for Endpoint<'a, T> {
 ///
 ///A router must to implement this trait to be usable in a Rustful server. This
 ///trait will also make the router compatible with the `insert_routes!` macro.
-pub trait Router: Send + Sync + 'static {
+pub trait Router: Send + Sync {
     ///The request handler type that is stored within this router.
     type Handler: Factory;
 

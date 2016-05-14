@@ -16,8 +16,7 @@ fn main() {
         ..Server::new(|_: Context, res: Response| res.send("Hello!"))
     }.run();
 
-    match server_result {
-        Ok(_server) => {},
-        Err(e) => error!("could not start server: {}", e.description())
+    if let Err(e) = server_result {
+        error!("could not start server: {}", e.description())
     }
 }

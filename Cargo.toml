@@ -30,6 +30,7 @@ url = "1"
 anymap = "0.12"
 phf = "0.7"
 num_cpus = "0.2"
+crossbeam = "0.2"
 
 [dependencies.hyper]
 git = "https://github.com/hyperium/hyper"

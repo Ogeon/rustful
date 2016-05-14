@@ -2,6 +2,7 @@
 
 use std::borrow::ToOwned;
 use std::time::Duration;
+use std::thread::{self, JoinHandle};
 
 use hyper;
 use hyper::mime::Mime;
@@ -11,8 +12,9 @@ use router::Router;
 
 use HttpResult;
 
-pub use self::instance::ServerInstance;
+pub use self::instance::{ServerInstance, ServerLoop};
 pub use self::config::{Host, Global, Scheme};
+pub use crossbeam::{Scope, ScopedJoinHandle};
 
 mod instance;
 mod config;
@@ -20,6 +22,8 @@ mod config;
 ///Used to set up and run a server.
 ///
 ///```no_run
+///# extern crate rustful;
+///# #[macro_use] extern crate log;
 ///# use std::error::Error;
 ///# use rustful::{Server, Handler, Context, Response};
 ///# #[derive(Default)]
@@ -27,6 +31,7 @@ mod config;
 ///# impl Handler for R {
 ///#     fn handle_request(&self, _context: Context, _response: Response) {}
 ///# }
+///# fn main() {
 ///# let router = R;
 ///let server_result = Server {
 ///    host: 8080.into(),
@@ -34,10 +39,10 @@ mod config;
 ///    ..Server::default()
 ///}.run();
 ///
-///match server_result {
-///    Ok(_server) => {},
-///    Err(e) => println!("could not start server: {}", e.description())
+///if let Err(e) = server_result {
+///    error!("could not start server: {}", e.description())
 ///}
+///# }
 ///```
 pub struct Server<R: Router> {
     ///One or several response handlers.
@@ -123,14 +128,112 @@ impl<R: Router> Server<R> {
         }
     }
 
-    ///Start the server.
-    pub fn run(self) -> HttpResult<ServerInstance> {
-        ServerInstance::run(self)
+    ///Run the server using scoped threads, blocking this thread until the
+    ///server shuts down.
+    pub fn run(self) -> HttpResult<()> {
+        self.run_and_then(|_, _| ())
+    }
+
+    ///Run the server using scoped threads, and then do something within the
+    ///same scope, before blocking this thread.
+    ///
+    ///```no_run
+    ///# extern crate rustful;
+    ///# #[macro_use] extern crate log;
+    ///# use std::error::Error;
+    ///# use rustful::{Server, Handler, Context, Response};
+    ///# #[derive(Default)]
+    ///# struct R;
+    ///# impl Handler for R {
+    ///#     fn handle_request(&self, _context: Context, _response: Response) {}
+    ///# }
+    ///# fn main() {
+    ///# let router = R;
+    ///# let port = 8080;
+    ///let server_result = Server {
+    ///    host: port.into(),
+    ///    handlers: router,
+    ///    ..Server::default()
+    ///}.run_and_then(|_scope, instance| {
+    ///    println!("listening on port {}", instance.addr.port());
+    ///});
+    ///
+    ///if let Err(e) = server_result {
+    ///    error!("could not start server: {}", e.description())
+    ///}
+    ///# }
+    ///```
+    pub fn run_and_then<F, T>(self, action: F) -> HttpResult<T> where
+        F: FnOnce(&Scope, ServerInstance<ScopedJoinHandle<()>>) -> T,
+    {
+        ::crossbeam::scope(|scope| {
+            ServerInstance::run(self, |s| scope.spawn(|| s.run())).map(|instance| action(scope, instance))
+        })
+    }
+
+    ///Run the server using regular, detached threads.
+    ///
+    ///```no_run
+    ///# extern crate rustful;
+    ///# #[macro_use] extern crate log;
+    ///# use std::error::Error;
+    ///# use rustful::{Server, Handler, Context, Response};
+    ///# #[derive(Default)]
+    ///# struct R;
+    ///# impl Handler for R {
+    ///#     fn handle_request(&self, _context: Context, _response: Response) {}
+    ///# }
+    ///# fn main() {
+    ///# let router = R;
+    ///# let port = 8080;
+    ///let server_result = Server {
+    ///    host: port.into(),
+    ///    handlers: router,
+    ///    ..Server::default()
+    ///}.run_detached();
+    ///
+    ///match server_result {
+    ///    Ok(instance) => println!("listening on port {}", instance.addr.port()),
+    ///    Err(e) => error!("could not start server: {}", e.description()),
+    ///}
+    ///# }
+    ///```
+    pub fn run_detached(self) -> HttpResult<ServerInstance<JoinHandle<()>>> where
+        R: 'static,
+        R::Handler: 'static,
+    {
+        ServerInstance::run(self, |s| thread::spawn(move || s.run() ))
+    }
+
+    ///Run the server using some custom threading method.
+    pub fn run_in<F, H>(self, new_thread: F) -> HttpResult<ServerInstance<H>> where
+        F: FnMut(ServerLoop<R>) -> H,
+        H: ThreadHandle,
+    {
+        ServerInstance::run(self, new_thread)
     }
 }
 
 impl<R: Router + Default> Default for Server<R> {
     fn default() -> Server<R> {
         Server::new(R::default())
+    }
+}
+
+///Common functionality for thread handles.
+pub trait ThreadHandle {
+    ///Wait for the thread to finish.
+    fn join(self);
+}
+
+impl ThreadHandle for JoinHandle<()> {
+    fn join(self) {
+        self.join().expect("failed to join server thread");
+    }
+}
+
+impl ThreadHandle for ScopedJoinHandle<()> {
+    fn join(self) {
+        self.join();
     }
 }

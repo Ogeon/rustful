@@ -9,6 +9,10 @@
 //!```no_run
 //!#[macro_use]
 //!extern crate rustful;
+//!#[macro_use]
+//!extern crate log;
+//!
+//!use std::error::Error;
 //!use rustful::{Server, Handler, Context, Response, TreeRouter};
 //!
 //!struct Greeting(&'static str);
@@ -42,7 +46,7 @@
 //!    }
 //!};
 //!
-//!Server {
+//!let server_result = Server {
 //!    //Use a closure to handle requests.
 //!    handlers: my_router,
 //!    //Set the listening port to `8080`.
@@ -50,6 +54,10 @@
 //!    //Fill out everything else with default values.
 //!    ..Server::default()
 //!}.run();
+//!
+//!if let Err(e) = server_result {
+//!    error!("could not start server: {}", e.description())
+//!}
 //!# }
 //!```
 //!
@@ -81,6 +89,7 @@ extern crate hyper;
 extern crate anymap;
 extern crate phf;
 extern crate num_cpus;
+extern crate crossbeam;
 
 pub use hyper::mime;
 pub use hyper::method::Method;

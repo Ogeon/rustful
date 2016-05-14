@@ -9,6 +9,7 @@ extern crate env_logger;
 
 use std::sync::RwLock;
 use std::collections::btree_map::{BTreeMap, Iter};
+use std::error::Error;
 
 use rustc_serialize::json;
 use unicase::UniCase;
@@ -77,19 +78,18 @@ fn main() {
         content_type: content_type!(Application / Json; Charset = Utf8),
         global: Box::new(database).into(),
         ..Server::default()
-    }.run();
-
-    match server_result {
-      Ok(server) => {
+    }.run_and_then(|_, server| {
         println!(
           "This example is a showcase implementation of Todo-Backend project (http://todobackend.com/), \
           visit http://localhost:{0}/ to try it or run reference test suite by pointing \
           your browser to http://todobackend.com/specs/index.html?http://localhost:{0}",
           server.addr.port()
         );
-      },
-      Err(e) => error!("could not run the server: {}", e)
-    };
+    });
+
+    if let Err(e) = server_result {
+        error!("could not start server: {}", e.description())
+    }
 }
 
 //List all the to-dos in the database
