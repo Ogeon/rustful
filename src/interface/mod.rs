@@ -8,8 +8,11 @@ use self::response::RawResponse;
 pub mod response;
 pub mod body;
 
+///Headers and status code of a response.
 pub struct ResponseHead {
+    ///The response status code.
     pub status: StatusCode,
+    ///The response headers.
     pub headers: Headers,
 }
 

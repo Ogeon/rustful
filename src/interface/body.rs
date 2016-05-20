@@ -68,7 +68,7 @@ impl<'a> Body<'a> {
     ///Read the body in a synchronous manner, from a different thread.
     pub fn sync_read<F: FnOnce(BodyReader) + Send + 'static>(mut self, read_fn: F) {
         let (send, recv) = mpsc::channel();
-        let reader = BodyReader::new(recv, self.boundary.take());
+        let reader = BodyReader::new(recv, &mut self);
         thread::spawn(move || read_fn(reader));
         self.on_readable(move |decoder| {
             let mut buffer = vec![0; MAX_BUFFER_LENGTH];
@@ -243,17 +243,17 @@ pub struct BodyReader {
 
 impl BodyReader {
     #[cfg(feature = "multipart")]
-    fn new(recv: Receiver<io::Result<Vec<u8>>>, boundary: Option<String>) -> BodyReader {
+    fn new(recv: Receiver<io::Result<Vec<u8>>>, body: &mut Body) -> BodyReader {
         BodyReader {
             buffer: None,
             read_pos: 0,
             recv: recv,
-            boundary: boundary
+            boundary: body.boundary.take(),
         }
     }
 
     #[cfg(not(feature = "multipart"))]
-    fn new(recv: Receiver<io::Result<Vec<u8>>>, _boundary: Option<String>) -> BodyReader {
+    fn new(recv: Receiver<io::Result<Vec<u8>>>, _body: &mut Body) -> BodyReader {
         BodyReader {
             buffer: None,
             read_pos: 0,

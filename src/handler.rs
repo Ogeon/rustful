@@ -274,6 +274,7 @@ impl<H: Handler> Factory for H {
     }
 }
 
+///The request handling part of a simple handler.
 pub struct HandlerWrapper {
     on_body: Option<Box<FnMut(&mut Decoder) + Send>>,
     response_recv: Receiver<ResponseMessage>,

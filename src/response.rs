@@ -87,10 +87,10 @@ impl error::Error for Error {
 
 ///Error that may occur while sending a file.
 pub struct FileError {
-    //The error that occurred while reading the file.
+    ///The error that occurred while reading the file.
     pub error: io::Error,
 
-    //The recovered HTTP response.
+    ///The recovered HTTP response.
     pub response: Response,
 }
 
