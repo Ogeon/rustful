@@ -6,7 +6,7 @@ skip_tags: true
 platform: x64
 os: MinGW
 environment:
-  OPENSSL_VERSION: 1_0_2g
+  OPENSSL_VERSION: 1_0_2h
 install:
   - cmd: SET PATH=C:\MINGW\bin\;C:\MINGW\msys\1.0\bin\;C:\Users\appveyor\.multirust\toolchains\stable\bin\;%PATH%
   - ps: Start-FileDownload "https://github.com/rust-lang-nursery/multirust-rs-binaries/raw/master/i686-pc-windows-gnu/multirust-setup.exe"
