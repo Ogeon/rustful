@@ -2,6 +2,8 @@ use std::io::Write;
 use url::percent_encoding::percent_decode;
 use context::Parameters;
 
+pub const MAX_BUFFER_LENGTH: usize = 2048;
+
 pub fn parse_parameters(source: &[u8]) -> Parameters {
     let mut parameters = Parameters::new();
     let source: Vec<u8> = source.iter()

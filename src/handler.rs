@@ -3,88 +3,158 @@ use std::borrow::Cow;
 use std::sync::mpsc::{Receiver, channel};
 use std::sync::Arc;
 use std::io::{self, Read, Write};
-use std::cmp::min;
 
 use context::{Context, RawContext};
-use context::body::BodyReader;
 use response::{Response, ResponseHead, RawResponse};
-use utils::FnBox;
 use interface::ResponseMessage;
-
-const MAX_BUFFER_LENGTH: usize = 2048;
 
 pub use hyper::{Next, Control};
 
+///Combined network writer and HTTP encoder.
 #[cfg(not(feature = "ssl"))]
-pub type Encoder<'a, 'b> = &'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>;
+pub type RawEncoder<'a, 'b> = &'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>;
 
+///Combined network reader and HTTP decoder.
 #[cfg(not(feature = "ssl"))]
-pub type Decoder<'a, 'b> = &'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>;
+pub type RawDecoder<'a, 'b> = &'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>;
 
+///Combined network writer and HTTP encoder.
 #[cfg(feature = "ssl")]
-pub enum Encoder<'a, 'b: 'a> {
+pub enum RawEncoder<'a, 'b: 'a> {
+    ///A writer for HTTP streams.
     Http(&'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>),
+    ///A writer for HTTPS streams.
     Https(&'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>),
 }
 
 #[cfg(feature = "ssl")]
-impl<'a, 'b> Write for Encoder<'a, 'b> {
+impl<'a, 'b> Write for RawEncoder<'a, 'b> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match *self {
-            Encoder::Http(ref mut decoder) => decoder.write(buf),
-            Encoder::Https(ref mut decoder) => decoder.write(buf),
+            RawEncoder::Http(ref mut encoder) => encoder.write(buf),
+            RawEncoder::Https(ref mut encoder) => encoder.write(buf),
         }
     }
 
     fn flush(&mut self) -> io::Result<()> {
         match *self {
-            Encoder::Http(ref mut decoder) => decoder.flush(),
-            Encoder::Https(ref mut decoder) => decoder.flush(),
+            RawEncoder::Http(ref mut encoder) => encoder.flush(),
+            RawEncoder::Https(ref mut encoder) => encoder.flush(),
         }
     }
 }
 
 #[cfg(feature = "ssl")]
-impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>> for Encoder<'a, 'b> {
-    fn from(encoder: &'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>) -> Encoder<'a, 'b> {
-        Encoder::Http(encoder)
+impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>> for RawEncoder<'a, 'b> {
+    fn from(encoder: &'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>) -> RawEncoder<'a, 'b> {
+        RawEncoder::Http(encoder)
     }
 }
 
 #[cfg(feature = "ssl")]
-impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>> for Encoder<'a, 'b> {
-    fn from(encoder: &'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>) -> Encoder<'a, 'b> {
-        Encoder::Https(encoder)
+impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>> for RawEncoder<'a, 'b> {
+    fn from(encoder: &'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>) -> RawEncoder<'a, 'b> {
+        RawEncoder::Https(encoder)
     }
 }
 
+///Combined network reader and HTTP decoder.
 #[cfg(feature = "ssl")]
-pub enum Decoder<'a, 'b: 'a> {
+pub enum RawDecoder<'a, 'b: 'a> {
+    ///A reader for HTTP streams.
     Http(&'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>),
+    ///A reader for HTTPS streams.
     Https(&'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>),
 }
 
 #[cfg(feature = "ssl")]
-impl<'a, 'b> Read for Decoder<'a, 'b> {
+impl<'a, 'b> Read for RawDecoder<'a, 'b> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match *self {
-            Decoder::Http(ref mut decoder) => decoder.read(buf),
-            Decoder::Https(ref mut decoder) => decoder.read(buf),
+            RawDecoder::Http(ref mut decoder) => decoder.read(buf),
+            RawDecoder::Https(ref mut decoder) => decoder.read(buf),
         }
     }
 }
 
 #[cfg(feature = "ssl")]
-impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>> for Decoder<'a, 'b> {
-    fn from(decoder: &'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>) -> Decoder<'a, 'b> {
-        Decoder::Http(decoder)
+impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>> for RawDecoder<'a, 'b> {
+    fn from(decoder: &'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>) -> RawDecoder<'a, 'b> {
+        RawDecoder::Http(decoder)
     }
 }
 
 #[cfg(feature = "ssl")]
-impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>> for Decoder<'a, 'b> {
-    fn from(decoder: &'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>) -> Decoder<'a, 'b> {
-        Decoder::Https(decoder)
+impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>> for RawDecoder<'a, 'b> {
+    fn from(decoder: &'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>) -> RawDecoder<'a, 'b> {
+        RawDecoder::Https(decoder)
+    }
+}
+
+///A safer HTTP decoder.
+pub struct Decoder<'a, 'b: 'a> {
+    decoder: RawDecoder<'a, 'b>,
+    next: Next,
+}
+
+impl<'a, 'b> Decoder<'a, 'b> {
+    ///Signal to the event loop that nothing more should be read. There is no
+    ///reason to use this under normal circumstances.
+    pub fn abort(&mut self) {
+        self.next = Next::wait();
+    }
+}
+
+impl<'a, 'b> Read for Decoder<'a, 'b> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let res = self.decoder.read(buffer);
+        self.next = match res {
+            Ok(0) => Next::wait(),
+            Ok(_) => Next::read(),
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Next::read(),
+            Err(_) => Next::wait(),
+        };
+
+        res
+    }
+}
+
+///A safer HTTP encoder.
+pub struct Encoder<'a, 'b: 'a> {
+    encoder: RawEncoder<'a, 'b>,
+    next: Next,
+}
+
+impl<'a, 'b> Encoder<'a, 'b> {
+    ///Signal to the event loop that nothing more should be written. This will
+    ///end the response and possibly break the connection, which may lead to
+    ///unwanted results. There is no reason to use this under normal
+    ///circumstances.
+    pub fn abort(&mut self) {
+        self.next = Next::end();
+    }
+}
+
+impl<'a, 'b> Write for Encoder<'a, 'b> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let res = self.encoder.write(buffer);
+        self.next = match res {
+            Ok(0) => Next::end(),
+            //Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Next::write(),
+            Err(_) => Next::end(),
+            Ok(_) => Next::write(),
+        };
+        res
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let res = self.encoder.flush();
+        self.next = match res {
+            //Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Next::write(),
+            Err(_) => Next::end(),
+            Ok(_) => Next::write(),
+        };
+        res
     }
 }
 
@@ -148,14 +218,14 @@ pub trait RawHandler: Send {
     fn on_request(&mut self) -> Next;
 
     ///Read from the request body.
-    fn on_request_readable(&mut self, decoder: Decoder) -> Next;
+    fn on_request_readable(&mut self, decoder: RawDecoder) -> Next;
 
     ///Set the response head, including status code and headers.
     fn on_response(&mut self) -> (ResponseHead, Next);
 
     ///Write to the response body. It's up to the handler, itself, to filter
     ///the response data.
-    fn on_response_writable(&mut self, encoder: Encoder) -> Next;
+    fn on_response_writable(&mut self, encoder: RawEncoder) -> Next;
 }
 
 ///A factory for initializing raw handlers.
@@ -169,17 +239,11 @@ pub trait Factory: Meta + Send + Sync {
 }
 
 impl<H: Handler> Factory for H {
-    type Handler = RawWrapper;
+    type Handler = HandlerWrapper;
 
-    fn create(&self, context: RawContext, response: RawResponse) -> RawWrapper {
+    fn create(&self, context: RawContext, response: RawResponse) -> HandlerWrapper {
         let mut on_body = None;
         let (send, recv) = channel();
-
-        let body_length = if let Some(&::header::ContentLength(length)) = context.headers.get() {
-            length as usize
-        } else {
-            0
-        };
 
         {
             let response = ::interface::response::make_response(
@@ -187,6 +251,8 @@ impl<H: Handler> Factory for H {
                 send,
                 context.control
             );
+
+            let body = ::interface::body::new(&mut on_body, &context.headers);
 
             let context = Context {
                 method: context.method,
@@ -198,39 +264,33 @@ impl<H: Handler> Factory for H {
                 query: context.query,
                 fragment: context.fragment,
                 global: context.global,
-                body: BodyReader::new(&mut on_body),
+                body: body,
             };
 
             self.handle_request(context, response);
         }
 
-        RawWrapper::new(on_body, body_length, recv)
+        HandlerWrapper::new(on_body, recv)
     }
 }
 
-pub struct RawWrapper {
-    on_body: Option<Box<FnBox<io::Result<Vec<u8>>, Output=()> + Send>>,
-    body_buffer: Vec<u8>,
-    body_length: usize,
-
+pub struct HandlerWrapper {
+    on_body: Option<Box<FnMut(&mut Decoder) + Send>>,
     response_recv: Receiver<ResponseMessage>,
     write_method: Option<WriteMethod>,
 }
 
-impl RawWrapper {
-    fn new(on_body: Option<Box<FnBox<io::Result<Vec<u8>>, Output=()> + Send>>, body_length: usize, recv: Receiver<ResponseMessage>) -> RawWrapper {
-        RawWrapper {
+impl HandlerWrapper {
+    fn new(on_body: Option<Box<FnMut(&mut Decoder) + Send>>, recv: Receiver<ResponseMessage>) -> HandlerWrapper {
+        HandlerWrapper {
             on_body: on_body,
-            body_buffer: vec![],
-            body_length: body_length,
-
             response_recv: recv,
             write_method: None,
         }
     }
 }
 
-impl RawHandler for RawWrapper {
+impl RawHandler for HandlerWrapper {
     fn on_request(&mut self) -> Next {
         if self.on_body.is_some() {
             Next::read()
@@ -239,39 +299,17 @@ impl RawHandler for RawWrapper {
         }
     }
 
-    fn on_request_readable(&mut self, mut decoder: Decoder) -> Next {
-        while self.body_buffer.len() < self.body_length {
-            let read_len = min(self.body_length - self.body_buffer.len(), MAX_BUFFER_LENGTH);
-            let start = self.body_buffer.len();
-            let new_len = self.body_buffer.len() + read_len;
-            self.body_buffer.resize(new_len, 0);
-
-            match decoder.read(&mut self.body_buffer[start..]) {
-                Ok(0) => {
-                    self.body_buffer.truncate(start);
-                    break;
-                },
-                Ok(length) => {
-                    self.body_buffer.truncate(start + length);
-                },
-                Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                    self.body_buffer.truncate(start);
-                    return Next::read()
-                } else if let Some(on_body) = self.on_body.take() {
-                    on_body.call_box(Err(e));
-                    return Next::wait()
-                } else {
-                    return Next::wait()
-                }
-            }
+    fn on_request_readable(&mut self, decoder: RawDecoder) -> Next {
+        if let Some(on_body) = self.on_body.as_mut() {
+            let mut decoder = Decoder {
+                decoder: decoder,
+                next: Next::wait(),
+            };
+            on_body(&mut decoder);
+            decoder.next
+        } else {
+            Next::wait()
         }
-
-        if let Some(on_body) = self.on_body.take() {
-            self.body_length = 0;
-            on_body.call_box(Ok(::std::mem::replace(&mut self.body_buffer, vec![])));
-        }
-
-        Next::wait()
     }
 
     fn on_response(&mut self) -> (ResponseHead, Next) {
@@ -300,7 +338,7 @@ impl RawHandler for RawWrapper {
         }
     }
 
-    fn on_response_writable(&mut self, mut encoder: Encoder) -> Next {
+    fn on_response_writable(&mut self, mut encoder: RawEncoder) -> Next {
         match self.write_method {
             Some(WriteMethod::Buffer(ref buffer, ref mut position, max_length)) => {
                 while *position < max_length {
@@ -321,11 +359,13 @@ impl RawHandler for RawWrapper {
 
                 Next::end()
             },
-            Some(WriteMethod::Callback(ref mut on_write)) => match on_write(encoder) {
-                Ok(0) => Next::end(),
-                //Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Next::write(),
-                Err(_) => Next::end(),
-                Ok(_) => Next::write(),
+            Some(WriteMethod::Callback(ref mut on_write)) => {
+                let mut encoder = Encoder {
+                    encoder: encoder,
+                    next: Next::end(),
+                };
+                on_write(&mut encoder);
+                encoder.next
             },
             None => Next::end()
         }
@@ -334,5 +374,5 @@ impl RawHandler for RawWrapper {
 
 enum WriteMethod {
     Buffer(Vec<u8>, usize, usize),
-    Callback(Box<FnMut(Encoder) -> io::Result<usize> + Send>),
+    Callback(Box<FnMut(&mut Encoder) + Send>),
 }

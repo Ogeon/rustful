@@ -1,5 +1,3 @@
-use std::io;
-
 use header::Headers;
 use StatusCode;
 
@@ -8,6 +6,7 @@ use handler::Encoder;
 use self::response::RawResponse;
 
 pub mod response;
+pub mod body;
 
 pub struct ResponseHead {
     pub status: StatusCode,
@@ -26,5 +25,5 @@ impl From<RawResponse> for ResponseHead {
 pub enum ResponseMessage {
     Head(ResponseHead),
     Buffer(Vec<u8>),
-    Callback(Box<FnMut(Encoder) -> io::Result<usize> + Send>),
+    Callback(Box<FnMut(&mut Encoder) + Send>),
 }

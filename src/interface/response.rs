@@ -1,4 +1,4 @@
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ use filter::{FilterContext, ResponseFilter};
 use filter::ResponseAction as Action;
 use mime::{Mime, TopLevel, SubLevel};
 use server::Global;
-use utils::BytesExt;
+use utils::{BytesExt, MAX_BUFFER_LENGTH};
 use response::{Data, Error, FileError};
 use interface::{ResponseMessage, ResponseHead};
 use handler::Encoder;
@@ -285,8 +285,6 @@ impl Response {
         P: AsRef<Path>,
         F: FnOnce(&str) -> Option<Mime>
     {
-        const MAX_BUFFER_SIZE: usize = 2048;
-
         let path: &Path = path.as_ref();
         let mime = path
             .extension()
@@ -304,23 +302,29 @@ impl Response {
 
         self.headers.set(ContentType(mime));
 
-        let mut buffer = Vec::with_capacity(MAX_BUFFER_SIZE);
+        let mut buffer = Vec::with_capacity(MAX_BUFFER_LENGTH);
         let mut read_pos = 0;
         let mut written = 0;
         let file_size = metadata.len() as usize;
 
-        unsafe { self.raw_send(metadata.len(), move |mut writer| {
+        unsafe { self.raw_send(metadata.len(), move |writer| {
             if read_pos >= buffer.len() {
-                buffer.resize(min(MAX_BUFFER_SIZE, file_size - written), 0);
-                let len = try!(file.read(&mut buffer[..]));
+                buffer.resize(min(MAX_BUFFER_LENGTH, file_size - written), 0);
+                let len = match file.read(&mut buffer[..]) {
+                    Ok(len) => len,
+                    Err(_) => {
+                        writer.abort();
+                        return;
+                    },
+                };
                 buffer.truncate(len);
                 read_pos = 0;
             }
 
-            let len = try!(writer.write(&buffer[read_pos..]));
-            read_pos += len;
-            written += len;
-            Ok(len)
+            if let Ok(len) = writer.write(&buffer[read_pos..]) {
+                read_pos += len;
+                written += len;
+            }
         }) };
 
         Ok(())
@@ -396,7 +400,7 @@ impl Response {
     ///__Unsafety__: The content length is set beforehand, which makes it
     ///possible to send responses that are too short.
     pub unsafe fn raw_send<F>(mut self, content_length: u64, on_write: F) where
-        F: FnMut(Encoder) -> io::Result<usize> + Send + 'static
+        F: FnMut(&mut Encoder) + Send + 'static
     {
         self.sent = true;
 

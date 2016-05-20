@@ -85,9 +85,9 @@
 //!##Request Body
 //!
 //!The body will not be read in advance, unlike the other parts of the
-//!request. It is instead available as a `BodyReader` in the field `body`,
+//!request. It is instead available as a `Body` in the field `body`,
 //!through which it can be read and parsed as various data formats, like JSON
-//!and query strings. The documentation for [`BodyReader`][body_reader] gives
+//!and query strings. The documentation for [`Body`][body_reader] gives
 //!more examples.
 //!
 
@@ -108,7 +108,7 @@
 //![context]: struct.Context.html
 //![headers]: ../header/struct.Headers.html
 //![log]: ../log/index.html
-//![body_reader]: body/struct.BodyReader.html
+//![body_reader]: body/struct.Body.html
 
 //use std::net::SocketAddr;
 use std::fmt;
@@ -121,7 +121,7 @@ use header::Headers;
 use server::Global;
 use handler::Control;
 
-use self::body::BodyReader;
+use self::body::Body;
 use self::hypermedia::Link;
 
 pub mod body;
@@ -167,7 +167,7 @@ pub struct Context<'a> {
     pub global: Arc<Global>,
 
     ///A reader for the request body.
-    pub body: BodyReader<'a>,
+    pub body: Body<'a>,
 }
 
 ///A more primitive `Context`, for `RawHandler`.

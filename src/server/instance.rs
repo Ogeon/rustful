@@ -294,8 +294,8 @@ impl<R: Router> Clone for RequestHandlerFactory<R> {
 }
 
 impl<T: Transport, R: Router> HandlerFactory<T> for RequestHandlerFactory<R> where
-    for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::Encoder<'a, 'b>>,
-    for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::Decoder<'a, 'b>>,
+    for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::RawEncoder<'a, 'b>>,
+    for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::RawDecoder<'a, 'b>>,
 {
     type Output = RequestHandler<R>;
 
@@ -413,8 +413,8 @@ fn modify_context(context_filters: &[Box<ContextFilter>], global: &Global, filte
 }
 
 impl<T: Transport, R: Router> HyperHandler<T> for RequestHandler<R> where
-    for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::Encoder<'a, 'b>>,
-    for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::Decoder<'a, 'b>>,
+    for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::RawEncoder<'a, 'b>>,
+    for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::RawDecoder<'a, 'b>>,
 {
     fn on_request(&mut self, request: Request) -> Next {
         if let Some(control) = self.control.take() {

@@ -8,7 +8,7 @@ use std::io::Write;
 use std::error::Error;
 
 use rustful::Server;
-use rustful::handler::{RawHandler, Factory, Next, Encoder, Decoder, Meta};
+use rustful::handler::{RawHandler, Factory, Next, RawEncoder, RawDecoder, Meta};
 use rustful::context::RawContext;
 use rustful::response::{RawResponse, ResponseHead};
 
@@ -34,7 +34,7 @@ impl RawHandler for Handler {
 		Next::write()
 	}
 
-	fn on_request_readable(&mut self, _: Decoder) -> Next {
+	fn on_request_readable(&mut self, _: RawDecoder) -> Next {
 		Next::write()
 	}
 
@@ -46,7 +46,7 @@ impl RawHandler for Handler {
 		(head, Next::write())
 	}
 
-	fn on_response_writable(&mut self, mut encoder: Encoder) -> Next {
+	fn on_response_writable(&mut self, mut encoder: RawEncoder) -> Next {
 		let n = encoder.write(ANSWER).unwrap();
 		debug_assert_eq!(n, ANSWER.len());
 		Next::end()

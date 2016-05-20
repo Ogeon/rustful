@@ -34,7 +34,6 @@ crossbeam = "0.2"
 
 [dependencies.hyper]
 git = "https://github.com/hyperium/hyper"
-branch = "mio"
 default-features = false
 
 [dependencies.multipart]
@@ -52,6 +51,7 @@ optional = true
 unicase = "1.0"
 log = "0.3"
 env_logger = "0.3"
+tempdir = "0.3"
 
 [build-dependencies]
 phf_codegen = "0.7"
