@@ -32,7 +32,7 @@
 //![raw]: struct.Raw.html
 
 use std;
-use std::io::{self, Write};
+use std::io;
 use std::error;
 use std::borrow::Cow;
 use std::convert::From;

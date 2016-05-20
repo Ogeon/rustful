@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::io::{Read, Write};
 use std::time::Duration;
 
 use time;
