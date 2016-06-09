@@ -2,6 +2,7 @@ use std::io::{Write, BufRead, BufReader};
 use std::fs::File;
 use std::collections::HashMap;
 use std::borrow::Cow;
+use std::env;
 
 macro_rules! or_continue {
     ($e: expr) => (if let Some(v) = $e {
@@ -16,7 +17,7 @@ pub fn gen() {
         panic!("could not open 'build/apache/mime.types': {}", e);
     });
 
-    let out_path = format!("{}/mime.rs", env!("OUT_DIR"));
+    let out_path = format!("{}/mime.rs", env::var("OUT_DIR").unwrap());
     let mut output = File::create(&out_path).unwrap_or_else(|e| {
         panic!("could not create '{}': {}", out_path, e);
     });
