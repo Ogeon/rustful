@@ -167,7 +167,9 @@ impl<R: Router> Server<R> {
         F: FnOnce(&Scope, ServerInstance<ScopedJoinHandle<()>>) -> T,
     {
         ::crossbeam::scope(|scope| {
-            ServerInstance::run(self, |s| scope.spawn(|| s.run())).map(|instance| action(scope, instance))
+            ServerInstance::run(self, |s| scope.spawn(move || {
+                s.run();
+            })).map(|instance| action(scope, instance))
         })
     }
 

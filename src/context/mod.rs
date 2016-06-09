@@ -90,20 +90,30 @@
 //!and query strings. The documentation for [`Body`][body_reader] gives
 //!more examples.
 //!
-
-/*//!```
+//!```
+//!# #[macro_use] extern crate rustful;
+//!#[macro_use] extern crate log;
 //!use std::io::{BufReader, BufRead};
-//!use rustful::{Context, Response};
+//!use rustful::{Context, Response, StatusCode};
 //!
 //!fn my_handler(context: Context, response: Response) {
-//!    let mut numbered_lines = BufReader::new(context.body).lines().enumerate();
-//!    let mut writer = response.into_chunked();
-//!
-//!    while let Some((line_no, Ok(line))) = numbered_lines.next() {
-//!        writer.send(format!("{}: {}", line_no + 1, line));
-//!    }
+//!    context.body.sync_read(move |body| {
+//!        let mut numbered_lines = BufReader::new(body).lines().enumerate();
+//!        match response.into_chunked() {
+//!            Ok(mut writer) => {
+//!                while let Some((line_no, Ok(line))) = numbered_lines.next() {
+//!                    writer.send(format!("{}: {}", line_no + 1, line));
+//!                }
+//!            },
+//!            Err((mut response, e)) => {
+//!                response.status = StatusCode::InternalServerError;
+//!                error!("a filter failed: {}", e);
+//!            },
+//!        }
+//!    });
 //!}
-//!```*/
+//!# fn main() {}
+//!```
 //!
 //![context]: struct.Context.html
 //![headers]: ../header/struct.Headers.html

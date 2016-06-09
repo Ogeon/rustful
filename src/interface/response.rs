@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
@@ -15,6 +15,7 @@ use StatusCode;
 use header::{
     Headers,
     ContentType,
+    TransferEncoding,
 };
 use filter::{FilterContext, ResponseFilter};
 use filter::ResponseAction as Action;
@@ -22,7 +23,7 @@ use mime::{Mime, TopLevel, SubLevel};
 use server::Global;
 use utils::{BytesExt, MAX_BUFFER_LENGTH};
 use response::{Data, Error, FileError};
-use interface::{ResponseMessage, ResponseHead};
+use interface::{ResponseMessage, ResponseHead, ResponseType};
 use handler::Encoder;
 
 pub fn make_response(
@@ -164,11 +165,13 @@ impl Response {
 
         self.headers.set(::header::ContentLength(buffer.len() as u64));
         
-        let _ = self.sender.send(ResponseMessage::Head(ResponseHead {
-            status: ::std::mem::replace(&mut self.status, StatusCode::Ok),
-            headers: ::std::mem::replace(&mut self.headers, Headers::new()),
-        }));
-        let _ = self.sender.send(ResponseMessage::Buffer(buffer));
+        let _ = self.sender.send(ResponseMessage::Head(
+            ResponseHead {
+                status: ::std::mem::replace(&mut self.status, StatusCode::Ok),
+                headers: ::std::mem::replace(&mut self.headers, Headers::new()),
+            },
+            ResponseType::Buffer(buffer),
+        ));
         self.control.ready(Next::write()).expect("failed to notify the event loop");
         Ok(())
     }
@@ -330,67 +333,72 @@ impl Response {
         Ok(())
     }
 
-    /*///Write the status code and headers to the client and turn the `Response`
-    ///into a `Chunked` response.
-    pub fn into_chunked(mut self) -> Chunked<'a, 'b> {
-        let mut writer = self.writer.take().expect("response used after drop");
-
-        //Make sure it's chunked
-        writer.headers_mut().remove::<::header::ContentLength>();
-        writer.headers_mut().remove_raw("content-length");
-
-        let writer = filter_headers(
-            self.filters,
-            writer.status(),
-            writer.headers_mut(),
-            self.global,
-            self.filter_storage_mut()
-        ).and_then(|(status, write_queue)|{
-            if self.force_close {
-                writer.headers_mut().set(Connection(vec![ConnectionOption::Close]));
-            }
-            *writer.status_mut() = status;
-            let mut writer = try!(writer.start());
-
-            for action in write_queue {
-                match action {
-                    Action::Next(Some(content)) => try!(writer.write_all(content.as_bytes())),
-                    Action::Next(None) => {},
-                    Action::Abort(e) => return Err(Error::Filter(e)),
-                    Action::SilentAbort => break
-                }
-            }
-
-            Ok(writer)
-        });
-
-        Chunked {
-            writer: Some(writer),
-            filters: self.filters,
-            global: self.global,
-            filter_storage: self.filter_storage.take().expect("response used after drop")
-        }
-    }
-
     ///Write the status code and headers to the client and turn the `Response`
-    ///into a `Raw` response. Any eventual response filters are bypassed to
-    ///make sure that the data is not modified.
-    ///
-    ///__Unsafety__: The content length is set beforehand, which makes it
-    ///possible to send responses that are too short.
-    pub unsafe fn into_raw(mut self, content_length: u64) -> Raw<'a> {
-        let mut writer = self.writer.take().expect("response used after drop");
+    ///into a `Chunked` response.
+    pub fn into_chunked(mut self) -> Result<Chunked, (Response, Error)> {
+        //Make sure it's chunked
+        self.headers.remove::<::header::ContentLength>();
+        self.headers.remove_raw("content-length");
+        self.headers.set(TransferEncoding::chunked());
 
-        if self.force_close {
-            writer.headers_mut().set(Connection(vec![ConnectionOption::Close]));
-        }
-        writer.headers_mut().remove_raw("content-length");
-        writer.headers_mut().set(::header::ContentLength(content_length));
+        if self.filters.is_empty() {
+            let _ = self.sender.send(ResponseMessage::Head(
+                ResponseHead {
+                    status: ::std::mem::replace(&mut self.status, StatusCode::Ok),
+                    headers: ::std::mem::replace(&mut self.headers, Headers::new()),
+                },
+                ResponseType::Chunked,
+            ));
+        } else {
+            let res = filter_headers(
+                &self.filters,
+                ::std::mem::replace(&mut self.status, StatusCode::Ok),
+                &mut self.headers,
+                &self.global,
+                &mut self.filter_storage
+            ).and_then(|(status, write_queue)| {
+                let mut buffer = vec![];
+                for action in write_queue {
+                    match action {
+                        Action::Next(Some(content)) => buffer.push_bytes(content.as_bytes()),
+                        Action::Next(None) => {},
+                        Action::Abort(e) => return Err(Error::Filter(e)),
+                        Action::SilentAbort => break
+                    }
+                }
+                Ok((status, buffer))
+            });
 
-        Raw {
-            writer: Some(writer.start())
+            match res {
+                Ok((status, buffer)) => {
+                    let _ = self.sender.send(ResponseMessage::Head(
+                        ResponseHead {
+                            status: status,
+                            headers: ::std::mem::replace(&mut self.headers, Headers::new()),
+                        },
+                        ResponseType::Chunked,
+                    ));
+                    if buffer.len() > 0 {
+                        let _ = self.sender.send(ResponseMessage::Chunk(buffer));
+                    }
+                },
+                Err(e) => return Err((self, e)),
+            }
         }
-    }*/
+
+        self.control.ready(Next::write()).expect("failed to notify the event loop");
+
+        self.sent = true;
+
+        Ok(Chunked {
+            sender: self.sender.clone(),
+            control: self.control.clone(),
+            filters: self.filters.clone(),
+            sent: false,
+            global: self.global.clone(),
+            filter_storage: ::std::mem::replace(&mut self.filter_storage, Map::new()),
+        })
+    }
 
 
     ///Write the status code and headers to the client and register an
@@ -407,11 +415,13 @@ impl Response {
         self.headers.remove_raw("content-length");
         self.headers.set(::header::ContentLength(content_length));
         
-        let _ = self.sender.send(ResponseMessage::Head(ResponseHead {
-            status: ::std::mem::replace(&mut self.status, StatusCode::Ok),
-            headers: ::std::mem::replace(&mut self.headers, Headers::new()),
-        }));
-        let _ = self.sender.send(ResponseMessage::Callback(Box::new(on_write)));
+        let _ = self.sender.send(ResponseMessage::Head(
+            ResponseHead {
+                status: ::std::mem::replace(&mut self.status, StatusCode::Ok),
+                headers: ::std::mem::replace(&mut self.headers, Headers::new()),
+            },
+            ResponseType::Callback(Box::new(on_write)),
+        ));
         self.control.ready(Next::write()).expect("failed to notify the event loop");
     }
 }
@@ -427,46 +437,47 @@ impl Drop for Response {
 }
 
 
-/*///An interface for writing a chunked response body.
+///An interface for writing a chunked response body.
 ///
 
 ///This is useful for when the size of the data is unknown, but it comes with
 ///an overhead for each time `send` or `try_send` is called (simply put).
-pub struct Chunked<'a, 'b> {
-    writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
-    filters: &'b [Box<ResponseFilter>],
-    global: &'b Global,
-    filter_storage: AnyMap
+pub struct Chunked {
+    sender: Sender<ResponseMessage>,
+    control: Control,
+    filters: Arc<Vec<Box<ResponseFilter>>>,
+    sent: bool,
+    pub global: Arc<Global>,
+    pub filter_storage:  Map<Any + Send + 'static>,
 }
 
-impl<'a, 'b> Chunked<'a, 'b> {
-    ///Get a reference to the filter storage.
-    pub fn filter_storage(&self) -> &AnyMap {
-        &self.filter_storage
-    }
-
-    ///Get a mutable reference to the filter storage. It can be used to
-    ///communicate with the response filters.
-    pub fn filter_storage_mut(&mut self) -> &mut AnyMap {
-        &mut self.filter_storage
-    }
-
+impl Chunked {
     ///Send a chunk of data to the client, ignoring any eventual errors. Use
     ///`try_send` to get error information.
     ///
     ///```
-    ///use rustful::{Context, Response};
+    ///# #[macro_use] extern crate rustful;
+    ///#[macro_use] extern crate log;
+    ///use rustful::{Context, Response, StatusCode};
     ///
     ///fn my_handler(context: Context, response: Response) {
     ///    let count = context.variables.get("count")
     ///        .and_then(|n| n.parse().ok())
     ///        .unwrap_or(0u32);
-    ///    let mut chunked = response.into_chunked();
     ///
-    ///    for i in 0..count {
-    ///        chunked.send(format!("chunk #{}", i + 1));
+    ///    match response.into_chunked() {
+    ///        Ok(mut chunked) => {
+    ///            for i in 0..count {
+    ///                chunked.send(format!("chunk #{}", i + 1));
+    ///            }
+    ///        },
+    ///        Err((mut response, e)) => {
+    ///            response.status = StatusCode::InternalServerError;
+    ///            error!("a filter failed: {}", e);
+    ///        },
     ///    }
     ///}
+    ///# fn main() {}
     ///```
     #[allow(unused_must_use)]
     pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
@@ -479,53 +490,41 @@ impl<'a, 'b> Chunked<'a, 'b> {
     ///```
     ///# #[macro_use] extern crate rustful;
     ///#[macro_use] extern crate log;
-    ///use rustful::{Context, Response};
+    ///use rustful::{Context, Response, StatusCode};
     ///use rustful::response::Error;
     ///
     ///fn my_handler(context: Context, response: Response) {
     ///    let count = context.variables.get("count")
     ///        .and_then(|n| n.parse().ok())
     ///        .unwrap_or(0u32);
-    ///    let mut chunked = response.into_chunked();
     ///
-    ///    for i in 0..count {
-    ///        if let Err(Error::Filter(e)) = chunked.try_send(format!("chunk #{}", i + 1)) {
+    ///    match response.into_chunked() {
+    ///        Ok(mut chunked) => {
+    ///            for i in 0..count {
+    ///                if let Err(Error::Filter(e)) = chunked.try_send(format!("chunk #{}", i + 1)) {
+    ///                    error!("a filter failed: {}", e);
+    ///                }
+    ///            }
+    ///        },
+    ///        Err((mut response, e)) => {
+    ///            response.status = StatusCode::InternalServerError;
     ///            error!("a filter failed: {}", e);
-    ///        }
+    ///        },
     ///    }
     ///}
     ///# fn main() {}
     ///```
-    pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<usize, Error> {
-        let mut writer = match self.writer {
-            Some(Ok(ref mut writer)) => writer,
-            None => return Err(Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),
-            Some(Err(_)) => if let Some(Err(e)) = self.writer.take() {
-                return Err(e);
-            } else { unreachable!(); }
-        };
+    pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<(), Error> {
+        let filter_result = filter_content(&self.filters, content, &self.global, &mut self.filter_storage);
 
-        let filter_result = filter_content(self.filters, content, self.global, &mut self.filter_storage);
-
-        let write_result = match filter_result {
+        match filter_result {
             Action::Next(Some(ref s)) => {
-                let buf = s.as_bytes();
-                match writer.write_all(buf) {
-                    Ok(()) => Some(Ok(buf.len())),
-                    Err(e) => Some(Err(e))
-                }
+                let _ = self.sender.send(ResponseMessage::Chunk(s.as_bytes().into()));
+                self.control.ready(Next::write()).expect("failed to notify the event loop");
+                Ok(())
             },
-            _ => None
-        };
-
-        match write_result {
-            Some(Ok(l)) => Ok(l),
-            Some(Err(e)) => Err(Error::Io(e)),
-            None => match filter_result {
-                Action::Abort(e) => Err(Error::Filter(e)),
-                Action::Next(None) => Ok(0),
-                _ => unreachable!()
-            }
+            Action::Abort(e) => Err(Error::Filter(e)),
+            Action::Next(None) | Action::SilentAbort => Ok(()),
         }
     }
 
@@ -538,36 +537,36 @@ impl<'a, 'b> Chunked<'a, 'b> {
     }
 
     fn finish(&mut self) -> Result<(), Error> {
-        let mut writer = try!(self.writer.take().expect("can only finish once"));
-        let write_queue = try!(filter_end(self.filters, self.global, &mut self.filter_storage));
+        if self.sent {
+            panic!("can only finish once");
+        }
+        self.sent = true;
+
+        let write_queue = try!(filter_end(&self.filters, &self.global, &mut self.filter_storage));
+
+        let mut buffer = vec![];
 
         for action in write_queue {
-            try!{
-                match action {
-                    Action::Next(Some(content)) => writer.write_all(content.as_bytes()),
-                    Action::Abort(e) => return Err(Error::Filter(e)),
-                    _ => Ok(())
-                }
+            match action {
+                Action::Next(Some(content)) => buffer.push_bytes(content.as_bytes()),
+                Action::Abort(e) => return Err(Error::Filter(e)),
+                _ => {},
             }
         }
 
-        writer.end().map_err(Error::Io)
-    }
+        let _ = self.sender.send(ResponseMessage::Chunk(buffer));
+        let _ = self.sender.send(ResponseMessage::End);
+        self.control.ready(Next::write()).expect("failed to notify the event loop");
 
-    fn borrow_writer(&mut self) -> Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>, Error> {
-        match self.writer {
-            Some(Ok(ref mut writer)) => Ok(writer),
-            None => Err(Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),
-            Some(Err(_)) => if let Some(Err(e)) = self.writer.take() {
-                Err(e)
-            } else { unreachable!(); }
-        }
+        Ok(())
     }
 }
 
-impl<'a, 'b> Write for Chunked<'a, 'b> {
+impl Write for Chunked {
     fn write(&mut self, content: &[u8]) -> io::Result<usize> {
-        response_to_io_result(self.try_send(content))
+        self.try_send(content)
+            .map(|_| content.len())
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn write_all(&mut self, content: &[u8]) -> io::Result<()> {
@@ -575,123 +574,18 @@ impl<'a, 'b> Write for Chunked<'a, 'b> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let mut writer = try!(response_to_io_result(self.borrow_writer()));
-        writer.flush()
+        Ok(())
     }
 }
 
-#[allow(unused_must_use)]
-impl<'a, 'b> Drop for Chunked<'a, 'b> {
+impl Drop for Chunked {
     ///Finishes writing and closes the connection.
     fn drop(&mut self) {
-        if self.writer.is_some() {
-            self.finish();
-        }
-    }
-}*/
-
-/*///A streaming fixed-size response.
-///
-///Everything is written directly to the network stream, without being
-///filtered, which makes `Raw` especially suitable for transferring files.
-///
-///__Unsafety__: The content length is set beforehand, which makes it possible
-///to send responses that are too short.
-pub struct Raw<'a> {
-    writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, io::Error>>
-}
-
-impl<'a> Raw<'a> {
-    ///Send a piece of data to the client, ignoring any eventual errors. Use
-    ///`try_send` to get error information.
-    ///
-    ///```
-    ///use rustful::{Context, Response};
-    ///
-    ///fn my_handler(context: Context, response: Response) {
-    ///    let count = context.variables.get("count")
-    ///        .and_then(|n| n.parse().ok())
-    ///        .unwrap_or(0u8);
-    ///    let mut raw = unsafe { response.into_raw(count as u64) };
-    ///
-    ///    for i in 0..count {
-    ///        raw.send([i].as_ref());
-    ///    }
-    ///}
-    ///# fn main() {}
-    ///```
-    #[allow(unused_must_use)]
-    pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
-        self.try_send(content);
-    }
-
-    ///Send a piece of data to the client. This is the same as `send`, but
-    ///errors are not ignored.
-    ///
-    ///```
-    ///# #[macro_use] extern crate rustful;
-    ///#[macro_use] extern crate log;
-    ///use rustful::{Context, Response};
-    ///
-    ///fn my_handler(context: Context, response: Response) {
-    ///    let count = context.variables.get("count")
-    ///        .and_then(|n| n.parse().ok())
-    ///        .unwrap_or(0u8);
-    ///    let mut raw = unsafe { response.into_raw(count as u64) };
-    ///
-    ///    for i in 0..count {
-    ///        if let Err(e) = raw.try_send([i].as_ref()) {
-    ///            error!("failed to write: {}", e);
-    ///            break;
-    ///        }
-    ///    }
-    ///}
-    ///# fn main() {}
-    ///```
-    pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> io::Result<()> {
-        self.write_all(content.into().as_bytes())
-    }
-
-    ///Finish writing the response and collect eventual errors.
-    ///
-    ///This is optional and will happen silently when the writer drops out of
-    ///scope.
-    pub fn end(mut self) -> io::Result<()> {
-        let writer = match self.writer.take() {
-            Some(Ok(writer)) => writer,
-            None => return Ok(()), //It has already ended
-            Some(Err(e)) => return Err(e)
-        };
-        writer.end()
-    }
-
-    fn borrow_writer(&mut self) -> io::Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>> {
-        match self.writer {
-            Some(Ok(ref mut writer)) => Ok(writer),
-            None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "write after close")),
-            Some(Err(_)) => if let Some(Err(e)) = self.writer.take() {
-                Err(e)
-            } else { unreachable!(); }
+        if !self.sent {
+            let _ = self.finish();
         }
     }
 }
-
-impl<'a> Write for Raw<'a> {
-    fn write(&mut self, content: &[u8]) -> io::Result<usize> {
-        let mut writer = try!(self.borrow_writer());
-        writer.write(content)
-    }
-
-    fn write_all(&mut self, content: &[u8]) -> io::Result<()> {
-        let mut writer = try!(self.borrow_writer());
-        writer.write_all(content)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        let mut writer = try!(self.borrow_writer());
-        writer.flush()
-    }
-}*/
 
 ///A stripped down HTTP response, for `RawHandler`.
 pub struct RawResponse {

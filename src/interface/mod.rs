@@ -26,7 +26,13 @@ impl From<RawResponse> for ResponseHead {
 }
 
 pub enum ResponseMessage {
-    Head(ResponseHead),
+    Head(ResponseHead, ResponseType),
+    Chunk(Vec<u8>),
+    End,
+}
+
+pub enum ResponseType {
     Buffer(Vec<u8>),
     Callback(Box<FnMut(&mut Encoder) + Send>),
+    Chunked,
 }

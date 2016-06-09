@@ -1,12 +1,12 @@
 //!Request handlers.
 use std::borrow::Cow;
-use std::sync::mpsc::{Receiver, channel};
+use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::Arc;
 use std::io::{self, Read, Write};
 
 use context::{Context, RawContext};
 use response::{Response, ResponseHead, RawResponse};
-use interface::ResponseMessage;
+use interface::{ResponseMessage, ResponseType};
 
 pub use hyper::{Next, Control};
 
@@ -314,23 +314,39 @@ impl RawHandler for HandlerWrapper {
     }
 
     fn on_response(&mut self) -> (ResponseHead, Next) {
-        if let Ok(ResponseMessage::Head(head)) = self.response_recv.try_recv() {
+        if let Ok(ResponseMessage::Head(head, method)) = self.response_recv.try_recv() {
             let body_length = if let Some(&::header::ContentLength(length)) = head.headers.get() {
                 length as usize
             } else {
                 0
             };
 
-            let next = match self.response_recv.try_recv() {
-                Ok(ResponseMessage::Buffer(buffer)) => {
+            let next = match method {
+                ResponseType::Buffer(buffer) => {
                     self.write_method = Some(WriteMethod::Buffer(buffer, 0, body_length));
                     Next::write()
                 },
-                Ok(ResponseMessage::Callback(on_write)) => {
+                ResponseType::Callback(on_write) => {
                     self.write_method = Some(WriteMethod::Callback(on_write));
                     Next::write()
                 },
-                _ => Next::end()
+                ResponseType::Chunked => {
+                    match self.response_recv.try_recv() {
+                        Ok(ResponseMessage::Chunk(chunk)) => {
+                            self.write_method = Some(WriteMethod::Chunked(Some((chunk, 0))));
+                            Next::write()
+                        },
+                        Ok(ResponseMessage::End) | Err(TryRecvError::Disconnected) => {
+                            self.write_method = Some(WriteMethod::Chunked(None));
+                            Next::end()
+                        },
+                        Err(TryRecvError::Empty) => {
+                            self.write_method = Some(WriteMethod::Chunked(None));
+                            Next::wait()
+                        },
+                        Ok(ResponseMessage::Head(_, _)) => panic!("duplicate head messages from response"),
+                    }
+                }
             };
 
             (head, next)
@@ -368,6 +384,46 @@ impl RawHandler for HandlerWrapper {
                 on_write(&mut encoder);
                 encoder.next
             },
+            Some(WriteMethod::Chunked(ref mut current_chunk)) => {
+                loop {
+                    if current_chunk.is_none() {
+                        match self.response_recv.try_recv() {
+                            Ok(ResponseMessage::Chunk(chunk)) => {
+                                *current_chunk = Some((chunk, 0));
+                            },
+                            Ok(ResponseMessage::End) | Err(TryRecvError::Disconnected) => {
+                                return Next::end()
+                            },
+                            Err(TryRecvError::Empty) => {
+                                return Next::wait()
+                            },
+                            Ok(ResponseMessage::Head(_, _)) => panic!("duplicate head messages from response"),
+                        }
+                    }
+
+                    if let Some((buffer, mut position)) = current_chunk.take() {
+                        while position < buffer.len() {
+                            match encoder.write(&buffer[position..]) {
+                                Ok(0) => {
+                                    break;
+                                },
+                                Ok(length) => {
+                                    position += length;
+                                },
+                                Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
+                                    return Next::write()
+                                } else {
+                                    break
+                                },
+                            }
+                        }
+
+                        if position < buffer.len() {
+                            *current_chunk = Some((buffer, position));
+                        }
+                    }
+                }
+            },
             None => Next::end()
         }
     }
@@ -376,4 +432,5 @@ impl RawHandler for HandlerWrapper {
 enum WriteMethod {
     Buffer(Vec<u8>, usize, usize),
     Callback(Box<FnMut(&mut Encoder) + Send>),
+    Chunked(Option<(Vec<u8>, usize)>),
 }

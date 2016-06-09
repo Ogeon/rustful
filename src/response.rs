@@ -179,6 +179,14 @@ impl<'a> Data<'a> {
             Data::String(string) => Ok(string.into_owned())
         }
     }
+
+    ///The size of the data, in bytes.
+    pub fn len(&self) -> usize {
+        match *self {
+            Data::Bytes(ref bytes) => bytes.len(),
+            Data::String(ref string) => string.len(),
+        }
+    }
 }
 
 impl<'a> From<Vec<u8>> for Data<'a> {
