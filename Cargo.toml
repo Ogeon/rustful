@@ -1,6 +1,6 @@
 [package]
 name = "rustful"
-version = "0.8.0" #automatically updated
+version = "0.8.1" #automatically updated
 authors = ["Erik Hedvall <hello@erikhedvall.nu>"]
 exclude = ["scripts/*", "examples/*", ".travis.yml", "appveyor.yml", ".gitignore", "CHANGELOG.md", "version.sh"]
 description = "A light HTTP framework, with some REST-like features and the ambition of being simple, modular and non-intrusive."

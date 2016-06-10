@@ -1,7 +1,9 @@
 # Changelog
 
-## Version 0.8.0 - 2016-03-26
+## Version 0.8.1 - 2016-06-10
 
+ * [#111][111]: Use the runtime value of $OUT_DIR in build script.
+ * [#103][103]: Fix some Clippy warnings.
 
 ## Version 0.8.0 - 2016-03-25
 
@@ -73,6 +75,8 @@
 
 ## Version 0.1.1 - 2015-05-16
 
+[111]: https://github.com/Ogeon/rustful/pull/111
+[103]: https://github.com/Ogeon/rustful/pull/103
 [101]: https://github.com/Ogeon/rustful/pull/101
 [96]: https://github.com/Ogeon/rustful/pull/96
 [99]: https://github.com/Ogeon/rustful/pull/99
