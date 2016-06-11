@@ -12,12 +12,14 @@ use router::Router;
 
 use HttpResult;
 
-pub use self::instance::{ServerInstance, ServerLoop};
+pub use self::instance::ServerInstance;
 pub use self::config::{Host, Global, Scheme};
+pub use self::worker::Worker;
 pub use crossbeam::{Scope, ScopedJoinHandle};
 
 mod instance;
 mod config;
+mod worker;
 
 ///Used to set up and run a server.
 ///
@@ -64,6 +66,11 @@ pub struct Server<R: Router> {
     ///(`None`) will cause the server to optimistically use the formula
     ///`(num_cores * 5) / 4`.
     pub threads: Option<usize>,
+
+    ///The number of worker threads to make available in the general purpose
+    ///work pool. The default (`None`) will cause the server to optimistically
+    ///use the formula `(num_cores * 5) / 4`.
+    pub workers: Option<usize>,
 
     ///Enables or disables `keep-alive`. Default is `true` (enabled).
     pub keep_alive: bool,
@@ -113,6 +120,7 @@ impl<R: Router> Server<R> {
             host: 80.into(),
             scheme: Scheme::Http,
             threads: None,
+            workers: None,
             keep_alive: true,
             timeout: Duration::from_secs(10),
             max_sockets: 4096,
@@ -167,9 +175,7 @@ impl<R: Router> Server<R> {
         F: FnOnce(&Scope, ServerInstance<ScopedJoinHandle<()>>) -> T,
     {
         ::crossbeam::scope(|scope| {
-            ServerInstance::run(self, |s| scope.spawn(move || {
-                s.run();
-            })).map(|instance| action(scope, instance))
+            ServerInstance::run(self, scope).map(|instance| action(scope, instance))
         })
     }
 
@@ -204,21 +210,53 @@ impl<R: Router> Server<R> {
         R: 'static,
         R::Handler: 'static,
     {
-        ServerInstance::run(self, |s| thread::spawn(move || s.run() ))
+        ServerInstance::run(self, DetachedThreads)
     }
 
     ///Run the server using some custom threading method.
-    pub fn run_in<F, H>(self, new_thread: F) -> HttpResult<ServerInstance<H>> where
-        F: FnMut(ServerLoop<R>) -> H,
-        H: ThreadHandle,
-    {
-        ServerInstance::run(self, new_thread)
+    pub fn run_in<'a, E: ThreadEnv<'a>>(self, env: E) -> HttpResult<ServerInstance<E::Handle>> where R: 'a {
+        ServerInstance::run(self, env)
     }
 }
 
 impl<R: Router + Default> Default for Server<R> {
     fn default() -> Server<R> {
         Server::new(R::default())
+    }
+}
+
+///An interface for spawning threads in some environment.
+pub trait ThreadEnv<'a> {
+    ///The type of thread handle this environment returns.
+    type Handle: ThreadHandle;
+
+    ///Spawn a new thread.
+    fn spawn<F: FnOnce() -> () + Send + 'a>(&self, f: F) -> Self::Handle;
+}
+
+impl<'r, 'a, T: ThreadEnv<'a>> ThreadEnv<'a> for &'r T {
+    type Handle = T::Handle;
+
+    fn spawn<F: FnOnce() -> () + Send + 'a>(&self, f: F) -> T::Handle {
+        <T as ThreadEnv>::spawn(self, f)
+    }
+}
+
+impl<'a> ThreadEnv<'a> for Scope<'a> {
+    type Handle = ScopedJoinHandle<()>;
+
+    fn spawn<F: FnOnce() -> () + Send + 'a>(&self, f: F) -> ScopedJoinHandle<()> {
+        Scope::spawn(self, f)
+    }
+}
+
+struct DetachedThreads;
+
+impl ThreadEnv<'static> for DetachedThreads {
+    type Handle = JoinHandle<()>;
+
+    fn spawn<F: FnOnce() -> () + Send + 'static>(&self, f: F) -> JoinHandle<()> {
+        thread::spawn(f)
     }
 }
 

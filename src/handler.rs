@@ -249,7 +249,8 @@ impl<H: Handler> Factory for H {
             let response = ::interface::response::make_response(
                 response,
                 send,
-                context.control
+                context.control,
+                context.worker.clone(),
             );
 
             let body = ::interface::body::new(&mut on_body, &context.headers);
@@ -264,6 +265,7 @@ impl<H: Handler> Factory for H {
                 query: context.query,
                 fragment: context.fragment,
                 global: context.global,
+                worker: context.worker,
                 body: body,
             };
 

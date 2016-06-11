@@ -20,7 +20,7 @@ use header::{
 use filter::{FilterContext, ResponseFilter};
 use filter::ResponseAction as Action;
 use mime::{Mime, TopLevel, SubLevel};
-use server::Global;
+use server::{Global, Worker};
 use utils::{BytesExt, MAX_BUFFER_LENGTH};
 use response::{Data, Error, FileError};
 use interface::{ResponseMessage, ResponseHead, ResponseType};
@@ -30,6 +30,7 @@ pub fn make_response(
     raw: RawResponse,
     sender: Sender<ResponseMessage>,
     control: Control,
+    worker: Worker,
 ) -> Response
 {
     Response {
@@ -37,6 +38,7 @@ pub fn make_response(
         headers: raw.headers,
         sender: sender,
         control: control,
+        worker: worker,
         filters: raw.filters.filters,
         global: raw.filters.global,
         filter_storage: raw.filters.storage,
@@ -72,6 +74,7 @@ pub struct Response {
 
     sender: Sender<ResponseMessage>,
     control: Control,
+    worker: Worker,
     filters: Arc<Vec<Box<ResponseFilter>>>,
     global: Arc<Global>,
     sent: bool,
@@ -305,28 +308,56 @@ impl Response {
 
         self.headers.set(ContentType(mime));
 
-        let mut buffer = Vec::with_capacity(MAX_BUFFER_LENGTH);
         let mut read_pos = 0;
-        let mut written = 0;
         let file_size = metadata.len() as usize;
+        let mut buffer = vec![];
 
-        unsafe { self.raw_send(metadata.len(), move |writer| {
-            if read_pos >= buffer.len() {
-                buffer.resize(min(MAX_BUFFER_LENGTH, file_size - written), 0);
-                let len = match file.read(&mut buffer[..]) {
-                    Ok(len) => len,
-                    Err(_) => {
-                        writer.abort();
-                        return;
+        //Stream file chunks from a separate thread
+        let recv = self.worker.sync_stream(4, move |send| {
+            let mut file_pos = 0;
+            loop {
+                let mut buffer = Vec::with_capacity(MAX_BUFFER_LENGTH);
+                buffer.resize(min(MAX_BUFFER_LENGTH, file_size - file_pos), 0);
+                match file.read(&mut buffer[..]) {
+                    Ok(0) => break,
+                    Ok(len) => {
+                        buffer.truncate(len);
+                        file_pos += len;
+                        if send.send(Ok(buffer)).is_err() {
+                            break
+                        }
+                    }
+                    Err(e) => {
+                        let _ = send.send(Err(e));
+                        break;
                     },
                 };
-                buffer.truncate(len);
-                read_pos = 0;
             }
+        });
 
-            if let Ok(len) = writer.write(&buffer[read_pos..]) {
-                read_pos += len;
-                written += len;
+        unsafe { self.raw_send(metadata.len(), move |writer| {
+            loop {
+                //Read a file chunk if we are out of data
+                if buffer.len() == read_pos {
+                    //This may have to be changed to something less blocking
+                    buffer = if let Ok(buffer) = recv.recv() {
+                        if let Ok(buffer) = buffer {
+                            read_pos = 0;
+                            buffer
+                        } else {
+                            writer.abort();
+                            return;
+                        }
+                    } else {
+                        return;
+                    };
+                }
+
+                if let Ok(len) = writer.write(&buffer[read_pos..]) {
+                    read_pos += len;
+                } else {
+                    break;
+                }
             }
         }) };
 

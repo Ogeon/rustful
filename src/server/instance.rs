@@ -31,7 +31,8 @@ use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
 use router::{Router, Endpoint};
 use handler::{RawHandler, Factory};
 use header::{Headers, HttpDate};
-use server::{Scheme, Global, ThreadHandle};
+use server::{Scheme, Global, ThreadHandle, ThreadEnv};
+use server::worker::{self, Worker};
 use response::{RawResponse, ResponseHead};
 
 use HttpResult;
@@ -70,7 +71,7 @@ struct Config<R: Router> {
 ///    ..Server::default()
 ///}.run_and_then(|_, instance| {
 ///    //...do stuff...
-///    //This is only neccessary if it has to be closed before the program ends
+///    //This is only necessary if it has to be closed before the program ends
 ///    instance.close();
 ///});
 ///
@@ -85,16 +86,14 @@ struct Config<R: Router> {
 pub struct ServerInstance<H: ThreadHandle> {
     ///The address where the server is listening.
     pub addr: SocketAddr,
-    servers: Vec<(Option<::hyper::server::Listening>, Option<H>)>,
+    work_pool: Vec<H>,
+    servers: Vec<(Option<::hyper::server::Listening>, H)>,
 }
 
 impl<H: ThreadHandle> ServerInstance<H> {
     ///Create and start a new server instance, with the provided
     ///configuration. This is the same as `Server{...}.run_in(...)`.
-    pub fn run<R, F>(config: Server<R>, mut new_thread: F) -> HttpResult<ServerInstance<H>> where
-        R: Router,
-        F: FnMut(ServerLoop<R>) -> H,
-    {
+    pub fn run<'a, R: Router + 'a, E: ThreadEnv<'a, Handle=H>>(config: Server<R>, env: E) -> HttpResult<ServerInstance<H>> {
         let Server {
             handlers,
             fallback_handler,
@@ -105,11 +104,17 @@ impl<H: ThreadHandle> ServerInstance<H> {
             global,
             host,
             threads,
+            workers,
             timeout,
             max_sockets,
             keep_alive,
             scheme,
         } = config;
+
+        let listener = try!(HttpListener::bind(&host.into()));
+        let threads = threads.unwrap_or_else(|| (num_cpus::get() * 5) / 4);
+        let workers = workers.unwrap_or_else(|| (num_cpus::get() * 5) / 4);
+        let (pool_handles, worker) = worker::new(workers, &env);
 
         let factory = RequestHandlerFactory {
             config: Arc::new(Config {
@@ -121,9 +126,8 @@ impl<H: ThreadHandle> ServerInstance<H> {
             }),
             response_filters: Arc::new(response_filters),
             global: Arc::new(global),
+            work_pool: worker,
         };
-        let listener = try!(HttpListener::bind(&host.into()));
-        let threads = threads.unwrap_or_else(|| (num_cpus::get() * 5) / 4);
 
         let servers: Vec<_> = try!(
                 ::std::iter::repeat(factory)
@@ -135,14 +139,17 @@ impl<H: ThreadHandle> ServerInstance<H> {
                                 .max_sockets(max_sockets)
                                 .run(factory)
                             ).map(|(listening, server)| {
-                                let handle = new_thread(server);
-                                (Some(listening), Some(handle))
+                                let handle = env.spawn(move || {
+                                    server.run();
+                                });
+                                (Some(listening), handle)
                             })
                     }).collect()
             );
 
         Ok(ServerInstance {
             addr: try!(listener.0.local_addr()),
+            work_pool: pool_handles,
             servers: servers,
         })
     }
@@ -157,8 +164,11 @@ impl<H: ThreadHandle> ServerInstance<H> {
 
 impl<H: ThreadHandle> Drop for ServerInstance<H> {
     fn drop(&mut self) {
-        for &mut (_, ref mut handle) in &mut self.servers {
-            handle.take().map(|h| h.join());
+        for (_, handle) in self.servers.drain(..) {
+            handle.join();
+        }
+        for handle in self.work_pool.drain(..) {
+            handle.join();
         }
     }
 }
@@ -253,7 +263,7 @@ impl HyperServer {
 
 #[must_use]
 ///A server event loop, waiting to be started.
-pub struct ServerLoop<R: Router>(ServerLoopKind<R>);
+struct ServerLoop<R: Router>(ServerLoopKind<R>);
 
 impl<R: Router> ServerLoop<R> {
     ///Run the server loop, and block this thread. This will otherwise happen
@@ -280,6 +290,7 @@ struct RequestHandlerFactory<R: Router> {
     config: Arc<Config<R>>,
     response_filters: Arc<Vec<Box<ResponseFilter>>>,
     global: Arc<Global>,
+    work_pool: Worker,
 }
 
 impl<R: Router> Clone for RequestHandlerFactory<R> {
@@ -288,6 +299,7 @@ impl<R: Router> Clone for RequestHandlerFactory<R> {
             config: self.config.clone(),
             response_filters: self.response_filters.clone(),
             global: self.global.clone(),
+            work_pool: self.work_pool.clone(),
         }
     }
 }
@@ -299,7 +311,7 @@ impl<T: Transport, R: Router> HandlerFactory<T> for RequestHandlerFactory<R> whe
     type Output = RequestHandler<R>;
 
     fn create(&mut self, control: Control) -> RequestHandler<R> {
-        RequestHandler::new(self.config.clone(), self.response_filters.clone(), self.global.clone(), control)
+        RequestHandler::new(self.config.clone(), self.response_filters.clone(), self.global.clone(), control, self.work_pool.clone())
     }
 }
 
@@ -377,10 +389,11 @@ struct RequestHandler<R: Router> {
     write_method: Option<WriteMethod<<R::Handler as ::handler::Factory>::Handler>>,
 
     control: Option<Control>,
+    worker: Worker,
 }
 
 impl<R: Router> RequestHandler<R> {
-    fn new(config: Arc<Config<R>>, response_filters: Arc<Vec<Box<ResponseFilter>>>, global: Arc<Global>, control: Control) -> RequestHandler<R> {
+    fn new(config: Arc<Config<R>>, response_filters: Arc<Vec<Box<ResponseFilter>>>, global: Arc<Global>, control: Control, worker: Worker) -> RequestHandler<R> {
         RequestHandler {
             config: config,
             global: global,
@@ -388,6 +401,7 @@ impl<R: Router> RequestHandler<R> {
             write_method: None,
 
             control: Some(control),
+            worker: worker,
         }
     }
 }
@@ -468,6 +482,7 @@ impl<T: Transport, R: Router> HyperHandler<T> for RequestHandler<R> where
                         fragment: fragment,
                         global: self.global.clone(),
                         control: control,
+                        worker: self.worker.clone(),
                     };
 
                     let mut filter_storage = Map::new();

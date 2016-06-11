@@ -128,7 +128,7 @@ use std::sync::Arc;
 use HttpVersion;
 use Method;
 use header::Headers;
-use server::Global;
+use server::{Global, Worker};
 use handler::Control;
 
 use self::body::Body;
@@ -176,6 +176,9 @@ pub struct Context<'a> {
     ///Globally accessible data.
     pub global: Arc<Global>,
 
+    ///A handle to the internal general purpose work pool.
+    pub worker: Worker,
+
     ///A reader for the request body.
     pub body: Body<'a>,
 }
@@ -211,6 +214,9 @@ pub struct RawContext<'a> {
 
     ///Globally accessible data.
     pub global: Arc<Global>,
+
+    ///A handle to the internal general purpose work pool.
+    pub worker: Worker,
 
     ///The event loop controller.
     pub control: Control,
