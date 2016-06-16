@@ -109,7 +109,7 @@ impl<R: Router> Server<R> {
             server: "rustful".to_owned(),
             content_type: Mime(
                 hyper::mime::TopLevel::Text,
-                hyper::mime::SubLevel::Plain,
+                hyper::mime::SubLevel::Html,
                 vec![(hyper::mime::Attr::Charset, hyper::mime::Value::Utf8)]
             ),
             global: Global::default(),
