@@ -13,12 +13,12 @@ pub fn parse_parameters(source: &[u8]) -> Parameters {
 
         match (parts.next(), parts.next()) {
             (Some(name), Some(value)) => {
-                let name = percent_decode(name);
-                let value = percent_decode(value);
+                let name: Vec<_> = percent_decode(name).collect();
+                let value: Vec<_> = percent_decode(value).collect();
                 parameters.insert(name, value);
             },
             (Some(name), None) => {
-                let name = percent_decode(name);
+                let name: Vec<_> = percent_decode(name).collect();
                 parameters.insert(name, String::new());
             },
             _ => {}

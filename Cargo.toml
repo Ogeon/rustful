@@ -26,13 +26,13 @@ strict = []
 
 [dependencies]
 time = "0.1"
-url = "0.5"
-anymap = "0.11"
+url = "1"
+anymap = "0.12"
 phf = "0.7"
 num_cpus = "0.2"
 
 [dependencies.hyper]
-version = "0.8"
+version = "0.9"
 default-features = false
 
 [dependencies.multipart]
