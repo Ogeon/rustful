@@ -1,5 +1,11 @@
 # Changelog
 
+## Version 0.9.0 - 2016-06-16
+
+ * [#114][114]: Update hyper, url and anymap.
+ * [#113][113]: Change the default content type to text/html. Closes [#107][107].
+ * [#112][112]: Bump multipart dependency to 0.7.
+
 ## Version 0.8.1 - 2016-06-10
 
  * [#111][111]: Use the runtime value of $OUT_DIR in build script.
@@ -75,6 +81,9 @@
 
 ## Version 0.1.1 - 2015-05-16
 
+[114]: https://github.com/Ogeon/rustful/pull/114
+[113]: https://github.com/Ogeon/rustful/pull/113
+[112]: https://github.com/Ogeon/rustful/pull/112
 [111]: https://github.com/Ogeon/rustful/pull/111
 [103]: https://github.com/Ogeon/rustful/pull/103
 [101]: https://github.com/Ogeon/rustful/pull/101
@@ -112,6 +121,7 @@
 [43]: https://github.com/Ogeon/rustful/pull/43
 [40]: https://github.com/Ogeon/rustful/pull/40
 [38]: https://github.com/Ogeon/rustful/pull/38
+[107]: https://github.com/Ogeon/rustful/issues/107
 [86]: https://github.com/Ogeon/rustful/issues/86
 [84]: https://github.com/Ogeon/rustful/issues/84
 [76]: https://github.com/Ogeon/rustful/issues/76
