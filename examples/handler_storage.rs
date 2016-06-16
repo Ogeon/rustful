@@ -56,7 +56,6 @@ fn main() {
     let server_result = Server {
         host: 8080.into(),
         handlers: router,
-        content_type: content_type!(Text / Html; Charset = Utf8),
         ..Server::default()
     }.run();
 

@@ -60,7 +60,6 @@ fn main() {
     let server_result = Server {
         host: 8080.into(),
         global: Box::new(files).into(),
-        content_type: content_type!(Text / Html; Charset = Utf8),
         ..Server::new(say_hello)
     }.run();
 
