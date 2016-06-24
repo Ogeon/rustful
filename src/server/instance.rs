@@ -429,7 +429,7 @@ impl<T: Transport, R: Router> HyperHandler<T> for RequestHandler<R> where
     for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::RawEncoder<'a, 'b>>,
     for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::RawDecoder<'a, 'b>>,
 {
-    fn on_request(&mut self, request: Request) -> Next {
+    fn on_request(&mut self, request: Request<T>) -> Next {
         if let Some(control) = self.control.take() {
             let mut response = RawResponse {
                 status: StatusCode::Ok,
