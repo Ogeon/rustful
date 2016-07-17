@@ -5,6 +5,7 @@ Rustful
 
 [![Build Status](https://travis-ci.org/Ogeon/rustful.png?branch=master)](https://travis-ci.org/Ogeon/rustful)
 [![Windows Build status](https://ci.appveyor.com/api/projects/status/6a95paoex0eptbgn/branch/master?svg=true)](https://ci.appveyor.com/project/Ogeon/rustful/branch/master)
+[![Dependency Status](https://dependencyci.com/github/Ogeon/rustful/badge)](https://dependencyci.com/github/Ogeon/rustful)
 
 A light HTTP framework for Rust, with REST-like features. The main purpose
 of Rustful is to create a simple, modular and non-intrusive foundation for
