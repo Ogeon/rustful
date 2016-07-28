@@ -14,7 +14,7 @@ use rustful::response::Data;
 use rustful::StatusCode;
 use rustful::header::Headers;
 use rustful::header::ContentType;
-use rustful::context::{Uri, MaybeUtf8Owned};
+use rustful::context::{UriPath, MaybeUtf8Owned};
 
 fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     //Take the name of the JSONP function from the query variables
@@ -129,7 +129,7 @@ impl ContextFilter for RequestLogger {
     ///Count requests and log the path.
     fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
         *self.counter.write().unwrap() += 1;
-        debug!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.uri);
+        debug!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.uri_path);
         ContextAction::next()
     }
 }
@@ -150,14 +150,14 @@ impl PathPrefix {
 impl ContextFilter for PathPrefix {
     ///Append the prefix to the path
     fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
-        let new_uri = context.uri.as_path().map(|path| {
+        let new_path = context.uri_path.as_path().map(|path| {
             let mut new_path = MaybeUtf8Owned::from("/");
             new_path.push_str(self.prefix.trim_matches('/'));
             new_path.push_bytes(path.as_ref());
-            Uri::Path(new_path)
+            UriPath::Path(new_path)
         });
-        if let Some(uri) = new_uri {
-            context.uri = uri;
+        if let Some(path) = new_path {
+            context.uri_path = path;
         }
         ContextAction::next()
     }
