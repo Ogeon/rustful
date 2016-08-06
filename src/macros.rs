@@ -14,7 +14,7 @@
 ///# use rustful::{Handler, Context, Response};
 ///
 ///# struct DummyHandler;
-///# impl Handler for DummyHandler {
+///# impl<'env> Handler<'env> for DummyHandler {
 ///#     fn handle_request(&self, _: Context, _: Response){}
 ///# }
 ///# fn main() {
@@ -45,7 +45,7 @@
 ///
 ///# #[derive(Clone, Copy)]
 ///# struct DummyHandler;
-///# impl Handler for DummyHandler {
+///# impl<'env> Handler<'env> for DummyHandler {
 ///#     fn handle_request(&self, _: Context, _: Response){}
 ///# }
 ///# fn main() {

@@ -96,7 +96,7 @@
 //!use std::io::{BufReader, BufRead};
 //!use rustful::{Context, Response, StatusCode};
 //!
-//!fn my_handler(context: Context, response: Response) {
+//!fn my_handler<'a, 'env>(context: Context<'a, 'env>, response: Response<'env>) {
 //!    context.body.sync_read(move |body| {
 //!        let mut numbered_lines = BufReader::new(body).lines().enumerate();
 //!        match response.into_chunked() {
@@ -145,7 +145,7 @@ pub use self::parameters::Parameters;
 pub use hyper::server::Request;
 
 ///A container for handler input, like request data and utilities.
-pub struct Context<'a> {
+pub struct Context<'a, 'env: 'a> {
     ///Headers from the HTTP request.
     pub headers: Headers,
 
@@ -177,14 +177,14 @@ pub struct Context<'a> {
     pub global: Arc<Global>,
 
     ///A handle to the internal general purpose work pool.
-    pub worker: Worker,
+    pub worker: Worker<'env>,
 
     ///A reader for the request body.
-    pub body: Body<'a>,
+    pub body: Body<'a, 'env>,
 }
 
 ///A more primitive `Context`, for `RawHandler`.
-pub struct RawContext<'a> {
+pub struct RawContext<'a, 'env> {
     ///Headers from the HTTP request.
     pub headers: Headers,
 
@@ -216,7 +216,7 @@ pub struct RawContext<'a> {
     pub global: Arc<Global>,
 
     ///A handle to the internal general purpose work pool.
-    pub worker: Worker,
+    pub worker: Worker<'env>,
 
     ///The event loop controller.
     pub control: Control,

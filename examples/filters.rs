@@ -63,7 +63,7 @@ enum Format {
 
 struct Handler(fn(Context, Response, &Format), Format);
 
-impl rustful::Handler for Handler {
+impl<'env> rustful::Handler<'env> for Handler {
     fn handle_request(&self, context: Context, response: Response) {
         self.0(context, response, &self.1);
     }

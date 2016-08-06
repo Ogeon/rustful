@@ -9,6 +9,7 @@ use hyper::mime::Mime;
 
 use filter::{ContextFilter, ResponseFilter};
 use router::Router;
+use handler::Factory;
 
 use HttpResult;
 
@@ -30,7 +31,7 @@ mod worker;
 ///# use rustful::{Server, Handler, Context, Response};
 ///# #[derive(Default)]
 ///# struct R;
-///# impl Handler for R {
+///# impl<'env> Handler<'env> for R {
 ///#     fn handle_request(&self, _context: Context, _response: Response) {}
 ///# }
 ///# fn main() {
@@ -138,7 +139,10 @@ impl<R: Router> Server<R> {
 
     ///Run the server using scoped threads, blocking this thread until the
     ///server shuts down.
-    pub fn run(self) -> HttpResult<()> {
+    pub fn run<'env>(self) -> HttpResult<()> where
+        R: 'env,
+        R::Handler: Factory<'env>,
+    {
         self.run_and_then(|_, _| ())
     }
 
@@ -152,7 +156,7 @@ impl<R: Router> Server<R> {
     ///# use rustful::{Server, Handler, Context, Response};
     ///# #[derive(Default)]
     ///# struct R;
-    ///# impl Handler for R {
+    ///# impl<'env> Handler<'env> for R {
     ///#     fn handle_request(&self, _context: Context, _response: Response) {}
     ///# }
     ///# fn main() {
@@ -171,7 +175,9 @@ impl<R: Router> Server<R> {
     ///}
     ///# }
     ///```
-    pub fn run_and_then<F, T>(self, action: F) -> HttpResult<T> where
+    pub fn run_and_then<'env, F, T>(self, action: F) -> HttpResult<T> where
+        R: 'env,
+        R::Handler: Factory<'env>,
         F: FnOnce(&Scope, ServerInstance<ScopedJoinHandle<()>>) -> T,
     {
         ::crossbeam::scope(|scope| {
@@ -188,7 +194,7 @@ impl<R: Router> Server<R> {
     ///# use rustful::{Server, Handler, Context, Response};
     ///# #[derive(Default)]
     ///# struct R;
-    ///# impl Handler for R {
+    ///# impl<'env> Handler<'env> for R {
     ///#     fn handle_request(&self, _context: Context, _response: Response) {}
     ///# }
     ///# fn main() {
@@ -208,13 +214,16 @@ impl<R: Router> Server<R> {
     ///```
     pub fn run_detached(self) -> HttpResult<ServerInstance<JoinHandle<()>>> where
         R: 'static,
-        R::Handler: 'static,
+        R::Handler: Factory<'static> + 'static,
     {
         ServerInstance::run(self, DetachedThreads)
     }
 
     ///Run the server using some custom threading method.
-    pub fn run_in<'a, E: ThreadEnv<'a>>(self, env: E) -> HttpResult<ServerInstance<E::Handle>> where R: 'a {
+    pub fn run_in<'env, E: ThreadEnv<'env>>(self, env: E) -> HttpResult<ServerInstance<E::Handle>> where
+        R: 'env,
+        R::Handler: Factory<'env>,
+    {
         ServerInstance::run(self, env)
     }
 }

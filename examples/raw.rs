@@ -17,7 +17,7 @@ const ANSWER: &'static [u8] = b"Hello World!";
 #[derive(Default)]
 struct HandlerFactory;
 
-impl Factory for HandlerFactory {
+impl<'env> Factory<'env> for HandlerFactory {
 	type Handler = Handler;
 
 	fn create(&self, _context: RawContext, response: RawResponse) -> Handler {

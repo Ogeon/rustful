@@ -1,7 +1,7 @@
 use router::{Router, Endpoint, InsertState, RouteState};
 use context::MaybeUtf8Owned;
 use context::hypermedia::Link;
-use handler::Factory;
+use handler::Meta;
 use Method;
 
 ///A router endpoint that assigns names to route variables.
@@ -12,12 +12,12 @@ use Method;
 ///won't do any other routing work, so make sure to pair it with, at least, a
 ///path based router.
 #[derive(Clone)]
-pub struct Variables<H: Factory> {
+pub struct Variables<H> {
     handler: H,
     variables: Vec<MaybeUtf8Owned>,
 }
 
-impl<H: Factory> Router for Variables<H> {
+impl<H: Meta + Send + Sync> Router for Variables<H> {
     type Handler = H;
 
     fn find<'a>(&'a self, _method: &Method, route: &mut RouteState) -> Endpoint<'a, H> {
@@ -57,7 +57,7 @@ impl<H: Factory> Router for Variables<H> {
     }
 }
 
-impl<H: Factory + Default> Default for Variables<H> {
+impl<H: Default> Default for Variables<H> {
     fn default() -> Variables<H> {
         Variables {
             handler: H::default(),

@@ -59,7 +59,7 @@ struct Config<R: Router> {
 ///# use rustful::{Server, Handler, Context, Response};
 ///# #[derive(Default)]
 ///# struct R;
-///# impl Handler for R {
+///# impl<'env> Handler<'env> for R {
 ///#     fn handle_request(&self, _context: Context, _response: Response) {}
 ///# }
 ///
@@ -93,7 +93,11 @@ pub struct ServerInstance<H: ThreadHandle> {
 impl<H: ThreadHandle> ServerInstance<H> {
     ///Create and start a new server instance, with the provided
     ///configuration. This is the same as `Server{...}.run_in(...)`.
-    pub fn run<'a, R: Router + 'a, E: ThreadEnv<'a, Handle=H>>(config: Server<R>, env: E) -> HttpResult<ServerInstance<H>> {
+    pub fn run<'env, R, E>(config: Server<R>, env: E) -> HttpResult<ServerInstance<H>> where
+        R: Router + 'env,
+        R::Handler: Factory<'env>,
+        E: ThreadEnv<'env, Handle=H>,
+    {
         let Server {
             handlers,
             fallback_handler,
@@ -246,7 +250,9 @@ impl HyperServer {
     }
 
     #[cfg(feature = "ssl")]
-    fn run<R: Router>(self, server: RequestHandlerFactory<R>) -> HttpResult<(::hyper::server::Listening, ServerLoop<R>)> {
+    fn run<'env, R: Router>(self, server: RequestHandlerFactory<'env, R>) -> HttpResult<(::hyper::server::Listening, ServerLoop<R>)> where
+        R::Handler: Factory<'env>,
+    {
         match self {
             HyperServer::Http(s) => s.handle(server).map(|(listening, server_loop)| (listening, ServerLoop::http(server_loop))),
             HyperServer::Https(s) => s.handle(server).map(|(listening, server_loop)| (listening, ServerLoop::https(server_loop))),
@@ -254,7 +260,9 @@ impl HyperServer {
     }
 
     #[cfg(not(feature = "ssl"))]
-    fn run<R: Router>(self, server: RequestHandlerFactory<R>) -> HttpResult<(::hyper::server::Listening, ServerLoop<R>)> {
+    fn run<'env, R: Router>(self, server: RequestHandlerFactory<'env, R>) -> HttpResult<(::hyper::server::Listening, ServerLoop<R>)> where
+        R::Handler: Factory<'env>,
+    {
         match self {
             HyperServer::Http(s) => s.handle(server).map(|(listening, server_loop)| (listening, ServerLoop::http(server_loop))),
         }
@@ -263,38 +271,38 @@ impl HyperServer {
 
 #[must_use]
 ///A server event loop, waiting to be started.
-struct ServerLoop<R: Router>(ServerLoopKind<R>);
+struct ServerLoop<'env, R: Router>(ServerLoopKind<'env, R>) where R::Handler: Factory<'env>;
 
-impl<R: Router> ServerLoop<R> {
+impl<'env, R: Router> ServerLoop<'env, R> where R::Handler: Factory<'env> {
     ///Run the server loop, and block this thread. This will otherwise happen
     ///automatically when it's dropped.
     pub fn run(self) {}
 
-    fn http(server: hyper::server::ServerLoop<HttpListener, RequestHandlerFactory<R>>) -> ServerLoop<R> {
+    fn http(server: hyper::server::ServerLoop<HttpListener, RequestHandlerFactory<'env, R>>) -> ServerLoop<R> {
         ServerLoop(ServerLoopKind::Http(server))
     }
 
     #[cfg(feature = "ssl")]
-    fn https(server: hyper::server::ServerLoop<HttpsListener<Openssl>, RequestHandlerFactory<R>>) -> ServerLoop<R> {
+    fn https(server: hyper::server::ServerLoop<HttpsListener<Openssl>, RequestHandlerFactory<'env, R>>) -> ServerLoop<R> {
         ServerLoop(ServerLoopKind::Https(server))
     }
 }
 
-enum ServerLoopKind<R: Router> {
-    Http(hyper::server::ServerLoop<HttpListener, RequestHandlerFactory<R>>),
+enum ServerLoopKind<'env, R: Router> where R::Handler: Factory<'env> {
+    Http(hyper::server::ServerLoop<HttpListener, RequestHandlerFactory<'env, R>>),
     #[cfg(feature = "ssl")]
-    Https(hyper::server::ServerLoop<HttpsListener<Openssl>, RequestHandlerFactory<R>>),
+    Https(hyper::server::ServerLoop<HttpsListener<Openssl>, RequestHandlerFactory<'env, R>>),
 }
 
-struct RequestHandlerFactory<R: Router> {
+struct RequestHandlerFactory<'env, R: Router> {
     config: Arc<Config<R>>,
     response_filters: Arc<Vec<Box<ResponseFilter>>>,
     global: Arc<Global>,
-    work_pool: Worker,
+    work_pool: Worker<'env>,
 }
 
-impl<R: Router> Clone for RequestHandlerFactory<R> {
-    fn clone(&self) -> RequestHandlerFactory<R> {
+impl<'env, R: Router> Clone for RequestHandlerFactory<'env, R> {
+    fn clone(&self) -> RequestHandlerFactory<'env, R> {
         RequestHandlerFactory {
             config: self.config.clone(),
             response_filters: self.response_filters.clone(),
@@ -304,13 +312,14 @@ impl<R: Router> Clone for RequestHandlerFactory<R> {
     }
 }
 
-impl<T: Transport, R: Router> HandlerFactory<T> for RequestHandlerFactory<R> where
+impl<'env, T: Transport, R: Router> HandlerFactory<T> for RequestHandlerFactory<'env, R> where
     for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::RawEncoder<'a, 'b>>,
     for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::RawDecoder<'a, 'b>>,
+    R::Handler: Factory<'env>,
 {
-    type Output = RequestHandler<R>;
+    type Output = RequestHandler<'env, R>;
 
-    fn create(&mut self, control: Control) -> RequestHandler<R> {
+    fn create(&mut self, control: Control) -> RequestHandler<'env, R> {
         RequestHandler::new(self.config.clone(), self.response_filters.clone(), self.global.clone(), control, self.work_pool.clone())
     }
 }
@@ -382,18 +391,18 @@ fn parse_url(url: &Url) -> ParsedUri {
     }
 }
 
-struct RequestHandler<R: Router> {
+struct RequestHandler<'env, R: Router> where R::Handler: Factory<'env> {
     config: Arc<Config<R>>,
     global: Arc<Global>,
     response_filters: Arc<Vec<Box<ResponseFilter>>>,
-    write_method: Option<WriteMethod<<R::Handler as ::handler::Factory>::Handler>>,
+    write_method: Option<WriteMethod<<R::Handler as ::handler::Factory<'env>>::Handler>>,
 
     control: Option<Control>,
-    worker: Worker,
+    worker: Worker<'env>,
 }
 
-impl<R: Router> RequestHandler<R> {
-    fn new(config: Arc<Config<R>>, response_filters: Arc<Vec<Box<ResponseFilter>>>, global: Arc<Global>, control: Control, worker: Worker) -> RequestHandler<R> {
+impl<'env, R: Router> RequestHandler<'env, R> where R::Handler: Factory<'env> {
+    fn new(config: Arc<Config<R>>, response_filters: Arc<Vec<Box<ResponseFilter>>>, global: Arc<Global>, control: Control, worker: Worker<'env>) -> RequestHandler<'env, R> {
         RequestHandler {
             config: config,
             global: global,
@@ -425,9 +434,10 @@ fn modify_context(context_filters: &[Box<ContextFilter>], global: &Global, filte
     result
 }
 
-impl<T: Transport, R: Router> HyperHandler<T> for RequestHandler<R> where
+impl<'env, T: Transport, R: Router> HyperHandler<T> for RequestHandler<'env, R> where
     for<'a, 'b> &'a mut Encoder<'b, T>: Into<::handler::RawEncoder<'a, 'b>>,
     for<'a, 'b> &'a mut Decoder<'b, T>: Into<::handler::RawDecoder<'a, 'b>>,
+    R::Handler: Factory<'env>,
 {
     fn on_request(&mut self, request: Request<T>) -> Next {
         if let Some(control) = self.control.take() {

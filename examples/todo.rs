@@ -113,7 +113,7 @@ fn list_all(context: Context, mut response: Response) {
 }
 
 //Store a new to-do with data from the request body
-fn store(context: Context, mut response: Response) {
+fn store<'a, 'env>(context: Context<'a, 'env>, mut response: Response<'env>) {
     let Context {
         headers,
         body,
@@ -196,7 +196,7 @@ fn get_todo(context: Context, mut response: Response) {
 }
 
 //Update a to-do, selected by its id with data from the request body
-fn edit_todo(context: Context, mut response: Response) {
+fn edit_todo<'a, 'env>(context: Context<'a, 'env>, mut response: Response<'env>) {
     let Context {
         headers,
         variables,
@@ -266,10 +266,10 @@ fn delete_todo(context: Context, mut response: Response) {
 
 
 //An API endpoint with an optional action
-struct Api(Option<fn(Context, Response)>);
+struct Api(Option<for<'a, 'env> fn(Context<'a, 'env>, Response<'env>)>);
 
-impl Handler for Api {
-    fn handle_request(&self, context: Context, mut response: Response) {
+impl<'env> Handler<'env> for Api {
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, mut response: Response<'env>) {
         //Collect the accepted methods from the provided hyperlinks
         let mut methods: Vec<_> = context.hyperlinks.iter().filter_map(|l| l.method.clone()).collect();
         methods.push(context.method.clone());

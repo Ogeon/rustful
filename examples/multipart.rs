@@ -11,7 +11,6 @@ use std::error::Error;
 use std::io::{self, Read};
 use std::fs::File;
 use std::path::Path;
-use std::sync::Arc;
 
 use tempdir::TempDir;
 
@@ -30,20 +29,20 @@ fn main() {
     let error = read_string("examples/multipart/error.html").unwrap();
 
     //Create a temporary image directory.
-    let image_dir = Arc::new(tempdir::TempDir::new("rustful_multipart").unwrap());
+    let image_dir = tempdir::TempDir::new("rustful_multipart").unwrap();
 
     let router = insert_routes! {
         TreeRouter::new() => {
             Get: Api {
-                image_dir: image_dir.clone(),
-                page: ApiPage::Form(form),
+                image_dir: &image_dir,
+                page: ApiPage::Form(&form),
             },
             Post: Api {
-                image_dir: image_dir.clone(),
-                page: ApiPage::Display { on_ok: Arc::new(image), on_err: Arc::new(error) },
+                image_dir: &image_dir,
+                page: ApiPage::Display { on_ok: &image, on_err: &error },
             },
             "img/*file" => Get: Api {
-                image_dir: image_dir,
+                image_dir: &image_dir,
                 page: ApiPage::File,
             },
         }
@@ -69,30 +68,27 @@ fn read_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
     File::open(path).and_then(|mut f| f.read_to_string(&mut string)).map(|_| string)
 }
 
-struct Api {
-    image_dir: Arc<TempDir>,
-    page: ApiPage,
+struct Api<'env> {
+    image_dir: &'env TempDir,
+    page: ApiPage<'env>,
 }
 
-enum ApiPage {
-    Form(String),
+enum ApiPage<'env> {
+    Form(&'env str),
     Display {
-        on_ok: Arc<String>,
-        on_err: Arc<String>,
+        on_ok: &'env str,
+        on_err: &'env str,
     },
     File,
 }
 
-impl Handler for Api {
-    fn handle_request(&self, context: Context, mut response: Response) {
+impl<'env> Handler<'env> for Api<'env> {
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, mut response: Response<'env>) {
         match self.page {
-            ApiPage::Form(ref form) => response.send(&**form),
-            ApiPage::Display { ref on_ok, ref on_err } => {
-                //Multipart request can't be read asynchronously, at the
-                //moment, so we have to do it in another thread.
-                let on_ok = on_ok.clone();
-                let on_err = on_err.clone();
-                let image_dir = self.image_dir.clone();
+            ApiPage::Form(form) => response.send(form),
+            ApiPage::Display { on_ok, on_err } => {
+                //Copies the reference to image_dir
+                let image_dir = self.image_dir;
 
                 context.body.sync_read(move |body| {
                     if let Ok(mut multipart) = body.into_multipart() {
@@ -126,7 +122,7 @@ impl Handler for Api {
                                             .replace("{{src}}", &format!("/img/{}", file.path.file_name().expect("the image has no name").to_string_lossy()))
                                         );
                                     } else {
-                                        response.send(&**on_err);
+                                        response.send(on_err);
                                     }
                                 }
                             }

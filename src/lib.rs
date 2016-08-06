@@ -15,9 +15,12 @@
 //!use std::error::Error;
 //!use rustful::{Server, Handler, Context, Response, TreeRouter};
 //!
-//!struct Greeting(&'static str);
+//!struct Phrase(&'static str);
 //!
-//!impl Handler for Greeting {
+//!//The 'env lifetime is the lifetime of the threading environment.
+//!//It's 'static for regular threads, but otherwise the same as the
+//!//scope where Server::run is called.
+//!impl<'env> Handler<'env> for Phrase {
 //!    fn handle_request(&self, context: Context, response: Response) {
 //!        //Check if the client accessed /hello/:name or /good_bye/:name
 //!        if let Some(name) = context.variables.get("name") {
@@ -35,13 +38,13 @@
 //!    TreeRouter::new() => {
 //!        //Receive GET requests to /hello and /hello/:name
 //!        "hello" => {
-//!            Get: Greeting("hello"),
-//!            ":name" => Get: Greeting("hello")
+//!            Get: Phrase("hello"),
+//!            ":name" => Get: Phrase("hello")
 //!        },
 //!        //Receive GET requests to /good_bye and /good_bye/:name
 //!        "good_bye" => {
-//!            Get: Greeting("good bye"),
-//!            ":name" => Get: Greeting("good bye")
+//!            Get: Phrase("good bye"),
+//!            ":name" => Get: Phrase("good bye")
 //!        }
 //!    }
 //!};

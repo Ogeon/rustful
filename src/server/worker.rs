@@ -2,7 +2,7 @@ use std::sync::mpsc::{channel, sync_channel, Sender, SyncSender, Receiver};
 
 use server::ThreadEnv;
 
-pub fn new<'a, E: ThreadEnv<'a>>(size: usize, env: E) -> (Vec<E::Handle>, Worker) {
+pub fn new<'a, E: ThreadEnv<'a>>(size: usize, env: E) -> (Vec<E::Handle>, Worker<'a>) {
     let mut handles = Vec::with_capacity(size + 1);
     let (worker_send, worker_recv) = channel();
     let (work_send, work_recv) = channel();
@@ -43,23 +43,23 @@ pub fn new<'a, E: ThreadEnv<'a>>(size: usize, env: E) -> (Vec<E::Handle>, Worker
 ///of workers are limited, so it's better to spawn a thread if a task may
 ///block for too long.
 #[derive(Clone)]
-pub struct Worker(Sender<Box<FnBox + Send>>);
+pub struct Worker<'a>(Sender<Box<FnBox + Send + 'a>>);
 
-impl Worker {
+impl<'a> Worker<'a> {
     ///Submit a new task to the workers.
-    pub fn new_task<F: FnOnce() + Send + 'static>(&self, f: F) {
+    pub fn new_task<F: FnOnce() + Send + 'a>(&self, f: F) {
         let _ = self.0.send(Box::new(f));
     }
 
     ///Stream data from a task.
-    pub fn stream<F: FnOnce(Sender<T>) + Send + 'static, T: Send + 'static>(&self, f: F) -> Receiver<T> {
+    pub fn stream<F: FnOnce(Sender<T>) + Send + 'a, T: Send + 'a>(&self, f: F) -> Receiver<T> {
         let (send, recv) = channel();
         self.new_task(move || f(send));
         recv
     }
 
     ///Stream data from a task, but limit the number of in-flight items.
-    pub fn sync_stream<F: FnOnce(SyncSender<T>) + Send + 'static, T: Send + 'static>(&self, bound: usize, f: F) -> Receiver<T> {
+    pub fn sync_stream<F: FnOnce(SyncSender<T>) + Send + 'a, T: Send + 'a>(&self, bound: usize, f: F) -> Receiver<T> {
         let (send, recv) = sync_channel(bound);
         self.new_task(move || f(send));
         recv
@@ -76,7 +76,7 @@ impl<F: FnOnce()> FnBox for F {
     }
 }
 
-enum WorkerMessage {
-    Task(Box<FnBox + Send>),
+enum WorkerMessage<'env> {
+    Task(Box<FnBox + Send + 'env>),
     End,
 }

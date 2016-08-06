@@ -26,12 +26,12 @@ use response::{Data, Error, FileError};
 use interface::{ResponseMessage, ResponseHead, ResponseType};
 use handler::Encoder;
 
-pub fn make_response(
+pub fn make_response<'env>(
     raw: RawResponse,
-    sender: Sender<ResponseMessage>,
+    sender: Sender<ResponseMessage<'env>>,
     control: Control,
-    worker: Worker,
-) -> Response
+    worker: Worker<'env>,
+) -> Response<'env>
 {
     Response {
         status: raw.status,
@@ -63,7 +63,7 @@ pub fn make_response_filters(
 ///This is where the status code and response headers are set, as well as the
 ///response body. The body can be directly written through the `Response` if
 ///its size is known.
-pub struct Response {
+pub struct Response<'env> {
     ///The response status code. `Ok (200)` is the default.
     pub status: StatusCode,
     ///The response headers.
@@ -72,15 +72,15 @@ pub struct Response {
     ///and can be used to communicate with the response filters.
     pub filter_storage: Map<Any + Send + 'static>,
 
-    sender: Sender<ResponseMessage>,
+    sender: Sender<ResponseMessage<'env>>,
     control: Control,
-    worker: Worker,
+    worker: Worker<'env>,
     filters: Arc<Vec<Box<ResponseFilter>>>,
     global: Arc<Global>,
     sent: bool,
 }
 
-impl Response {
+impl<'env> Response<'env> {
     ///Send data to the client and finish the response, ignoring eventual
     ///errors. Use `try_send` to get error information.
     ///
@@ -229,7 +229,7 @@ impl Response {
     ///}
     ///# fn main() {}
     ///```
-    pub fn send_file<P: AsRef<Path>>(self, path: P) -> Result<(), FileError> {
+    pub fn send_file<P: AsRef<Path>>(self, path: P) -> Result<(), FileError<'env>> {
         self.send_file_with_mime(path, ::file::ext_to_mime)
     }
 
@@ -287,7 +287,7 @@ impl Response {
     ///}
     ///# fn main() {}
     ///```
-    pub fn send_file_with_mime<P, F>(mut self, path: P, to_mime: F) -> Result<(), FileError> where
+    pub fn send_file_with_mime<P, F>(mut self, path: P, to_mime: F) -> Result<(), FileError<'env>> where
         P: AsRef<Path>,
         F: FnOnce(&str) -> Option<Mime>
     {
@@ -366,7 +366,7 @@ impl Response {
 
     ///Write the status code and headers to the client and turn the `Response`
     ///into a `Chunked` response.
-    pub fn into_chunked(mut self) -> Result<Chunked, (Response, Error)> {
+    pub fn into_chunked(mut self) -> Result<Chunked<'env>, (Response<'env>, Error)> {
         //Make sure it's chunked
         self.headers.remove::<::header::ContentLength>();
         self.headers.remove_raw("content-length");
@@ -439,7 +439,7 @@ impl Response {
     ///__Unsafety__: The content length is set beforehand, which makes it
     ///possible to send responses that are too short.
     pub unsafe fn raw_send<F>(mut self, content_length: u64, on_write: F) where
-        F: FnMut(&mut Encoder) + Send + 'static
+        F: FnMut(&mut Encoder) + Send + 'env
     {
         self.sent = true;
 
@@ -458,7 +458,7 @@ impl Response {
 }
 
 #[allow(unused_must_use)]
-impl Drop for Response {
+impl<'env> Drop for Response<'env> {
     ///Writes status code and headers and closes the connection.
     fn drop(&mut self) {
         if !self.sent {
@@ -473,8 +473,8 @@ impl Drop for Response {
 
 ///This is useful for when the size of the data is unknown, but it comes with
 ///an overhead for each time `send` or `try_send` is called (simply put).
-pub struct Chunked {
-    sender: Sender<ResponseMessage>,
+pub struct Chunked<'env> {
+    sender: Sender<ResponseMessage<'env>>,
     control: Control,
     filters: Arc<Vec<Box<ResponseFilter>>>,
     sent: bool,
@@ -482,7 +482,7 @@ pub struct Chunked {
     pub filter_storage:  Map<Any + Send + 'static>,
 }
 
-impl Chunked {
+impl<'env> Chunked<'env> {
     ///Send a chunk of data to the client, ignoring any eventual errors. Use
     ///`try_send` to get error information.
     ///
@@ -593,7 +593,7 @@ impl Chunked {
     }
 }
 
-impl Write for Chunked {
+impl<'env> Write for Chunked<'env> {
     fn write(&mut self, content: &[u8]) -> io::Result<usize> {
         self.try_send(content)
             .map(|_| content.len())
@@ -609,7 +609,7 @@ impl Write for Chunked {
     }
 }
 
-impl Drop for Chunked {
+impl<'env> Drop for Chunked<'env> {
     ///Finishes writing and closes the connection.
     fn drop(&mut self) {
         if !self.sent {

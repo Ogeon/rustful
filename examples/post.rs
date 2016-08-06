@@ -14,7 +14,7 @@ extern crate env_logger;
 use rustful::{Server, Context, Response};
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
-fn say_hello(context: Context, mut response: Response) {
+fn say_hello<'a, 'env>(context: Context<'a, 'env>, mut response: Response<'env>) {
     let Context {
         body,
         global,

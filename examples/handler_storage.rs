@@ -83,18 +83,18 @@ fn read_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 }
 
 
-enum Api<'a> {
+enum Api<'env> {
     Counter {
         //We are using the handler to preload the page in this example
-        page: &'a str,
+        page: &'env str,
 
-        value: &'a AtomicIsize,
+        value: &'env AtomicIsize,
         operation: Option<fn(&AtomicIsize)>
     },
     File
 }
 
-impl<'a> Handler for Api<'a> {
+impl<'env> Handler<'env> for Api<'env> {
     fn handle_request(&self, context: Context, mut response: Response) {
         match *self {
             Api::Counter { page, value, ref operation }  => {

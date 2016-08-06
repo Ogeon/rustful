@@ -163,10 +163,17 @@ impl<'a, 'b> Write for Encoder<'a, 'b> {
 ///The `Handler` trait makes asynchronous request handling a bit easier, using
 ///a synchronous-like API. It's still not fully synchronous, so be careful
 ///with calls to functions that may block.
-pub trait Handler: Send + Sync {
+///
+///The lifetime `'env` is the lifetime of the threading environment
+///(essentially the lifetime of the server), which is `'static` when regular
+///threads are used, or the lifetime of the scope where the server was started
+///if scoped threads are used. Having it available here makes it a lot easier
+///to have non-static handlers, in turn avoiding excessive cloning and
+///synchronization.
+pub trait Handler<'env>: Send + Sync {
     ///Handle a request from the client. Panicking within this method is
     ///discouraged, to allow the server to run smoothly.
-    fn handle_request(&self, context: Context, response: Response);
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, response: Response<'env>);
 
     ///Get a description for the handler.
     fn description(&self) -> Option<Cow<'static, str>> {
@@ -174,20 +181,20 @@ pub trait Handler: Send + Sync {
     }
 }
 
-impl<F: Fn(Context, Response) + Send + Sync> Handler for F {
-    fn handle_request(&self, context: Context, response: Response) {
+impl<'env, F: for<'a> Fn(Context<'a, 'env>, Response<'env>) + Send + Sync> Handler<'env> for F {
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, response: Response<'env>) {
         self(context, response);
     }
 }
 
-impl<T: Handler> Handler for Arc<T> {
-    fn handle_request(&self, context: Context, response: Response) {
+impl<'env, T: Handler<'env>> Handler<'env> for Arc<T> {
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, response: Response<'env>) {
         (**self).handle_request(context, response);
     }
 }
 
-impl Handler for Box<Handler> {
-    fn handle_request(&self, context: Context, response: Response) {
+impl<'env> Handler<'env> for Box<Handler<'env>> {
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, response: Response<'env>) {
         (**self).handle_request(context, response);
     }
 }
@@ -200,7 +207,7 @@ pub trait Meta {
     }
 }
 
-impl<H: Handler> Meta for H {
+impl<'env, H: Handler<'env>> Meta for H {
     fn description(&self) -> Option<Cow<'static, str>> {
         self.description()
     }
@@ -229,19 +236,26 @@ pub trait RawHandler: Send {
 }
 
 ///A factory for initializing raw handlers.
-pub trait Factory: Meta + Send + Sync {
+///
+///The lifetime `'env` is the lifetime of the threading environment
+///(essentially the lifetime of the server), which is `'static` when regular
+///threads are used, or the lifetime of the scope where the server was started
+///if scoped threads are used. Having it available here makes it a lot easier
+///to have non-static handlers, in turn avoiding excessive cloning and
+///synchronization.
+pub trait Factory<'env>: Meta + Send + Sync {
     ///The resulting handler type.
     type Handler: RawHandler;
 
     ///Initialize a `RawHandler`, using the request context and initial
     ///response data.
-    fn create(&self, context: RawContext, response: RawResponse) -> Self::Handler;
+    fn create<'a>(&self, context: RawContext<'a, 'env>, response: RawResponse) -> Self::Handler;
 }
 
-impl<H: Handler> Factory for H {
-    type Handler = HandlerWrapper;
+impl<'env, H: Handler<'env>> Factory<'env> for H {
+    type Handler = HandlerWrapper<'env>;
 
-    fn create(&self, context: RawContext, response: RawResponse) -> HandlerWrapper {
+    fn create<'a>(&self, context: RawContext<'a, 'env>, response: RawResponse) -> HandlerWrapper<'env> {
         let mut on_body = None;
         let (send, recv) = channel();
 
@@ -253,7 +267,7 @@ impl<H: Handler> Factory for H {
                 context.worker.clone(),
             );
 
-            let body = ::interface::body::new(&mut on_body, &context.headers);
+            let body = ::interface::body::new(&mut on_body, context.worker.clone(), &context.headers);
 
             let context = Context {
                 method: context.method,
@@ -277,14 +291,14 @@ impl<H: Handler> Factory for H {
 }
 
 ///The request handling part of a simple handler.
-pub struct HandlerWrapper {
-    on_body: Option<Box<FnMut(&mut Decoder) + Send>>,
-    response_recv: Receiver<ResponseMessage>,
-    write_method: Option<WriteMethod>,
+pub struct HandlerWrapper<'env> {
+    on_body: Option<Box<FnMut(&mut Decoder) + Send + 'env>>,
+    response_recv: Receiver<ResponseMessage<'env>>,
+    write_method: Option<WriteMethod<'env>>,
 }
 
-impl HandlerWrapper {
-    fn new(on_body: Option<Box<FnMut(&mut Decoder) + Send>>, recv: Receiver<ResponseMessage>) -> HandlerWrapper {
+impl<'env> HandlerWrapper<'env> {
+    fn new(on_body: Option<Box<FnMut(&mut Decoder) + Send + 'env>>, recv: Receiver<ResponseMessage<'env>>) -> HandlerWrapper<'env> {
         HandlerWrapper {
             on_body: on_body,
             response_recv: recv,
@@ -293,7 +307,7 @@ impl HandlerWrapper {
     }
 }
 
-impl RawHandler for HandlerWrapper {
+impl<'env> RawHandler for HandlerWrapper<'env> {
     fn on_request(&mut self) -> Next {
         if self.on_body.is_some() {
             Next::read()
@@ -431,8 +445,8 @@ impl RawHandler for HandlerWrapper {
     }
 }
 
-enum WriteMethod {
+enum WriteMethod<'env> {
     Buffer(Vec<u8>, usize, usize),
-    Callback(Box<FnMut(&mut Encoder) + Send>),
+    Callback(Box<FnMut(&mut Encoder) + Send + 'env>),
     Chunked(Option<(Vec<u8>, usize)>),
 }

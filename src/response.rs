@@ -86,18 +86,18 @@ impl error::Error for Error {
 }
 
 ///Error that may occur while sending a file.
-pub struct FileError {
+pub struct FileError<'a> {
     ///The error that occurred while reading the file.
     pub error: io::Error,
 
     ///The recovered HTTP response.
-    pub response: Response,
+    pub response: Response<'a>,
 }
 
-impl FileError {
+impl<'a> FileError<'a> {
     ///Send a 404 (not found) response if the file wasn't found, or return
     ///`self` if any other error occurred.
-    pub fn send_not_found<'d, M: Into<Data<'d>>>(self, message: M) -> Result<(), FileError> {
+    pub fn send_not_found<'d, M: Into<Data<'d>>>(self, message: M) -> Result<(), FileError<'a>> {
         if let io::ErrorKind::NotFound = self.error.kind() {
             let mut response = self.response;
             response.status = StatusCode::NotFound;
@@ -109,25 +109,25 @@ impl FileError {
     }
 }
 
-impl Into<io::Error> for FileError {
+impl<'a> Into<io::Error> for FileError<'a> {
     fn into(self) -> io::Error {
         self.error
     }
 }
 
-impl std::fmt::Debug for FileError {
+impl<'a> std::fmt::Debug for FileError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.error.fmt(f)
     }
 }
 
-impl std::fmt::Display for FileError {
+impl<'a> std::fmt::Display for FileError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "failed to open a file: {}", self.error)
     }
 }
 
-impl error::Error for FileError {
+impl<'a> error::Error for FileError<'a> {
     fn description(&self) -> &str {
         self.error.description()
     }

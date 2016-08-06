@@ -8,7 +8,6 @@ use multipart::server::{HttpRequest, Multipart};
 
 use std::io::{self, Read};
 use std::sync::mpsc::{self, Receiver};
-use std::thread;
 use std::cmp::min;
 
 use utils::MAX_BUFFER_LENGTH;
@@ -20,22 +19,24 @@ use utils::MAX_BUFFER_LENGTH;
 use context::Parameters;
 use header::Headers;
 use handler::Decoder;
+use server::Worker;
 
-pub fn new<'a>(on_body: &'a mut Option<Box<FnMut(&mut Decoder) + Send>>, headers: &Headers) -> Body<'a> {
-    Body::new(on_body, headers)
+pub fn new<'a, 'env>(on_body: &'a mut Option<Box<FnMut(&mut Decoder) + Send + 'env>>, worker: Worker<'env>, headers: &Headers) -> Body<'a, 'env> {
+    Body::new(on_body, worker, headers)
 }
 
 ///Provides different read methods for the request body.
-pub struct Body<'a> {
-    on_body: &'a mut Option<Box<FnMut(&mut Decoder) + Send>>,
+pub struct Body<'a, 'env: 'a> {
+    on_body: &'a mut Option<Box<FnMut(&mut Decoder) + Send + 'env>>,
+    worker: Worker<'env>,
 
     #[cfg(feature = "multipart")]
     boundary: Option<String>
 }
 
-impl<'a> Body<'a> {
+impl<'a, 'env> Body<'a, 'env> {
     #[cfg(feature = "multipart")]
-    fn new(on_body: &'a mut Option<Box<FnMut(&mut Decoder) + Send>>, headers: &Headers) -> Body<'a> {
+    fn new(on_body: &'a mut Option<Box<FnMut(&mut Decoder) + Send + 'env>>, worker: Worker<'env>, headers: &Headers) -> Body<'a, 'env> {
         use header::ContentType;
         use mime::{Mime, TopLevel, SubLevel, Attr, Value};
 
@@ -54,22 +55,24 @@ impl<'a> Body<'a> {
 
         Body {
             on_body: on_body,
+            worker: worker,
             boundary: boundary,
         }
     }
 
     #[cfg(not(feature = "multipart"))]
-    fn new(on_body: &'a mut Option<Box<FnMut(&mut Decoder) + Send>>, _headers: &Headers) -> Body<'a> {
+    fn new(on_body: &'a mut Option<Box<FnMut(&mut Decoder) + Send + 'env>>, worker: Worker<'env>, _headers: &Headers) -> Body<'a, 'env> {
         Body {
             on_body: on_body,
+            worker: worker,
         }
     }
 
     ///Read the body in a synchronous manner, from a different thread.
-    pub fn sync_read<F: FnOnce(BodyReader) + Send + 'static>(mut self, read_fn: F) {
+    pub fn sync_read<F: FnOnce(BodyReader) + Send + 'env>(mut self, read_fn: F) {
         let (send, recv) = mpsc::channel();
         let reader = BodyReader::new(recv, &mut self);
-        thread::spawn(move || read_fn(reader));
+        self.worker.new_task(move || read_fn(reader));
         self.on_readable(move |decoder| {
             let mut buffer = vec![0; MAX_BUFFER_LENGTH];
             let mut start = 0;
@@ -103,12 +106,12 @@ impl<'a> Body<'a> {
     }
 
     ///Read the body as it is, when it becomes readable.
-    pub fn on_readable<F: FnMut(&mut Decoder) + Send + 'static>(mut self, on_readable: F) {
+    pub fn on_readable<F: FnMut(&mut Decoder) + Send + 'env>(mut self, on_readable: F) {
         *self.on_body = Some(Box::new(on_readable));
     }
 
     ///Read the body, and use it when everything has arrived.
-    pub fn read_to_end<F: FnOnce(io::Result<Vec<u8>>) + Send + 'static>(self, on_body: F) {
+    pub fn read_to_end<F: FnOnce(io::Result<Vec<u8>>) + Send + 'env>(self, on_body: F) {
         let mut buffer: Vec<_> = vec![];
         let mut on_body = Some(on_body);
         self.on_readable(move |decoder| {
@@ -148,7 +151,7 @@ impl<'a> Body<'a> {
     ///```
     ///use rustful::{Context, Response};
     ///
-    ///fn my_handler(context: Context, response: Response) {
+    ///fn my_handler<'a, 'env>(context: Context<'a, 'env>, response: Response<'env>) {
     ///    //Parse the request body as a query string
     ///    context.body.read_query_body(move |query| {
     ///        let query = query.expect("failed to decode query body");
@@ -162,7 +165,7 @@ impl<'a> Body<'a> {
     ///}
     ///```
     #[inline]
-    pub fn read_query_body<F: FnOnce(io::Result<Parameters>) + Send + 'static>(self, on_body: F) {
+    pub fn read_query_body<F: FnOnce(io::Result<Parameters>) + Send + 'env>(self, on_body: F) {
         self.read_to_end(move |body| on_body(body.map(|buf| ::utils::parse_parameters(&buf))))
     }
 
@@ -174,7 +177,7 @@ impl<'a> Body<'a> {
     ///```
     ///use rustful::{Context, Response};
     ///
-    ///fn my_handler(context: Context, response: Response) {
+    ///fn my_handler<'a, 'env>(context: Context<'a, 'env>, response: Response<'env>) {
     ///    //Parse the request body as JSON
     ///    context.body.read_json_body(move |json| {
     ///        let json = json.expect("failed to decode josn");
@@ -188,7 +191,7 @@ impl<'a> Body<'a> {
     ///}
     ///```
     #[cfg(feature = "rustc_json_body")]
-    pub fn read_json_body<F: FnOnce(Result<json::Json, json::BuilderError>) + Send + 'static>(self, on_body: F) {
+    pub fn read_json_body<F: FnOnce(Result<json::Json, json::BuilderError>) + Send + 'env>(self, on_body: F) {
         self.read_to_end(move |body| on_body(match body {
             Ok(body) => json::Json::from_str(&String::from_utf8_lossy(&body)),
             Err(e) => Err(e.into()),
@@ -212,7 +215,7 @@ impl<'a> Body<'a> {
     ///    b: f64
     ///}
     ///
-    ///fn my_handler(context: Context, response: Response) {
+    ///fn my_handler<'a, 'env>(context: Context<'a, 'env>, response: Response<'env>) {
     ///    //Decode a JSON formatted request body into Foo
     ///    context.body.decode_json_body(move |foo| {
     ///        let foo: Foo = foo.expect("failed to decode 'Foo'");
@@ -223,7 +226,7 @@ impl<'a> Body<'a> {
     ///# fn main() {}
     ///```
     #[cfg(feature = "rustc_json_body")]
-    pub fn decode_json_body<T: Decodable, F: FnOnce(Result<T, json::DecoderError>) + Send + 'static>(self, on_body: F) {
+    pub fn decode_json_body<T: Decodable, F: FnOnce(Result<T, json::DecoderError>) + Send + 'env>(self, on_body: F) {
         self.read_to_end(move |body| on_body(match body {
             Ok(body) => json::decode(&String::from_utf8_lossy(&body)),
             Err(e) => Err(json::ParserError::from(e).into()),
@@ -271,7 +274,7 @@ impl BodyReader {
     ///use rustful::StatusCode::BadRequest;
     ///use multipart::server::MultipartData;
     ///
-    ///fn my_handler(mut context: Context, mut response: Response) {
+    ///fn my_handler<'a, 'env>(context: Context<'a, 'env>, mut response: Response<'env>) {
     ///    context.body.sync_read(move |reader| {
     ///        if let Ok(mut multipart) = reader.into_multipart() {
     ///            let mut result = String::new();

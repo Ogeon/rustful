@@ -25,14 +25,14 @@ impl From<RawResponse> for ResponseHead {
 	}
 }
 
-pub enum ResponseMessage {
-    Head(ResponseHead, ResponseType),
+pub enum ResponseMessage<'env> {
+    Head(ResponseHead, ResponseType<'env>),
     Chunk(Vec<u8>),
     End,
 }
 
-pub enum ResponseType {
+pub enum ResponseType<'env> {
     Buffer(Vec<u8>),
-    Callback(Box<FnMut(&mut Encoder) + Send>),
+    Callback(Box<FnMut(&mut Encoder) + Send + 'env>),
     Chunked,
 }
