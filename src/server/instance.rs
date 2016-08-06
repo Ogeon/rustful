@@ -218,15 +218,15 @@ impl HyperServer {
     #[cfg(feature = "ssl")]
     fn timeout(self, duration: Duration) -> HyperServer {
         match self {
-            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(duration)),
-            HyperServer::Https(s) => HyperServer::Https(s.idle_timeout(duration)),
+            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(Some(duration))),
+            HyperServer::Https(s) => HyperServer::Https(s.idle_timeout(Some(duration))),
         }
     }
 
     #[cfg(not(feature = "ssl"))]
     fn timeout(self, duration: Duration) -> HyperServer {
         match self {
-            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(duration)),
+            HyperServer::Http(s) => HyperServer::Http(s.idle_timeout(Some(duration))),
         }
     }
 
