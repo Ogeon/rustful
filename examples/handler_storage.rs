@@ -114,7 +114,7 @@ impl Handler for Api {
                     if check_path(file_path).is_ok() {
                         //Make a full path from the file name and send it
                         let path = Path::new("examples/handler_storage").join(file_path);
-                        let res = response.send_file(path)
+                        let res = response.try_send(path)
                             .or_else(|e| e.send_not_found("the file was not found"))
                             .or_else(|e| e.ignore_send_error());
 

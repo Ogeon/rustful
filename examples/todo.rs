@@ -28,24 +28,7 @@ use rustful::header::{
     Host
 };
 use rustful::StatusCode;
-
-//Helper for setting a status code and then returning from a function
-macro_rules! or_abort {
-    ($e: expr, $response: expr, $error_message: expr) => (
-        if let Some(v) = $e {
-            v
-        } else {
-            $response.set_status(StatusCode::BadRequest);
-            $response.headers_mut().set(ContentType(content_type!(Text / Plain; Charset = Utf8)));
-            $response.send($error_message);
-            return
-        }
-    )
-}
-
-const BAD_ENTITY : &'static str = "Couldn't parse the todo";
-const BAD_ID : &'static str = "The 'id' parameter should be a non-negative integer";
-const MISSING_HOST_HEADER : &'static str = "No 'Host' header was sent";
+use rustful::response::SendResponse;
 
 fn main() {
     env_logger::init().unwrap();
@@ -82,7 +65,7 @@ fn main() {
     match server_result {
       Ok(server) => {
         println!(
-          "This example is a showcase implementation of Todo-Backend project (http://todobackend.com/), \
+          "This example is a showcase implementation of the Todo-Backend project (http://todobackend.com/), \
           visit http://localhost:{0}/ to try it or run reference test suite by pointing \
           your browser to http://todobackend.com/specs/index.html?http://localhost:{0}",
           server.socket.port()
@@ -92,26 +75,51 @@ fn main() {
     };
 }
 
+//Errors that may occur while parsing the request
+enum Error {
+    ParseError,
+    BadId,
+    MissingHostHeader,
+}
+
+impl<'a, 'b> SendResponse<'a, 'b> for Error {
+    type Error = rustful::Error;
+
+    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), rustful::Error> {
+        let message = match self {
+            Error::ParseError => "Couldn't parse the todo",
+            Error::BadId => "The 'id' parameter should be a non-negative integer",
+            Error::MissingHostHeader => "No 'Host' header was sent",
+        };
+
+        response.headers_mut().set(ContentType(content_type!(Text / Plain; Charset = Utf8)));
+        response.set_status(StatusCode::BadRequest);
+        message.send_response(response)
+    }
+}
+
+
+
 //List all the to-dos in the database
-fn list_all(database: &Database, context: Context, mut response: Response) {
-    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
+fn list_all(database: &Database, context: Context) -> Result<Option<String>, Error> {
+    let host = try!(context.headers.get().ok_or(Error::MissingHostHeader));
 
     let todos: Vec<_> = database.read().unwrap().iter()
       .map(|(&id, todo)| NetworkTodo::from_todo(todo, host, id))
       .collect();
 
-    response.send(json::encode(&todos).unwrap());
+    Ok(Some(json::encode(&todos).unwrap()))
 }
 
 //Store a new to-do with data from the request body
-fn store(database: &Database, mut context: Context, mut response: Response) {
-    let todo: NetworkTodo = or_abort!(
-        context.body.decode_json_body().ok(),
-        response,
-        BAD_ENTITY
+fn store(database: &Database, mut context: Context) -> Result<Option<String>, Error> {
+    let todo: NetworkTodo = try!(
+        context.body
+        .decode_json_body()
+        .map_err(|_| Error::ParseError)
     );
 
-    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
+    let host = try!(context.headers.get().ok_or(Error::MissingHostHeader));
 
     let mut database = database.write().unwrap();
     database.insert(todo.into());
@@ -120,51 +128,36 @@ fn store(database: &Database, mut context: Context, mut response: Response) {
         NetworkTodo::from_todo(todo, host, id)
     });
 
-    response.send(json::encode(&todo).unwrap());
+    Ok(Some(json::encode(&todo).unwrap()))
 }
 
 //Clear the database
-fn clear(database: &Database, _context: Context, _response: Response) {
+fn clear(database: &Database, _context: Context) -> Result<Option<String>, Error> {
     database.write().unwrap().clear();
+    Ok(Some("".into()))
 }
 
 //Send one particular to-do, selected by its id
-fn get_todo(database: &Database, context: Context, mut response: Response) {
-    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
-
-    let id = or_abort!(
-        context.variables.parse("id").ok(),
-        response,
-        BAD_ID
-    );
+fn get_todo(database: &Database, context: Context) -> Result<Option<String>, Error> {
+    let host = try!(context.headers.get().ok_or(Error::MissingHostHeader));
+    let id = try!(context.variables.parse("id").map_err(|_| Error::BadId));
 
     let todo = database.read().unwrap().get(id).map(|todo| {
         NetworkTodo::from_todo(&todo, host, id)
     });
 
-    match todo {
-      Some(todo) => response.send(json::encode(&todo).unwrap()),
-      None =>  {
-        response.set_status(StatusCode::NotFound);
-      }
-    };
+    Ok(todo.map(|todo| json::encode(&todo).unwrap()))
 }
 
 //Update a to-do, selected by its id with data from the request body
-fn edit_todo(database: &Database, mut context: Context, mut response: Response) {
-    let edits = or_abort!(
-        context.body.decode_json_body().ok(),
-        response,
-        BAD_ENTITY
+fn edit_todo(database: &Database, mut context: Context) -> Result<Option<String>, Error> {
+    let edits: NetworkTodo = try!(
+        context.body
+        .decode_json_body()
+        .map_err(|_| Error::ParseError)
     );
-
-    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
-
-    let id = or_abort!(
-        context.variables.parse("id").ok(),
-        response,
-        BAD_ID
-    );
+    let host = try!(context.headers.get().ok_or(Error::MissingHostHeader));
+    let id = try!(context.variables.parse("id").map_err(|_| Error::BadId));
 
     let mut database =  database.write().unwrap();
     let mut todo = database.get_mut(id);
@@ -174,25 +167,21 @@ fn edit_todo(database: &Database, mut context: Context, mut response: Response) 
         NetworkTodo::from_todo(&todo, host, id)
     });
 
-    response.send(json::encode(&todo).unwrap());
+    Ok(Some(json::encode(&todo).unwrap()))
 }
 
 //Delete a to-do, selected by its id
-fn delete_todo(database: &Database, context: Context, mut response: Response) {
-    let id = or_abort!(
-        context.variables.parse("id").ok(),
-        response,
-        BAD_ID
-    );
-
+fn delete_todo(database: &Database, context: Context) -> Result<Option<String>, Error> {
+    let id = try!(context.variables.parse("id").map_err(|_| Error::BadId));
     database.write().unwrap().delete(id);
+    Ok(Some("".into()))
 }
 
 
 
 
 //An API endpoint with an optional action
-struct Api(Option<fn(&Database, Context, Response)>);
+struct Api(Option<fn(&Database, Context) -> Result<Option<String>, Error>>);
 
 impl Handler for Api {
     fn handle_request(&self, context: Context, mut response: Response) {
@@ -215,7 +204,7 @@ impl Handler for Api {
         };
 
         if let Some(action) = self.0 {
-            action(database, context, response);
+            response.send(action(database, context));
         }
     }
 }

@@ -39,7 +39,7 @@ use std::convert::From;
 use std::str::{from_utf8, Utf8Error};
 use std::string::{FromUtf8Error};
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use hyper;
 
@@ -249,6 +249,117 @@ impl<'a> Into<Data<'a>> for &'a str {
     }
 }
 
+///A trait for higher level types that can be sent as responses, like
+///`Result`.
+///
+///Such a type is allowed to modify the response headers and status before
+///sending, to lower the amount of boiler plate code, and makes it a bit
+///easier to use together with the usual error handling methods. The default
+///implementations will only change the status code when semantically
+///appropriate, and otherwise not touch it at all.
+pub trait SendResponse<'a, 'b> {
+    ///Any error that may occur while sending the response.
+    type Error;
+
+    ///Send a response to the client.
+    fn send_response(self, response: Response<'a, 'b>) -> Result<(), Self::Error>;
+}
+
+impl<'a, 'b, 'd, T: Into<Data<'d>>> SendResponse<'a, 'b> for T {
+    type Error = Error;
+
+    fn send_response(self, response: Response<'a, 'b>) -> Result<(), Error> {
+        response.try_send_data(self)
+    }
+}
+
+impl<'a, 'b, T: SendResponse<'a, 'b>, U: SendResponse<'a, 'b>> SendResponse<'a, 'b> for Result<T, U> where
+    U::Error: Into<T::Error>
+{
+    type Error = T::Error;
+
+    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), T::Error> {
+        match self {
+            Ok(data) => {
+                response.set_status(StatusCode::Ok);
+                data.send_response(response)
+            },
+            Err(error) => {
+                response.set_status(StatusCode::InternalServerError);
+                error.send_response(response).map_err(Into::into)
+            }
+        }
+    }
+}
+
+impl<'a, 'b, T: SendResponse<'a, 'b>> SendResponse<'a, 'b> for Option<T> {
+    type Error = T::Error;
+
+    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), T::Error> {
+        if let Some(data) = self {
+            data.send_response(response)
+        } else {
+            response.set_status(StatusCode::NotFound);
+            Ok(())
+        }
+    }
+}
+
+impl<'a, 'b> SendResponse<'a, 'b> for io::Error {
+    type Error = Error;
+
+    fn send_response(self, mut resonse: Response<'a, 'b>) -> Result<(), Error> {
+        match self.kind() {
+            io::ErrorKind::NotFound => resonse.set_status(StatusCode::NotFound),
+            _ => {},
+        }
+
+        resonse.try_send_data(self.to_string())
+    }
+}
+
+impl<'d, 'a, 'b> SendResponse<'a, 'b> for &'d Path {
+    type Error = FileError<'a, 'b>;
+
+    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), FileError<'a, 'b>> {
+        let mime = self
+            .extension()
+            //.and_then(|ext| to_mime(&ext.to_string_lossy()))
+            .and_then(|ext| ::file::ext_to_mime(&ext.to_string_lossy()))
+            .unwrap_or_else(|| Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
+
+        let file = match File::open(self) {
+            Ok(file) => file,
+            Err(e) => return Err(FileError::Open(e, response))
+        };
+
+        response.headers_mut().set(ContentType(mime));
+        file.send_response(response)
+    }
+}
+
+impl<'a, 'b> SendResponse<'a, 'b> for PathBuf {
+    type Error = FileError<'a, 'b>;
+
+    fn send_response(self, response: Response<'a, 'b>) -> Result<(), FileError<'a, 'b>> {
+        (&*self).send_response(response)
+    }
+}
+
+impl<'a, 'b> SendResponse<'a, 'b> for File {
+    type Error = FileError<'a, 'b>;
+
+    fn send_response(mut self, response: Response<'a, 'b>) -> Result<(), FileError<'a, 'b>> {
+        let metadata = match self.metadata() {
+            Ok(metadata) => metadata,
+            Err(e) => return Err(FileError::Open(e, response)),
+        };
+
+        let mut writer = unsafe { response.into_raw(metadata.len()) };
+        io::copy(&mut self, &mut writer).map_err(FileError::Send).map(|_| ())
+    }
+}
+
 
 ///An interface for sending data to the client.
 ///
@@ -314,23 +425,74 @@ impl<'a, 'b> Response<'a, 'b> {
         self.filter_storage.as_mut().expect("filter storage mutably accessed after drop")
     }
 
-    ///Send data to the client and finish the response, ignoring eventual
-    ///errors. Use `try_send` to get error information.
+    ///Send content to the client and finish the response, ignoring eventual
+    ///errors. Higher level content may manipulate the response before sending
+    ///it. Use `send_data` to restrict the content to lower level data.
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///use std::io;
+    ///# fn read_number() -> Result<u64, io::Error> { Ok(42) }
+    ///
+    ///fn make_data() -> Result<String, io::Error> {
+    ///    let number = try!(read_number());
+    ///    Ok(format!("got number {}", number))
+    ///}
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    response.send(make_data());
+    ///}
+    ///```
+    #[allow(unused_must_use)]
+    pub fn send<Content: SendResponse<'a, 'b>>(self, content: Content) {
+        self.try_send(content);
+    }
+
+    ///Send content to the client and finish the response. Higher level
+    ///content may manipulate the response before sending it. Use
+    ///`try_send_data` to restrict the content to lower level data.
+    ///
+    ///```
+    ///# #[macro_use] extern crate rustful;
+    ///#[macro_use] extern crate log;
+    ///use rustful::{Context, Response};
+    ///use rustful::response::Error;
+    ///use std::io;
+    ///# fn read_number() -> Result<u64, io::Error> { Ok(42) }
+    ///
+    ///fn make_data() -> Result<String, io::Error> {
+    ///    let number = try!(read_number());
+    ///    Ok(format!("got number {}", number))
+    ///}
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    if let Err(Error::Filter(e)) = response.try_send(make_data()) {
+    ///        error!("a filter failed: {}", e);
+    ///    }
+    ///}
+    ///# fn main() {}
+    ///```
+    pub fn try_send<Content: SendResponse<'a, 'b>>(self, content: Content) -> Result<(), Content::Error> {
+        content.send_response(self)
+    }
+
+    ///Send simple data to the client and finish the response, ignoring
+    ///eventual errors. Use `try_send_data` to get error information.
     ///
     ///```
     ///use rustful::{Context, Response};
     ///
     ///fn my_handler(context: Context, response: Response) {
-    ///    response.send("hello");
+    ///    response.send_data("hello");
     ///}
     ///```
     #[allow(unused_must_use)]
-    pub fn send<'d, Content: Into<Data<'d>>>(self, content: Content) {
-        self.try_send(content);
+    pub fn send_data<'d, Content: Into<Data<'d>>>(self, content: Content) {
+        self.try_send_data(content);
     }
 
-    ///Try to send data to the client and finish the response. This is the
-    ///same as `send`, but errors are not ignored.
+    ///Try to send simple data to the client and finish the response. This is
+    ///the same as `send_data`, but errors are not ignored.
     ///
     ///```
     ///# #[macro_use] extern crate rustful;
@@ -339,14 +501,13 @@ impl<'a, 'b> Response<'a, 'b> {
     ///use rustful::response::Error;
     ///
     ///fn my_handler(context: Context, response: Response) {
-    ///    if let Err(Error::Filter(e)) = response.try_send("hello") {
+    ///    if let Err(Error::Filter(e)) = response.try_send_data("hello") {
     ///        error!("a filter failed: {}", e);
     ///    }
     ///}
-    ///
     ///# fn main() {}
     ///```
-    pub fn try_send<'d, Content: Into<Data<'d>>>(mut self, content: Content) -> Result<(), Error> {
+    pub fn try_send_data<'d, Content: Into<Data<'d>>>(mut self, content: Content) -> Result<(), Error> {
         self.send_sized(content)
     }
 
@@ -402,61 +563,6 @@ impl<'a, 'b> Response<'a, 'b> {
             writer.send(&buffer).map_err(|e| e.into())
         }
     }
-
-    ///Send a static file to the client.
-    ///
-    ///A MIME type is automatically applied to the response, based on the file
-    ///extension, and `application/octet-stream` is used as a fallback if the
-    ///extension is unknown. Use `send_file_with_mime` to override the MIME
-    ///guessing. See also [`ext_to_mime`](../file/fn.ext_to_mime.html) for more
-    ///information.
-    ///
-    ///An error is returned upon failure and the response may be recovered
-    ///from there if the file could not be opened.
-    ///
-    ///```
-    ///# #[macro_use] extern crate rustful;
-    ///#[macro_use] extern crate log;
-    ///use std::path::Path;
-    ///use rustful::{Context, Response};
-    ///use rustful::StatusCode;
-    ///use rustful::file::check_path;
-    ///
-    ///fn my_handler(mut context: Context, mut response: Response) {
-    ///    if let Some(file) = context.variables.get("file") {
-    ///        let file_path = Path::new(file.as_ref());
-    ///
-    ///        //Check if the path is valid
-    ///        if check_path(file_path).is_ok() {
-    ///            //Make a full path from the filename
-    ///            let path = Path::new("path/to/files").join(file_path);
-    ///
-    ///            //Send the file
-    ///            let res = response.send_file(&path)
-    ///                .or_else(|e| e.send_not_found("the file was not found"))
-    ///                .or_else(|e| e.ignore_send_error());
-    ///
-    ///            //Check if a more fatal file error than "not found" occurred
-    ///            if let Err((e, mut response)) = res {
-    ///                //Something went horribly wrong
-    ///                error!("failed to open '{}': {}", file, e);
-    ///                response.set_status(StatusCode::InternalServerError);
-    ///            }
-    ///        } else {
-    ///            //Accessing parent directories is forbidden
-    ///            response.set_status(StatusCode::Forbidden);
-    ///        }
-    ///    } else {
-    ///        //No filename was specified
-    ///        response.set_status(StatusCode::Forbidden);
-    ///    }
-    ///}
-    ///# fn main() {}
-    ///```
-    pub fn send_file<P: AsRef<Path>>(self, path: P) -> Result<(), FileError<'a, 'b>> {
-        self.send_file_with_mime(path, ::file::ext_to_mime)
-    }
-
 
     ///Send a static file with a specified MIME type to the client.
     ///
@@ -521,20 +627,13 @@ impl<'a, 'b> Response<'a, 'b> {
             .and_then(|ext| to_mime(&ext.to_string_lossy()))
             .unwrap_or_else(|| Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
 
-        let mut file = match File::open(path) {
+        let file = match File::open(path) {
             Ok(file) => file,
-            Err(e) => return Err(FileError::Open(e, self))
-        };
-        let metadata = match file.metadata() {
-            Ok(metadata) => metadata,
             Err(e) => return Err(FileError::Open(e, self))
         };
 
         self.headers_mut().set(ContentType(mime));
-
-        let mut writer = unsafe { self.into_raw(metadata.len()) };
-
-        io::copy(&mut file, &mut writer).map_err(FileError::Send).map(|_| ())
+        file.send_response(self)
     }
 
     ///Write the status code and headers to the client and turn the `Response`
