@@ -6,17 +6,17 @@ skip_tags: true
 platform: x64
 os: MinGW
 environment:
-  OPENSSL_VERSION: 1_0_2h
+  OPENSSL_VERSION: 1_0_2j
 install:
   - cmd: SET PATH=C:\MINGW\bin\;C:\MINGW\msys\1.0\bin\;C:\Users\appveyor\.multirust\toolchains\stable\bin\;%PATH%
-  - ps: Start-FileDownload "https://github.com/rust-lang-nursery/multirust-rs-binaries/raw/master/i686-pc-windows-gnu/multirust-setup.exe"
-  - multirust-setup -y -v
-  - rustc --version
-  - cargo --version
   - ps: Start-FileDownload "http://slproweb.com/download/Win32OpenSSL-$Env:OPENSSL_VERSION.exe"
   - cmd: Win32OpenSSL-%OPENSSL_VERSION%.exe /silent /verysilent /sp- /suppressmsgboxes
   - cmd: SET OPENSSL_LIB_DIR=C:\OpenSSL-Win32
   - cmd: SET OPENSSL_INCLUDE_DIR=C:\OpenSSL-Win32\include
+  - ps: Start-FileDownload "https://github.com/rust-lang-nursery/multirust-rs-binaries/raw/master/i686-pc-windows-gnu/multirust-setup.exe"
+  - multirust-setup -y -v
+  - rustc --version
+  - cargo --version
 build: false
 test_script:
   - cargo build -v --features strict
