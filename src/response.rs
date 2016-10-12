@@ -40,6 +40,7 @@ use std::str::{from_utf8, Utf8Error};
 use std::string::{FromUtf8Error};
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::fmt;
 
 use hyper;
 
@@ -75,12 +76,18 @@ impl From<io::Error> for Error {
     }
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::Filter(ref desc) => write!(f, "filter error: {}", desc),
             Error::Io(ref e) => write!(f, "io error: {}", e)
         }
+    }
+}
+
+impl ResponseError for Error {
+    fn handle(self) {
+        error!("Failed to send response: {}", self);
     }
 }
 
@@ -141,6 +148,15 @@ impl<'a, 'b> FileError<'a, 'b> {
     }
 }
 
+impl<'a, 'b> ResponseError for FileError<'a, 'b> {
+    fn handle(self) {
+        if let Err((e, mut response)) = self.send_not_found("").or_else(FileError::ignore_send_error) {
+            response.set_status(StatusCode::InternalServerError);
+            error!("Failed to open file: {}", e);
+        }
+    }
+}
+
 impl<'a, 'b> Into<io::Error> for FileError<'a, 'b> {
     fn into(self) -> io::Error {
         match self {
@@ -149,8 +165,8 @@ impl<'a, 'b> Into<io::Error> for FileError<'a, 'b> {
     }
 }
 
-impl<'a, 'b> std::fmt::Debug for FileError<'a, 'b> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<'a, 'b> fmt::Debug for FileError<'a, 'b> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             FileError::Open(ref e, _) => write!(f, "FileError::Open({:?}, Response)", e),
             FileError::Send(ref e) => write!(f, "FileError::Send({:?})", e)
@@ -158,8 +174,8 @@ impl<'a, 'b> std::fmt::Debug for FileError<'a, 'b> {
     }
 }
 
-impl<'a, 'b> std::fmt::Display for FileError<'a, 'b> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<'a, 'b> fmt::Display for FileError<'a, 'b> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             FileError::Open(ref e, _) => write!(f, "failed to open a file: {}", e),
             FileError::Send(ref e) => write!(f, "failed to send a file: {}", e)
@@ -360,6 +376,12 @@ impl<'a, 'b> SendResponse<'a, 'b> for File {
     }
 }
 
+///Helper trait for dealing with errors that may occur while sending a
+///response. It provides a default method of handling the error.
+pub trait ResponseError {
+    ///Handle the error to "make it go away".
+    fn handle(self);
+}
 
 ///An interface for sending data to the client.
 ///
@@ -443,9 +465,12 @@ impl<'a, 'b> Response<'a, 'b> {
     ///    response.send(make_data());
     ///}
     ///```
-    #[allow(unused_must_use)]
-    pub fn send<Content: SendResponse<'a, 'b>>(self, content: Content) {
-        self.try_send(content);
+    pub fn send<Content: SendResponse<'a, 'b>>(self, content: Content) where
+        Content::Error: ResponseError,
+    {
+        if let Err(e) = self.try_send(content) {
+            e.handle();
+        }
     }
 
     ///Send content to the client and finish the response. Higher level
@@ -486,9 +511,10 @@ impl<'a, 'b> Response<'a, 'b> {
     ///    response.send_data("hello");
     ///}
     ///```
-    #[allow(unused_must_use)]
     pub fn send_data<'d, Content: Into<Data<'d>>>(self, content: Content) {
-        self.try_send_data(content);
+        if let Err(e) = self.try_send_data(content) {
+            e.handle();
+        }
     }
 
     ///Try to send simple data to the client and finish the response. This is
@@ -751,9 +777,10 @@ impl<'a, 'b> Chunked<'a, 'b> {
     ///    }
     ///}
     ///```
-    #[allow(unused_must_use)]
     pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
-        self.try_send(content);
+        if let Err(e) = self.try_send(content) {
+            e.handle();
+        }
     }
 
     ///Send a chunk of data to the client. This is the same as `send`, but

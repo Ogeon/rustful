@@ -81,6 +81,8 @@ extern crate hyper;
 extern crate anymap;
 extern crate phf;
 extern crate num_cpus;
+#[macro_use]
+extern crate log;
 
 pub use hyper::mime;
 pub use hyper::method::Method;
