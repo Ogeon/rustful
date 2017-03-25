@@ -20,9 +20,9 @@ Some of the features are:
 
 [Online documentation](http://ogeon.github.io/docs/rustful/master/rustful/index.html).
 
-#Getting Started
+# Getting Started
 
-##Cargo.toml Entries
+## Cargo.toml Entries
 
 Add the following lines to your `Cargo.toml` file:
 
@@ -31,7 +31,7 @@ Add the following lines to your `Cargo.toml` file:
 rustful = "0.9"
 ```
 
-###Cargo Features
+### Cargo Features
 
 Some parts of Rustful can be toggled using Cargo features:
 
@@ -39,12 +39,12 @@ Some parts of Rustful can be toggled using Cargo features:
  * `ssl` - Enable SSL, and thereby HTTPS. Enabled by default.
  * `multipart` - Enable parsing of `multipart/form-data` requests. Enabled by default.
 
-###Using SSL
+### Using SSL
 Note that the `ssl` feature requires OpenSSL to be installed in one way or
 another. See https://github.com/sfackler/rust-openssl#building for more
 instructions.
 
-##Write Your Server
+## Write Your Server
 Here is a simple example of what a simple project could look like. Visit
 `http://localhost:8080` or `http://localhost:8080/Olivia` (if your name is
 Olivia) to try it.
@@ -104,7 +104,7 @@ fn main() {
 }
 ```
 
-##Contributing
+## Contributing
 
 Contributions are always welcome, even if it's a small typo fix (or maybe I
 should say "especially typo fixes"). You can fork the project and open a pull
@@ -120,7 +120,7 @@ easier, both for reviewing the feature and for those who are not as familiar
 with how things work. You can always open an issue where we can discuss the
 feature and see if it should be included. Asking is better than assuming!
 
-###Testing
+### Testing
 
 Rustful is tested on Linux, using Travis, and on Windows, using AppVeyor and a
 pull request will not be approved unless it passes these tests. It is
@@ -140,7 +140,7 @@ compiling your project, right? It's therefore recommend that you run your own
 tests with the `strict` feature enabled before pushing, just to see if you
 missed something.
 
-###Automatic Feature Testing
+### Automatic Feature Testing
 
 User facing Cargo features are automatically gathered from `Cargo.toml` and
 tested one at the time, using `scripts/test_features.sh`. The lack of public
