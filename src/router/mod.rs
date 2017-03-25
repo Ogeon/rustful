@@ -14,7 +14,7 @@
 //!# use rustful::{Handler, Context, Response};
 //!
 //!# struct DummyHandler;
-//!# impl Handler for DummyHandler {
+//!# impl<'env> Handler<'env> for DummyHandler {
 //!#     fn handle_request(&self, _: Context, _: Response){}
 //!# }
 //!# fn main() {
@@ -57,7 +57,7 @@
 //!# use rustful::{Handler, Context, Response};
 //!
 //!# struct DummyHandler;
-//!# impl Handler for DummyHandler {
+//!# impl<'env> Handler<'env> for DummyHandler {
 //!#     fn handle_request(&self, _: Context, _: Response){}
 //!# }
 //!# fn main() {
@@ -145,7 +145,7 @@
 //!let my_router = TreeRouter::<Option<Variables<_>>>::default();
 //!# let _r: TreeRouter<Option<Variables<DummyHandler>>> = my_router;
 //!# struct DummyHandler;
-//!# impl rustful::Handler for DummyHandler {
+//!# impl<'env> rustful::Handler<'env> for DummyHandler {
 //!#     fn handle_request(&self, _: rustful::Context, _: rustful::Response){}
 //!# }
 //!```
@@ -159,7 +159,7 @@
 //!let my_router = TreeRouter::<Option<_>>::default();
 //!# let _r: TreeRouter<Option<DummyHandler>> = my_router;
 //!# struct DummyHandler;
-//!# impl rustful::Handler for DummyHandler {
+//!# impl<'env> rustful::Handler<'env> for DummyHandler {
 //!#     fn handle_request(&self, _: rustful::Context, _: rustful::Response){}
 //!# }
 //!```
@@ -178,7 +178,7 @@ use std::ops::Deref;
 use std::marker::PhantomData;
 use hyper::method::Method;
 
-use handler::Handler;
+use handler::Factory;
 use context::MaybeUtf8Owned;
 use context::hypermedia::Link;
 
@@ -215,9 +215,9 @@ impl<'a, T> From<Option<&'a T>> for Endpoint<'a, T> {
 ///
 ///A router must to implement this trait to be usable in a Rustful server. This
 ///trait will also make the router compatible with the `insert_routes!` macro.
-pub trait Router: Send + Sync + 'static {
+pub trait Router: Send + Sync {
     ///The request handler type that is stored within this router.
-    type Handler: Handler;
+    type Handler;
 
     ///Build a new router from a route. The router may choose to ignore
     ///both `method` and `route`, depending on its implementation.
@@ -247,7 +247,7 @@ pub trait Router: Send + Sync + 'static {
     fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>>;
 }
 
-impl<H: Handler> Router for H {
+impl<'env, H: Factory<'env>> Router for H {
     type Handler = H;
 
     fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> H {

@@ -14,35 +14,42 @@ extern crate env_logger;
 use rustful::{Server, Context, Response};
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
-fn say_hello(mut context: Context, mut response: Response) {
-    let body = match context.body.read_query_body() {
-        Ok(body) => body,
-        Err(_) => {
+fn say_hello<'a, 'env>(context: Context<'a, 'env>, mut response: Response<'env>) {
+    let Context {
+        body,
+        global,
+        ..
+    } = context;
+
+    body.read_query_body(move |body| match body {
+        Ok(body) => {
+            let files: &Files = if let Some(files) = global.get() {
+                files
+            } else {
+                //Oh no! Why is the global data not a File instance?!
+                error!("the global data should be of the type `Files`, but it's not");
+                response.status = InternalServerError;
+                return;
+            };
+
+            //Format the name or use the cached form
+            let content = if let Some(name) = body.get("name") {
+                Cow::Owned(format!("<p>Hello, {}!</p>", name))
+            } else {
+                Cow::Borrowed(&files.form)
+            };
+
+            //Insert the content into the page and write it to the response
+            let complete_page = files.page.replace("{}", &content);
+            response.send(complete_page);
+        },
+        Err(e) => {
             //Oh no! Could not read the body
-            response.set_status(BadRequest);
+            error!("error when reading body: {}", e);
+            response.status = BadRequest;
             return;
         }
-    };
-
-    let files: &Files = if let Some(files) = context.global.get() {
-        files
-    } else {
-        //Oh no! Why is the global data not a File instance?!
-        error!("the global data should be of the type `Files`, but it's not");
-        response.set_status(InternalServerError);
-        return;
-    };
-
-    //Format the name or use the cached form
-    let content = if let Some(name) = body.get("name") {
-        Cow::Owned(format!("<p>Hello, {}!</p>", name))
-    } else {
-        Cow::Borrowed(&files.form)
-    };
-
-    //Insert the content into the page and write it to the response
-    let complete_page = files.page.replace("{}", &content);
-    response.send(complete_page);
+    });
 }
 
 fn main() {
@@ -63,10 +70,8 @@ fn main() {
         ..Server::new(say_hello)
     }.run();
 
-    //Check if the server started successfully
-    match server_result {
-        Ok(_server) => {},
-        Err(e) => error!("could not start server: {}", e.description())
+    if let Err(e) = server_result {
+        error!("could not start server: {}", e.description())
     }
 }
 

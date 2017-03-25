@@ -75,7 +75,7 @@
 //!        response.send(format!("food for thought: {}", some_wise_words));
 //!    } else {
 //!        error!("there should be a string literal in `global`");
-//!        response.set_status(InternalServerError);
+//!        response.status = InternalServerError;
 //!    }
 //!}
 //!
@@ -85,40 +85,53 @@
 //!##Request Body
 //!
 //!The body will not be read in advance, unlike the other parts of the
-//!request. It is instead available as a `BodyReader` in the field `body`,
+//!request. It is instead available as a `Body` in the field `body`,
 //!through which it can be read and parsed as various data formats, like JSON
-//!and query strings. The documentation for [`BodyReader`][body_reader] gives
+//!and query strings. The documentation for [`Body`][body_reader] gives
 //!more examples.
 //!
 //!```
+//!# #[macro_use] extern crate rustful;
+//!#[macro_use] extern crate log;
 //!use std::io::{BufReader, BufRead};
-//!use rustful::{Context, Response};
+//!use rustful::{Context, Response, StatusCode};
 //!
-//!fn my_handler(context: Context, response: Response) {
-//!    let mut numbered_lines = BufReader::new(context.body).lines().enumerate();
-//!    let mut writer = response.into_chunked();
-//!
-//!    while let Some((line_no, Ok(line))) = numbered_lines.next() {
-//!        writer.send(format!("{}: {}", line_no + 1, line));
-//!    }
+//!fn my_handler<'a, 'env>(context: Context<'a, 'env>, response: Response<'env>) {
+//!    context.body.sync_read(move |body| {
+//!        let mut numbered_lines = BufReader::new(body).lines().enumerate();
+//!        match response.into_chunked() {
+//!            Ok(mut writer) => {
+//!                while let Some((line_no, Ok(line))) = numbered_lines.next() {
+//!                    writer.send(format!("{}: {}", line_no + 1, line));
+//!                }
+//!            },
+//!            Err((mut response, e)) => {
+//!                response.status = StatusCode::InternalServerError;
+//!                error!("a filter failed: {}", e);
+//!            },
+//!        }
+//!    });
 //!}
+//!# fn main() {}
 //!```
 //!
 //![context]: struct.Context.html
 //![headers]: ../header/struct.Headers.html
 //![log]: ../log/index.html
-//![body_reader]: body/struct.BodyReader.html
+//![body_reader]: body/struct.Body.html
 
-use std::net::SocketAddr;
+//use std::net::SocketAddr;
 use std::fmt;
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use HttpVersion;
 use Method;
 use header::Headers;
-use server::Global;
+use server::{Global, Worker};
+use handler::Control;
 
-use self::body::BodyReader;
+use self::body::Body;
 use self::hypermedia::Link;
 
 pub mod body;
@@ -129,17 +142,18 @@ pub use self::maybe_utf8::{MaybeUtf8, MaybeUtf8Owned, MaybeUtf8Slice, Buffer};
 
 mod parameters;
 pub use self::parameters::Parameters;
+pub use hyper::server::Request;
 
 ///A container for handler input, like request data and utilities.
-pub struct Context<'a, 'b: 'a, 's> {
+pub struct Context<'a, 'env: 'a> {
     ///Headers from the HTTP request.
     pub headers: Headers,
 
     ///The HTTP version used in the request.
     pub http_version: HttpVersion,
 
-    ///The client address
-    pub address: SocketAddr,
+    /*///The client address
+    pub address: SocketAddr,*/
 
     ///The HTTP method.
     pub method: Method,
@@ -148,7 +162,7 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub uri_path: UriPath,
 
     ///Hyperlinks from the current endpoint.
-    pub hyperlinks: Vec<Link<'s>>,
+    pub hyperlinks: Vec<Link<'a>>,
 
     ///Route variables.
     pub variables: Parameters,
@@ -160,10 +174,52 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub fragment: Option<MaybeUtf8Owned>,
 
     ///Globally accessible data.
-    pub global: &'s Global,
+    pub global: Arc<Global>,
+
+    ///A handle to the internal general purpose work pool.
+    pub worker: Worker<'env>,
 
     ///A reader for the request body.
-    pub body: BodyReader<'a, 'b>,
+    pub body: Body<'a, 'env>,
+}
+
+///A more primitive `Context`, for `RawHandler`.
+pub struct RawContext<'a, 'env> {
+    ///Headers from the HTTP request.
+    pub headers: Headers,
+
+    ///The HTTP version used in the request.
+    pub http_version: HttpVersion,
+
+    /*///The client address
+    pub address: SocketAddr,*/
+
+    ///The HTTP method.
+    pub method: Method,
+
+    ///The requested path.
+    pub uri_path: UriPath,
+
+    ///Hyperlinks from the current endpoint.
+    pub hyperlinks: Vec<Link<'a>>,
+
+    ///Route variables.
+    pub variables: Parameters,
+
+    ///Query variables from the path.
+    pub query: Parameters,
+
+    ///The fragment part of the URL (after #), if provided.
+    pub fragment: Option<MaybeUtf8Owned>,
+
+    ///Globally accessible data.
+    pub global: Arc<Global>,
+
+    ///A handle to the internal general purpose work pool.
+    pub worker: Worker<'env>,
+
+    ///The event loop controller.
+    pub control: Control,
 }
 
 ///A URI Path that can be a path or an asterisk (`*`).

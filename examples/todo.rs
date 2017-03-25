@@ -9,6 +9,7 @@ extern crate env_logger;
 
 use std::sync::RwLock;
 use std::collections::btree_map::{BTreeMap, Iter};
+use std::error::Error;
 
 use rustc_serialize::json;
 use unicase::UniCase;
@@ -35,8 +36,8 @@ macro_rules! or_abort {
         if let Some(v) = $e {
             v
         } else {
-            $response.set_status(StatusCode::BadRequest);
-            $response.headers_mut().set(ContentType(content_type!(Text / Plain; Charset = Utf8)));
+            $response.status = StatusCode::BadRequest;
+            $response.headers.set(ContentType(content_type!(Text / Plain; Charset = Utf8)));
             $response.send($error_message);
             return
         }
@@ -77,23 +78,31 @@ fn main() {
         content_type: content_type!(Application / Json; Charset = Utf8),
         global: Box::new(database).into(),
         ..Server::default()
-    }.run();
-
-    match server_result {
-      Ok(server) => {
+    }.run_and_then(|_, server| {
         println!(
           "This example is a showcase implementation of Todo-Backend project (http://todobackend.com/), \
           visit http://localhost:{0}/ to try it or run reference test suite by pointing \
           your browser to http://todobackend.com/specs/index.html?http://localhost:{0}",
-          server.socket.port()
+          server.addr.port()
         );
-      },
-      Err(e) => error!("could not run the server: {}", e)
-    };
+    });
+
+    if let Err(e) = server_result {
+        error!("could not start server: {}", e.description())
+    }
 }
 
 //List all the to-dos in the database
-fn list_all(database: &Database, context: Context, mut response: Response) {
+fn list_all(context: Context, mut response: Response) {
+    //Get the database from the global storage
+    let database: &Database = if let Some(database) = context.global.get() {
+        database
+    } else {
+        error!("expected a globally accessible Database");
+        response.status = StatusCode::InternalServerError;
+        return
+    };
+
     let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
 
     let todos: Vec<_> = database.read().unwrap().iter()
@@ -104,32 +113,68 @@ fn list_all(database: &Database, context: Context, mut response: Response) {
 }
 
 //Store a new to-do with data from the request body
-fn store(database: &Database, mut context: Context, mut response: Response) {
-    let todo: NetworkTodo = or_abort!(
-        context.body.decode_json_body().ok(),
-        response,
-        BAD_ENTITY
-    );
+fn store<'a, 'env>(context: Context<'a, 'env>, mut response: Response<'env>) {
+    let Context {
+        headers,
+        body,
+        global,
+        ..
+    } = context;
 
-    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
+    body.decode_json_body(move |body| {
+        let todo: NetworkTodo = or_abort!(
+            body.ok(),
+            response,
+            BAD_ENTITY
+        );
+        
+        //Get the database from the global storage
+        let database: &Database = if let Some(database) = global.get() {
+            database
+        } else {
+            error!("expected a globally accessible Database");
+            response.status = StatusCode::InternalServerError;
+            return
+        };
 
-    let mut database = database.write().unwrap();
-    database.insert(todo.into());
+        let host = or_abort!(headers.get(), response, MISSING_HOST_HEADER);
 
-    let todo = database.last().map(|(id, todo)| {
-        NetworkTodo::from_todo(todo, host, id)
+        let mut database = database.write().unwrap();
+        database.insert(todo.into());
+
+        let todo = database.last().map(|(id, todo)| {
+            NetworkTodo::from_todo(todo, host, id)
+        });
+
+        response.send(json::encode(&todo).unwrap());
     });
-
-    response.send(json::encode(&todo).unwrap());
 }
 
 //Clear the database
-fn clear(database: &Database, _context: Context, _response: Response) {
+fn clear(context: Context, mut response: Response) {
+    //Get the database from the global storage
+    let database: &Database = if let Some(database) = context.global.get() {
+        database
+    } else {
+        error!("expected a globally accessible Database");
+        response.status = StatusCode::InternalServerError;
+        return
+    };
+
     database.write().unwrap().clear();
 }
 
 //Send one particular to-do, selected by its id
-fn get_todo(database: &Database, context: Context, mut response: Response) {
+fn get_todo(context: Context, mut response: Response) {
+    //Get the database from the global storage
+    let database: &Database = if let Some(database) = context.global.get() {
+        database
+    } else {
+        error!("expected a globally accessible Database");
+        response.status = StatusCode::InternalServerError;
+        return
+    };
+
     let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
 
     let id = or_abort!(
@@ -145,40 +190,69 @@ fn get_todo(database: &Database, context: Context, mut response: Response) {
     match todo {
       Some(todo) => response.send(json::encode(&todo).unwrap()),
       None =>  {
-        response.set_status(StatusCode::NotFound);
+        response.status = StatusCode::NotFound;
       }
     };
 }
 
 //Update a to-do, selected by its id with data from the request body
-fn edit_todo(database: &Database, mut context: Context, mut response: Response) {
-    let edits = or_abort!(
-        context.body.decode_json_body().ok(),
-        response,
-        BAD_ENTITY
-    );
+fn edit_todo<'a, 'env>(context: Context<'a, 'env>, mut response: Response<'env>) {
+    let Context {
+        headers,
+        variables,
+        body,
+        global,
+        ..
+    } = context;
 
-    let host = or_abort!(context.headers.get(), response, MISSING_HOST_HEADER);
+    body.decode_json_body(move |body| {
+        let edits = or_abort!(
+            body.ok(),
+            response,
+            BAD_ENTITY
+        );
 
-    let id = or_abort!(
-        context.variables.parse("id").ok(),
-        response,
-        BAD_ID
-    );
+        //Get the database from the global storage
+        let database: &Database = if let Some(database) = global.get() {
+            database
+        } else {
+            error!("expected a globally accessible Database");
+            response.status = StatusCode::InternalServerError;
+            return
+        };
 
-    let mut database =  database.write().unwrap();
-    let mut todo = database.get_mut(id);
-    todo.as_mut().map(|mut todo| todo.update(edits));
 
-    let todo = todo.map(|todo| {
-        NetworkTodo::from_todo(&todo, host, id)
+        let host = or_abort!(headers.get(), response, MISSING_HOST_HEADER);
+
+        let id = or_abort!(
+            variables.parse("id").ok(),
+            response,
+            BAD_ID
+        );
+
+        let mut database =  database.write().unwrap();
+        let mut todo = database.get_mut(id);
+        todo.as_mut().map(|mut todo| todo.update(edits));
+
+        let todo = todo.map(|todo| {
+            NetworkTodo::from_todo(&todo, host, id)
+        });
+
+        response.send(json::encode(&todo).unwrap());
     });
-
-    response.send(json::encode(&todo).unwrap());
 }
 
 //Delete a to-do, selected by its id
-fn delete_todo(database: &Database, context: Context, mut response: Response) {
+fn delete_todo(context: Context, mut response: Response) {
+    //Get the database from the global storage
+    let database: &Database = if let Some(database) = context.global.get() {
+        database
+    } else {
+        error!("expected a globally accessible Database");
+        response.status = StatusCode::InternalServerError;
+        return
+    };
+
     let id = or_abort!(
         context.variables.parse("id").ok(),
         response,
@@ -192,30 +266,21 @@ fn delete_todo(database: &Database, context: Context, mut response: Response) {
 
 
 //An API endpoint with an optional action
-struct Api(Option<fn(&Database, Context, Response)>);
+struct Api(Option<for<'a, 'env> fn(Context<'a, 'env>, Response<'env>)>);
 
-impl Handler for Api {
-    fn handle_request(&self, context: Context, mut response: Response) {
+impl<'env> Handler<'env> for Api {
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, mut response: Response<'env>) {
         //Collect the accepted methods from the provided hyperlinks
         let mut methods: Vec<_> = context.hyperlinks.iter().filter_map(|l| l.method.clone()).collect();
         methods.push(context.method.clone());
 
         //Setup cross origin resource sharing
-        response.headers_mut().set(AccessControlAllowOrigin::Any);
-        response.headers_mut().set(AccessControlAllowMethods(methods));
-        response.headers_mut().set(AccessControlAllowHeaders(vec![UniCase("content-type".into())]));
-
-        //Get the database from the global storage
-        let database = if let Some(database) = context.global.get() {
-            database
-        } else {
-            error!("expected a globally accessible Database");
-            response.set_status(StatusCode::InternalServerError);
-            return
-        };
+        response.headers.set(AccessControlAllowOrigin::Any);
+        response.headers.set(AccessControlAllowMethods(methods));
+        response.headers.set(AccessControlAllowHeaders(vec![UniCase("content-type".into())]));
 
         if let Some(action) = self.0 {
-            action(database, context, response);
+            action(context, response);
         }
     }
 }

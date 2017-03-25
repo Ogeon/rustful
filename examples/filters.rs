@@ -14,12 +14,12 @@ use rustful::response::Data;
 use rustful::StatusCode;
 use rustful::header::Headers;
 use rustful::header::ContentType;
-use rustful::context::{UriPath, MaybeUtf8Owned};
+use rustful::context::{RawContext, UriPath, MaybeUtf8Owned};
 
 fn say_hello(mut context: Context, mut response: Response, format: &Format) {
     //Take the name of the JSONP function from the query variables
     let is_jsonp = if let Some(jsonp_name) = context.query.remove("jsonp") {
-        response.filter_storage_mut().insert(JsonpFn(jsonp_name.into()));
+        response.filter_storage.insert(JsonpFn(jsonp_name.into()));
         true
     } else {
         false
@@ -31,11 +31,11 @@ fn say_hello(mut context: Context, mut response: Response, format: &Format) {
         Format::Json => (content_type!(Application / Json; Charset = Utf8), true),
         Format::Text => (content_type!(Text / Plain; Charset = Utf8), false)
     };
-    response.headers_mut().set(ContentType(mime_type));
+    response.headers.set(ContentType(mime_type));
 
     //Is the format supposed to be a JSON structure? Then set a variable name
     if let Format::Json = *format {
-        response.filter_storage_mut().insert(JsonVar("message"));
+        response.filter_storage.insert(JsonVar("message"));
     }
 
     let person = match context.variables.get("person") {
@@ -63,7 +63,7 @@ enum Format {
 
 struct Handler(fn(Context, Response, &Format), Format);
 
-impl rustful::Handler for Handler {
+impl<'env> rustful::Handler<'env> for Handler {
     fn handle_request(&self, context: Context, response: Response) {
         self.0(context, response, &self.1);
     }
@@ -107,9 +107,8 @@ fn main() {
         ..Server::default()
     }.run();
 
-    match server_result {
-        Ok(_server) => {},
-        Err(e) => error!("could not start server: {}", e.description())
+    if let Err(e) = server_result {
+        error!("could not start server: {}", e.description())
     }
 }
 
@@ -127,7 +126,7 @@ impl RequestLogger {
 
 impl ContextFilter for RequestLogger {
     ///Count requests and log the path.
-    fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
+    fn modify(&self, _ctx: FilterContext, context: &mut RawContext) -> ContextAction {
         *self.counter.write().unwrap() += 1;
         debug!("Request #{} is to '{}'", *self.counter.read().unwrap(), context.uri_path);
         ContextAction::next()
@@ -149,7 +148,7 @@ impl PathPrefix {
 
 impl ContextFilter for PathPrefix {
     ///Append the prefix to the path
-    fn modify(&self, _ctx: FilterContext, context: &mut Context) -> ContextAction {
+    fn modify(&self, _ctx: FilterContext, context: &mut RawContext) -> ContextAction {
         let new_path = context.uri_path.as_path().map(|path| {
             let mut new_path = MaybeUtf8Owned::from("/");
             new_path.push_str(self.prefix.trim_matches('/'));

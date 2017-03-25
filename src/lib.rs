@@ -9,11 +9,18 @@
 //!```no_run
 //!#[macro_use]
 //!extern crate rustful;
+//!#[macro_use]
+//!extern crate log;
+//!
+//!use std::error::Error;
 //!use rustful::{Server, Handler, Context, Response, TreeRouter};
 //!
-//!struct Greeting(&'static str);
+//!struct Phrase(&'static str);
 //!
-//!impl Handler for Greeting {
+//!//The 'env lifetime is the lifetime of the threading environment.
+//!//It's 'static for regular threads, but otherwise the same as the
+//!//scope where Server::run is called.
+//!impl<'env> Handler<'env> for Phrase {
 //!    fn handle_request(&self, context: Context, response: Response) {
 //!        //Check if the client accessed /hello/:name or /good_bye/:name
 //!        if let Some(name) = context.variables.get("name") {
@@ -31,18 +38,18 @@
 //!    TreeRouter::new() => {
 //!        //Receive GET requests to /hello and /hello/:name
 //!        "hello" => {
-//!            Get: Greeting("hello"),
-//!            ":name" => Get: Greeting("hello")
+//!            Get: Phrase("hello"),
+//!            ":name" => Get: Phrase("hello")
 //!        },
 //!        //Receive GET requests to /good_bye and /good_bye/:name
 //!        "good_bye" => {
-//!            Get: Greeting("good bye"),
-//!            ":name" => Get: Greeting("good bye")
+//!            Get: Phrase("good bye"),
+//!            ":name" => Get: Phrase("good bye")
 //!        }
 //!    }
 //!};
 //!
-//!Server {
+//!let server_result = Server {
 //!    //Use a closure to handle requests.
 //!    handlers: my_router,
 //!    //Set the listening port to `8080`.
@@ -50,6 +57,10 @@
 //!    //Fill out everything else with default values.
 //!    ..Server::default()
 //!}.run();
+//!
+//!if let Err(e) = server_result {
+//!    error!("could not start server: {}", e.description())
+//!}
 //!# }
 //!```
 //!
@@ -81,6 +92,7 @@ extern crate hyper;
 extern crate anymap;
 extern crate phf;
 extern crate num_cpus;
+extern crate crossbeam;
 
 pub use hyper::mime;
 pub use hyper::method::Method;
@@ -99,6 +111,7 @@ pub use self::router::Router;
 pub use self::router::TreeRouter;
 
 mod utils;
+mod interface;
 #[macro_use]
 #[doc(hidden)]
 pub mod macros;

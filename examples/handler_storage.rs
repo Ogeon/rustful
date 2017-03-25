@@ -1,15 +1,15 @@
 #[macro_use]
 extern crate rustful;
 
-use std::io::{self, Read};
-use std::fs::File;
-use std::path::Path;
-use std::sync::{Arc, RwLock};
-use std::error::Error;
-
 #[macro_use]
 extern crate log;
 extern crate env_logger;
+
+use std::io::{self, Read};
+use std::fs::File;
+use std::path::Path;
+use std::sync::atomic::{AtomicIsize, Ordering};
+use std::error::Error;
 
 use rustful::{
     Server,
@@ -20,6 +20,7 @@ use rustful::{
     StatusCode
 };
 use rustful::file::check_path;
+use rustful::response::FileError;
 
 fn main() {
     env_logger::init().unwrap();
@@ -27,26 +28,28 @@ fn main() {
     println!("Visit http://localhost:8080 to try this example.");
 
     //Read the page before we start
-    let page = Arc::new(read_string("examples/handler_storage/page.html").unwrap());
+    let page = read_string("examples/handler_storage/page.html").unwrap();
 
     //The shared counter state
-    let value = Arc::new(RwLock::new(0));
+    let value = AtomicIsize::new(0);
 
+    //The server runs in scoped threads by default, allowing us to use
+    //non-'static references in our server.
     let router = insert_routes!{
         TreeRouter::new() => {
             Get: Api::Counter {
-                page: page.clone(),
-                value: value.clone(),
+                page: &page,
+                value: &value,
                 operation: None
             },
             "add" => Get: Api::Counter {
-                page: page.clone(),
-                value: value.clone(),
+                page: &page,
+                value: &value,
                 operation: Some(add)
             },
             "sub" => Get: Api::Counter {
-                page: page.clone(),
-                value: value.clone(),
+                page: &page,
+                value: &value,
                 operation: Some(sub)
             },
             "res/*file" => Get: Api::File
@@ -59,19 +62,18 @@ fn main() {
         ..Server::default()
     }.run();
 
-    match server_result {
-        Ok(_server) => {},
-        Err(e) => error!("could not start server: {}", e.description())
+    if let Err(e) = server_result {
+        error!("could not start server: {}", e.description())
     }
 }
 
 
-fn add(value: i32) -> i32 {
-    value + 1
+fn add(value: &AtomicIsize) {
+    value.fetch_add(1, Ordering::SeqCst);
 }
 
-fn sub(value: i32) -> i32 {
-    value - 1
+fn sub(value: &AtomicIsize) {
+    value.fetch_sub(1, Ordering::SeqCst);
 }
 
 fn read_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
@@ -81,30 +83,26 @@ fn read_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 }
 
 
-enum Api {
+enum Api<'env> {
     Counter {
         //We are using the handler to preload the page in this example
-        page: Arc<String>,
+        page: &'env str,
 
-        value: Arc<RwLock<i32>>,
-        operation: Option<fn(i32) -> i32>
+        value: &'env AtomicIsize,
+        operation: Option<fn(&AtomicIsize)>
     },
     File
 }
 
-impl Handler for Api {
+impl<'env> Handler<'env> for Api<'env> {
     fn handle_request(&self, context: Context, mut response: Response) {
         match *self {
-            Api::Counter { ref page, ref value, ref operation }  => {
-                operation.map(|op| {
-                    //Lock the value for writing and update it
-                    let mut value = value.write().unwrap();
-                    *value = op(*value);
-                });
+            Api::Counter { page, value, ref operation }  => {
+                operation.map(|op| op(value));
 
                 //Insert the value into the page and write it to the response
-                let count = value.read().unwrap().to_string();
-                response.send(page.replace("{}", &count[..]));
+                let count = value.load(Ordering::SeqCst).to_string();
+                response.send(page.replace("{}", &count));
             },
             Api::File => {
                 if let Some(file) = context.variables.get("file") {
@@ -115,22 +113,21 @@ impl Handler for Api {
                         //Make a full path from the file name and send it
                         let path = Path::new("examples/handler_storage").join(file_path);
                         let res = response.send_file(path)
-                            .or_else(|e| e.send_not_found("the file was not found"))
-                            .or_else(|e| e.ignore_send_error());
+                            .or_else(|e| e.send_not_found("the file was not found"));
 
                         //Check if a more fatal file error than "not found" occurred
-                        if let Err((error, mut response)) = res {
+                        if let Err(FileError { error, mut response }) = res {
                             //Something went horribly wrong
                             error!("failed to open '{}': {}", file, error);
-                            response.set_status(StatusCode::InternalServerError);
+                            response.status = StatusCode::InternalServerError;
                         }
                     } else {
                         //Accessing parent directories is forbidden
-                        response.set_status(StatusCode::Forbidden);
+                        response.status = StatusCode::Forbidden;
                     }
                 } else {
                     //No file name was specified
-                    response.set_status(StatusCode::Forbidden);
+                    response.status = StatusCode::Forbidden;
                 }
             }
         }

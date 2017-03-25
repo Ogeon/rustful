@@ -2,6 +2,8 @@ use std::io::Write;
 use url::percent_encoding::percent_decode;
 use context::Parameters;
 
+pub const MAX_BUFFER_LENGTH: usize = 2048;
+
 pub fn parse_parameters(source: &[u8]) -> Parameters {
     let mut parameters = Parameters::new();
     let source: Vec<u8> = source.iter()
@@ -76,5 +78,19 @@ mod test {
         assert_eq!(parameters.get_raw("a"), Some(&a));
         assert_eq!(parameters.get_raw(""), Some(&aa));
         assert_eq!(parameters.get_raw("ab"), Some(&ab));
+    }
+}
+
+pub trait FnBox<A> {
+    type Output;
+
+    fn call_box(self: Box<Self>, args: A) -> Self::Output;
+}
+
+impl<A, R, F> FnBox<A> for F where F: FnOnce(A) -> R {
+    type Output = R;
+
+    fn call_box(self: Box<F>, arg: A) -> R {
+        self(arg)
     }
 }

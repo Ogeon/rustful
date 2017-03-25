@@ -2,7 +2,7 @@
 use std::fmt;
 
 use Method;
-use Handler;
+use handler::Meta;
 use context::MaybeUtf8Slice;
 
 ///A hyperlink.
@@ -14,7 +14,7 @@ pub struct Link<'a> {
     ///A relative path from the current location.
     pub path: Vec<LinkSegment<'a>>,
     ///The handler that will answer at the endpoint.
-    pub handler: Option<&'a Handler>,
+    pub handler: Option<&'a Meta>,
 }
 
 impl<'a> fmt::Debug for Link<'a> {

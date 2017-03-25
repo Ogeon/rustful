@@ -1,15 +1,179 @@
 //!Request handlers.
 use std::borrow::Cow;
-
-use context::Context;
-use response::Response;
+use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::Arc;
+use std::io::{self, Read, Write};
 
-///A trait for request handlers.
-pub trait Handler: Send + Sync + 'static {
+use context::{Context, RawContext};
+use response::{Response, ResponseHead, RawResponse};
+use interface::{ResponseMessage, ResponseType};
+
+pub use hyper::{Next, Control};
+
+///Combined network writer and HTTP encoder.
+#[cfg(not(feature = "ssl"))]
+pub type RawEncoder<'a, 'b> = &'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>;
+
+///Combined network reader and HTTP decoder.
+#[cfg(not(feature = "ssl"))]
+pub type RawDecoder<'a, 'b> = &'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>;
+
+///Combined network writer and HTTP encoder.
+#[cfg(feature = "ssl")]
+pub enum RawEncoder<'a, 'b: 'a> {
+    ///A writer for HTTP streams.
+    Http(&'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>),
+    ///A writer for HTTPS streams.
+    Https(&'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>),
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> Write for RawEncoder<'a, 'b> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match *self {
+            RawEncoder::Http(ref mut encoder) => encoder.write(buf),
+            RawEncoder::Https(ref mut encoder) => encoder.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match *self {
+            RawEncoder::Http(ref mut encoder) => encoder.flush(),
+            RawEncoder::Https(ref mut encoder) => encoder.flush(),
+        }
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>> for RawEncoder<'a, 'b> {
+    fn from(encoder: &'a mut ::hyper::Encoder<'b, ::hyper::net::HttpStream>) -> RawEncoder<'a, 'b> {
+        RawEncoder::Http(encoder)
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> From<&'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>> for RawEncoder<'a, 'b> {
+    fn from(encoder: &'a mut ::hyper::Encoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>) -> RawEncoder<'a, 'b> {
+        RawEncoder::Https(encoder)
+    }
+}
+
+///Combined network reader and HTTP decoder.
+#[cfg(feature = "ssl")]
+pub enum RawDecoder<'a, 'b: 'a> {
+    ///A reader for HTTP streams.
+    Http(&'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>),
+    ///A reader for HTTPS streams.
+    Https(&'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>),
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> Read for RawDecoder<'a, 'b> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match *self {
+            RawDecoder::Http(ref mut decoder) => decoder.read(buf),
+            RawDecoder::Https(ref mut decoder) => decoder.read(buf),
+        }
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>> for RawDecoder<'a, 'b> {
+    fn from(decoder: &'a mut ::hyper::Decoder<'b, ::hyper::net::HttpStream>) -> RawDecoder<'a, 'b> {
+        RawDecoder::Http(decoder)
+    }
+}
+
+#[cfg(feature = "ssl")]
+impl<'a, 'b> From<&'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>> for RawDecoder<'a, 'b> {
+    fn from(decoder: &'a mut ::hyper::Decoder<'b, ::hyper::net::OpensslStream<::hyper::net::HttpStream>>) -> RawDecoder<'a, 'b> {
+        RawDecoder::Https(decoder)
+    }
+}
+
+///A safer HTTP decoder.
+pub struct Decoder<'a, 'b: 'a> {
+    decoder: RawDecoder<'a, 'b>,
+    next: Next,
+}
+
+impl<'a, 'b> Decoder<'a, 'b> {
+    ///Signal to the event loop that nothing more should be read. There is no
+    ///reason to use this under normal circumstances.
+    pub fn abort(&mut self) {
+        self.next = Next::wait();
+    }
+}
+
+impl<'a, 'b> Read for Decoder<'a, 'b> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let res = self.decoder.read(buffer);
+        self.next = match res {
+            Ok(0) => Next::wait(),
+            Ok(_) => Next::read(),
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Next::read(),
+            Err(_) => Next::wait(),
+        };
+
+        res
+    }
+}
+
+///A safer HTTP encoder.
+pub struct Encoder<'a, 'b: 'a> {
+    encoder: RawEncoder<'a, 'b>,
+    next: Next,
+}
+
+impl<'a, 'b> Encoder<'a, 'b> {
+    ///Signal to the event loop that nothing more should be written. This will
+    ///end the response and possibly break the connection, which may lead to
+    ///unwanted results. There is no reason to use this under normal
+    ///circumstances.
+    pub fn abort(&mut self) {
+        self.next = Next::end();
+    }
+}
+
+impl<'a, 'b> Write for Encoder<'a, 'b> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let res = self.encoder.write(buffer);
+        self.next = match res {
+            Ok(0) => Next::end(),
+            //Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Next::write(),
+            Err(_) => Next::end(),
+            Ok(_) => Next::write(),
+        };
+        res
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let res = self.encoder.flush();
+        self.next = match res {
+            //Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => Next::write(),
+            Err(_) => Next::end(),
+            Ok(_) => Next::write(),
+        };
+        res
+    }
+}
+
+///A trait for simple request handlers.
+///
+///The `Handler` trait makes asynchronous request handling a bit easier, using
+///a synchronous-like API. It's still not fully synchronous, so be careful
+///with calls to functions that may block.
+///
+///The lifetime `'env` is the lifetime of the threading environment
+///(essentially the lifetime of the server), which is `'static` when regular
+///threads are used, or the lifetime of the scope where the server was started
+///if scoped threads are used. Having it available here makes it a lot easier
+///to have non-static handlers, in turn avoiding excessive cloning and
+///synchronization.
+pub trait Handler<'env>: Send + Sync {
     ///Handle a request from the client. Panicking within this method is
     ///discouraged, to allow the server to run smoothly.
-    fn handle_request(&self, context: Context, response: Response);
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, response: Response<'env>);
 
     ///Get a description for the handler.
     fn description(&self) -> Option<Cow<'static, str>> {
@@ -17,20 +181,272 @@ pub trait Handler: Send + Sync + 'static {
     }
 }
 
-impl<F: Fn(Context, Response) + Send + Sync + 'static> Handler for F {
-    fn handle_request(&self, context: Context, response: Response) {
+impl<'env, F: for<'a> Fn(Context<'a, 'env>, Response<'env>) + Send + Sync> Handler<'env> for F {
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, response: Response<'env>) {
         self(context, response);
     }
 }
 
-impl<T: Handler> Handler for Arc<T> {
-    fn handle_request(&self, context: Context, response: Response) {
+impl<'env, T: Handler<'env>> Handler<'env> for Arc<T> {
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, response: Response<'env>) {
         (**self).handle_request(context, response);
     }
 }
 
-impl Handler for Box<Handler> {
-    fn handle_request(&self, context: Context, response: Response) {
+impl<'env> Handler<'env> for Box<Handler<'env>> {
+    fn handle_request<'a>(&self, context: Context<'a, 'env>, response: Response<'env>) {
         (**self).handle_request(context, response);
     }
+}
+
+///Access functions for handler meta data.
+pub trait Meta {
+    ///Get a description for the handler.
+    fn description(&self) -> Option<Cow<'static, str>> {
+        None
+    }
+}
+
+impl<'env, H: Handler<'env>> Meta for H {
+    fn description(&self) -> Option<Cow<'static, str>> {
+        self.description()
+    }
+}
+
+///A fully asynchronous handler.
+///
+///A raw handler will read and write directly from and to the HTTP decoder and
+///encoder, which requires extra care, but will also allow more advanced
+///handlers.
+pub trait RawHandler: Send {
+    ///Return the first state after the request was received. Any necessary
+    ///context should be provided through an accompanying `Factory`
+    ///implementation.
+    fn on_request(&mut self) -> Next;
+
+    ///Read from the request body.
+    fn on_request_readable(&mut self, decoder: RawDecoder) -> Next;
+
+    ///Set the response head, including status code and headers.
+    fn on_response(&mut self) -> (ResponseHead, Next);
+
+    ///Write to the response body. It's up to the handler, itself, to filter
+    ///the response data.
+    fn on_response_writable(&mut self, encoder: RawEncoder) -> Next;
+}
+
+///A factory for initializing raw handlers.
+///
+///The lifetime `'env` is the lifetime of the threading environment
+///(essentially the lifetime of the server), which is `'static` when regular
+///threads are used, or the lifetime of the scope where the server was started
+///if scoped threads are used. Having it available here makes it a lot easier
+///to have non-static handlers, in turn avoiding excessive cloning and
+///synchronization.
+pub trait Factory<'env>: Meta + Send + Sync {
+    ///The resulting handler type.
+    type Handler: RawHandler;
+
+    ///Initialize a `RawHandler`, using the request context and initial
+    ///response data.
+    fn create<'a>(&self, context: RawContext<'a, 'env>, response: RawResponse) -> Self::Handler;
+}
+
+impl<'env, H: Handler<'env>> Factory<'env> for H {
+    type Handler = HandlerWrapper<'env>;
+
+    fn create<'a>(&self, context: RawContext<'a, 'env>, response: RawResponse) -> HandlerWrapper<'env> {
+        let mut on_body = None;
+        let (send, recv) = channel();
+
+        {
+            let response = ::interface::response::make_response(
+                response,
+                send,
+                context.control,
+                context.worker.clone(),
+            );
+
+            let body = ::interface::body::new(&mut on_body, context.worker.clone(), &context.headers);
+
+            let context = Context {
+                method: context.method,
+                http_version: context.http_version,
+                headers: context.headers,
+                uri_path: context.uri_path,
+                hyperlinks: context.hyperlinks,
+                variables: context.variables,
+                query: context.query,
+                fragment: context.fragment,
+                global: context.global,
+                worker: context.worker,
+                body: body,
+            };
+
+            self.handle_request(context, response);
+        }
+
+        HandlerWrapper::new(on_body, recv)
+    }
+}
+
+///The request handling part of a simple handler.
+pub struct HandlerWrapper<'env> {
+    on_body: Option<Box<FnMut(&mut Decoder) + Send + 'env>>,
+    response_recv: Receiver<ResponseMessage<'env>>,
+    write_method: Option<WriteMethod<'env>>,
+}
+
+impl<'env> HandlerWrapper<'env> {
+    fn new(on_body: Option<Box<FnMut(&mut Decoder) + Send + 'env>>, recv: Receiver<ResponseMessage<'env>>) -> HandlerWrapper<'env> {
+        HandlerWrapper {
+            on_body: on_body,
+            response_recv: recv,
+            write_method: None,
+        }
+    }
+}
+
+impl<'env> RawHandler for HandlerWrapper<'env> {
+    fn on_request(&mut self) -> Next {
+        if self.on_body.is_some() {
+            Next::read()
+        } else {
+            Next::wait()
+        }
+    }
+
+    fn on_request_readable(&mut self, decoder: RawDecoder) -> Next {
+        if let Some(on_body) = self.on_body.as_mut() {
+            let mut decoder = Decoder {
+                decoder: decoder,
+                next: Next::wait(),
+            };
+            on_body(&mut decoder);
+            decoder.next
+        } else {
+            Next::wait()
+        }
+    }
+
+    fn on_response(&mut self) -> (ResponseHead, Next) {
+        if let Ok(ResponseMessage::Head(head, method)) = self.response_recv.try_recv() {
+            let body_length = if let Some(&::header::ContentLength(length)) = head.headers.get() {
+                length as usize
+            } else {
+                0
+            };
+
+            let next = match method {
+                ResponseType::Buffer(buffer) => {
+                    self.write_method = Some(WriteMethod::Buffer(buffer, 0, body_length));
+                    Next::write()
+                },
+                ResponseType::Callback(on_write) => {
+                    self.write_method = Some(WriteMethod::Callback(on_write));
+                    Next::write()
+                },
+                ResponseType::Chunked => {
+                    match self.response_recv.try_recv() {
+                        Ok(ResponseMessage::Chunk(chunk)) => {
+                            self.write_method = Some(WriteMethod::Chunked(Some((chunk, 0))));
+                            Next::write()
+                        },
+                        Ok(ResponseMessage::End) | Err(TryRecvError::Disconnected) => {
+                            self.write_method = Some(WriteMethod::Chunked(None));
+                            Next::end()
+                        },
+                        Err(TryRecvError::Empty) => {
+                            self.write_method = Some(WriteMethod::Chunked(None));
+                            Next::wait()
+                        },
+                        Ok(ResponseMessage::Head(_, _)) => panic!("duplicate head messages from response"),
+                    }
+                }
+            };
+
+            (head, next)
+        } else {
+            panic!("the response didn't send a ResponseHead")
+        }
+    }
+
+    fn on_response_writable(&mut self, mut encoder: RawEncoder) -> Next {
+        match self.write_method {
+            Some(WriteMethod::Buffer(ref buffer, ref mut position, max_length)) => {
+                while *position < max_length {
+                    match encoder.write(&buffer[*position..]) {
+                        Ok(0) => {
+                            break;
+                        },
+                        Ok(length) => {
+                            *position += length;
+                        },
+                        Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
+                            return Next::write()
+                        } else {
+                            break
+                        },
+                    }
+                }
+
+                Next::end()
+            },
+            Some(WriteMethod::Callback(ref mut on_write)) => {
+                let mut encoder = Encoder {
+                    encoder: encoder,
+                    next: Next::end(),
+                };
+                on_write(&mut encoder);
+                encoder.next
+            },
+            Some(WriteMethod::Chunked(ref mut current_chunk)) => {
+                loop {
+                    if current_chunk.is_none() {
+                        match self.response_recv.try_recv() {
+                            Ok(ResponseMessage::Chunk(chunk)) => {
+                                *current_chunk = Some((chunk, 0));
+                            },
+                            Ok(ResponseMessage::End) | Err(TryRecvError::Disconnected) => {
+                                return Next::end()
+                            },
+                            Err(TryRecvError::Empty) => {
+                                return Next::wait()
+                            },
+                            Ok(ResponseMessage::Head(_, _)) => panic!("duplicate head messages from response"),
+                        }
+                    }
+
+                    if let Some((buffer, mut position)) = current_chunk.take() {
+                        while position < buffer.len() {
+                            match encoder.write(&buffer[position..]) {
+                                Ok(0) => {
+                                    break;
+                                },
+                                Ok(length) => {
+                                    position += length;
+                                },
+                                Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
+                                    return Next::write()
+                                } else {
+                                    break
+                                },
+                            }
+                        }
+
+                        if position < buffer.len() {
+                            *current_chunk = Some((buffer, position));
+                        }
+                    }
+                }
+            },
+            None => Next::end()
+        }
+    }
+}
+
+enum WriteMethod<'env> {
+    Buffer(Vec<u8>, usize, usize),
+    Callback(Box<FnMut(&mut Encoder) + Send + 'env>),
+    Chunked(Option<(Vec<u8>, usize)>),
 }

@@ -30,9 +30,10 @@ url = "1"
 anymap = "0.12"
 phf = "0.7"
 num_cpus = "0.2"
+crossbeam = "0.2"
 
 [dependencies.hyper]
-version = "0.9"
+git = "https://github.com/hyperium/hyper"
 default-features = false
 
 [dependencies.multipart]
@@ -50,6 +51,7 @@ optional = true
 unicase = "1.0"
 log = "0.3"
 env_logger = "0.3"
+tempdir = "0.3"
 
 [build-dependencies]
 phf_codegen = "0.7"
