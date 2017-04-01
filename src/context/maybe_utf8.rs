@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut, Drop};
 use std::borrow::{Cow, Borrow};
 use std::hash::{Hash, Hasher};
+use std::cmp::Ordering;
 
 use ::utils::BytesExt;
 
@@ -296,6 +297,85 @@ impl<S, V> PartialEq<MaybeUtf8<S, V>> for Vec<u8> where
 }
 
 impl<S: AsRef<[u8]>, V: AsRef<[u8]>> Eq for MaybeUtf8<S, V> {}
+
+impl<S, V, B: ?Sized> PartialOrd<B> for MaybeUtf8<S, V> where
+    S: AsRef<[u8]>,
+    V: AsRef<[u8]>,
+    B: AsRef<[u8]>
+{
+    fn partial_cmp(&self, other: &B) -> Option<Ordering> {
+        self.as_ref().partial_cmp(other.as_ref())
+    }
+}
+
+impl<S, V> PartialOrd<MaybeUtf8<S, V>> for str where
+    S: AsRef<[u8]>,
+    V: AsRef<[u8]>
+{
+    fn partial_cmp(&self, other: &MaybeUtf8<S, V>) -> Option<Ordering> {
+        other.partial_cmp(self)
+    }
+}
+
+impl<'a, S, V> PartialOrd<MaybeUtf8<S, V>> for &'a str where
+    S: AsRef<[u8]>,
+    V: AsRef<[u8]>
+{
+    fn partial_cmp(&self, other: &MaybeUtf8<S, V>) -> Option<Ordering> {
+        other.partial_cmp(self)
+    }
+}
+
+impl<S, V> PartialOrd<MaybeUtf8<S, V>> for String where
+    S: AsRef<[u8]>,
+    V: AsRef<[u8]>
+{
+    fn partial_cmp(&self, other: &MaybeUtf8<S, V>) -> Option<Ordering> {
+        other.partial_cmp(self)
+    }
+}
+
+impl<'a, S, V> PartialOrd<MaybeUtf8<S, V>> for Cow<'a, str> where
+    S: AsRef<[u8]>,
+    V: AsRef<[u8]>
+{
+    fn partial_cmp(&self, other: &MaybeUtf8<S, V>) -> Option<Ordering> {
+        other.partial_cmp(self.as_ref())
+    }
+}
+
+impl<S, V> PartialOrd<MaybeUtf8<S, V>> for [u8] where
+    S: AsRef<[u8]>,
+    V: AsRef<[u8]>
+{
+    fn partial_cmp(&self, other: &MaybeUtf8<S, V>) -> Option<Ordering> {
+        other.partial_cmp(self)
+    }
+}
+
+impl<'a, S, V> PartialOrd<MaybeUtf8<S, V>> for &'a [u8] where
+    S: AsRef<[u8]>,
+    V: AsRef<[u8]>
+{
+    fn partial_cmp(&self, other: &MaybeUtf8<S, V>) -> Option<Ordering> {
+        other.partial_cmp(self)
+    }
+}
+
+impl<S, V> PartialOrd<MaybeUtf8<S, V>> for Vec<u8> where
+    S: AsRef<[u8]>,
+    V: AsRef<[u8]>
+{
+    fn partial_cmp(&self, other: &MaybeUtf8<S, V>) -> Option<Ordering> {
+        other.partial_cmp(self)
+    }
+}
+
+impl<S: AsRef<[u8]>, V: AsRef<[u8]>> Ord for MaybeUtf8<S, V> {
+    fn cmp(&self, other: &MaybeUtf8<S, V>) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
 
 impl<S: AsRef<[u8]>, V: AsRef<[u8]>> Hash for MaybeUtf8<S, V> {
     fn hash<H: Hasher>(&self, hasher: &mut H) {

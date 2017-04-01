@@ -9,12 +9,12 @@
 //!```no_run
 //!#[macro_use]
 //!extern crate rustful;
-//!use rustful::{Server, Handler, Context, Response, TreeRouter};
+//!use rustful::{Server, Handler, Context, Response, DefaultRouter};
 //!
 //!struct Greeting(&'static str);
 //!
 //!impl Handler for Greeting {
-//!    fn handle_request(&self, context: Context, response: Response) {
+//!    fn handle(&self, context: Context, response: Response) {
 //!        //Check if the client accessed /hello/:name or /good_bye/:name
 //!        if let Some(name) = context.variables.get("name") {
 //!            //Use the value of :name
@@ -27,8 +27,8 @@
 //!
 //!# fn main() {
 //!let my_router = insert_routes!{
-//!    //Create a new TreeRouter
-//!    TreeRouter::new() => {
+//!    //Create a new DefaultRouter
+//!    DefaultRouter::new() => {
 //!        //Receive GET requests to /hello and /hello/:name
 //!        "hello" => {
 //!            Get: Greeting("hello"),
@@ -97,8 +97,8 @@ pub use self::context::Context;
 pub use self::response::Response;
 pub use self::response::Error;
 pub use self::handler::Handler;
-pub use self::router::Router;
-pub use self::router::TreeRouter;
+pub use self::router::Insert;
+pub use self::router::DefaultRouter;
 
 mod utils;
 #[macro_use]

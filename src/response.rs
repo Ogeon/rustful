@@ -275,7 +275,7 @@ impl<'a> Into<Data<'a>> for &'a str {
 ///appropriate, and otherwise not touch it at all.
 pub trait SendResponse<'a, 'b> {
     ///Any error that may occur while sending the response.
-    type Error;
+    type Error: ResponseError;
 
     ///Send a response to the client.
     fn send_response(self, response: Response<'a, 'b>) -> Result<(), Self::Error>;
@@ -383,13 +383,108 @@ pub trait ResponseError {
     fn handle(self);
 }
 
+enum MaybeMock<T> {
+    Actual(T),
+    Mock {
+        headers: Headers,
+        status: StatusCode,
+    }
+}
+
+impl<T> MaybeMock<T> {
+    fn actual(response: T) -> MaybeMock<T> {
+        MaybeMock::Actual(response)
+    }
+
+    fn mock() -> MaybeMock<T> {
+        MaybeMock::Mock {
+            headers: Headers::new(),
+            status: StatusCode::Ok
+        }
+    }
+}
+
+impl<'a> MaybeMock<hyper::server::response::Response<'a>> {
+    fn status(&self) -> StatusCode {
+        match *self {
+            MaybeMock::Actual(ref response) => response.status(),
+            MaybeMock::Mock{status, ..} => status
+        }
+    }
+
+    fn status_mut(&mut self) -> &mut StatusCode {
+        match *self {
+            MaybeMock::Actual(ref mut response) => response.status_mut(),
+            MaybeMock::Mock{ref mut status, ..} => status
+        }
+    }
+
+    fn headers(&self) -> &Headers {
+        match *self {
+            MaybeMock::Actual(ref response) => response.headers(),
+            MaybeMock::Mock{ref headers, ..} => headers
+        }
+    }
+
+    fn headers_mut(&mut self) -> &mut Headers {
+        match *self {
+            MaybeMock::Actual(ref mut response) => response.headers_mut(),
+            MaybeMock::Mock{ref mut headers, ..} => headers
+        }
+    }
+
+    fn send(self, payload: &[u8]) -> io::Result<()> {
+        if let MaybeMock::Actual(response) = self {
+            response.send(payload)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn start(self) -> io::Result<MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>> {
+        if let MaybeMock::Actual(response) = self {
+            response.start().map(MaybeMock::Actual)
+        } else {
+            Ok(MaybeMock::mock())
+        }
+    }
+}
+
+impl<'a> MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>> {
+    fn end(self) -> io::Result<()> {
+        if let MaybeMock::Actual(response) = self {
+            response.end()
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl<'a> Write for MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        if let MaybeMock::Actual(ref mut response) = *self {
+            response.write(buffer)
+        } else {
+            Ok(0)
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if let MaybeMock::Actual(ref mut response) = *self {
+            response.flush()
+        } else {
+            Ok(())
+        }
+    }
+}
+
 ///An interface for sending data to the client.
 ///
 ///This is where the status code and response headers are set, as well as the
 ///response body. The body can be directly written through the `Response` if
 ///its size is known.
 pub struct Response<'a, 'b> {
-    writer: Option<hyper::server::response::Response<'a>>,
+    writer: Option<MaybeMock<hyper::server::response::Response<'a>>>,
     filters: &'b [Box<ResponseFilter>],
     global: &'b Global,
     filter_storage: Option<AnyMap>,
@@ -406,11 +501,22 @@ impl<'a, 'b> Response<'a, 'b> {
         force_close: bool
     ) -> Response<'a, 'b> {
         Response {
-            writer: Some(response),
+            writer: Some(MaybeMock::actual(response)),
             filters: filters,
             global: global,
             filter_storage: Some(AnyMap::new()),
             force_close: force_close
+        }
+    }
+
+    ///Create a non-functional `Response` for testing purposes.
+    pub fn mock(global: &'b Global) -> Response<'static, 'b> {
+        Response {
+            writer: Some(MaybeMock::mock()),
+            filters: &[],
+            global: global,
+            filter_storage: Some(AnyMap::new()),
+            force_close: false
         }
     }
 
@@ -585,7 +691,7 @@ impl<'a, 'b> Response<'a, 'b> {
                     Action::SilentAbort => break
                 }
             }
-            
+
             writer.send(&buffer).map_err(|e| e.into())
         }
     }
@@ -742,7 +848,7 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 ///This is useful for when the size of the data is unknown, but it comes with
 ///an overhead for each time `send` or `try_send` is called (simply put).
 pub struct Chunked<'a, 'b> {
-    writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
+    writer: Option<Result<MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>, Error>>,
     filters: &'b [Box<ResponseFilter>],
     global: &'b Global,
     filter_storage: AnyMap
@@ -864,7 +970,7 @@ impl<'a, 'b> Chunked<'a, 'b> {
         writer.end().map_err(Error::Io)
     }
 
-    fn borrow_writer(&mut self) -> Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>, Error> {
+    fn borrow_writer(&mut self) -> Result<&mut MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>, Error> {
         match self.writer {
             Some(Ok(ref mut writer)) => Ok(writer),
             None => Err(Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),
@@ -908,7 +1014,7 @@ impl<'a, 'b> Drop for Chunked<'a, 'b> {
 ///__Unsafety__: The content length is set beforehand, which makes it possible
 ///to send responses that are too short.
 pub struct Raw<'a> {
-    writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, io::Error>>
+    writer: Option<Result<MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>, io::Error>>
 }
 
 impl<'a> Raw<'a> {
@@ -975,7 +1081,7 @@ impl<'a> Raw<'a> {
         writer.end()
     }
 
-    fn borrow_writer(&mut self) -> io::Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>> {
+    fn borrow_writer(&mut self) -> io::Result<&mut MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>> {
         match self.writer {
             Some(Ok(ref mut writer)) => Ok(writer),
             None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "write after close")),

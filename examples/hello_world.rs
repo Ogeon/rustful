@@ -8,7 +8,7 @@ extern crate rustful;
 
 use std::error::Error;
 
-use rustful::{Server, Context, Response, TreeRouter};
+use rustful::{Server, Context, Response, DefaultRouter};
 
 fn say_hello(context: Context, response: Response) {
     //Get the value of the path variable `:person`, from below.
@@ -31,9 +31,9 @@ fn main() {
         //Turn a port number into an IPV4 host address (0.0.0.0:8080 in this case).
         host: 8080.into(),
 
-        //Create a TreeRouter and fill it with handlers.
+        //Create a DefaultRouter and fill it with handlers.
         handlers: insert_routes!{
-            TreeRouter::new() => {
+            DefaultRouter::new() => {
                 //Handle requests for root...
                 Get: say_hello,
 

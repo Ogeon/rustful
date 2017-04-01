@@ -1,7 +1,8 @@
-use router::{Router, Endpoint, InsertState, RouteState};
+use router::{Insert, InsertState};
 use context::MaybeUtf8Owned;
 use context::hypermedia::Link;
 use {Method, Handler};
+use handler::{HandleRequest, Environment};
 
 ///A router endpoint that assigns names to route variables.
 ///
@@ -16,21 +17,8 @@ pub struct Variables<H: Handler> {
     variables: Vec<MaybeUtf8Owned>,
 }
 
-impl<H: Handler> Router for Variables<H> {
+impl<H: Handler + 'static> Insert for Variables<H> {
     type Handler = H;
-
-    fn find<'a>(&'a self, _method: &Method, route: &mut RouteState) -> Endpoint<'a, H> {
-        Endpoint {
-            handler: Some(&self.handler),
-            variables: route.variables(&self.variables),
-            hyperlinks: vec![],
-        }
-    }
-
-    fn hyperlinks<'a>(&'a self, mut base: Link<'a>) -> Vec<Link<'a>> {
-        base.handler = Some(&self.handler);
-        vec![base]
-    }
 
     fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, route: R, item: Self::Handler) -> Variables<H> {
         Variables {
@@ -53,6 +41,18 @@ impl<H: Handler> Router for Variables<H> {
         let mut new_vars = route.into().variables();
         new_vars.extend(self.variables.drain(..));
         self.variables = new_vars;
+    }
+}
+
+impl<H: Handler> HandleRequest for Variables<H> {
+    fn handle_request<'a, 'b, 'l, 'g>(&self, mut environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
+        environment.context.variables = environment.route_state.variables(&self.variables).into();
+        self.handler.handle_request(environment)
+    }
+
+    fn hyperlinks<'a>(&'a self, mut base: Link<'a>) -> Vec<Link<'a>> {
+        base.handler = Some(&self.handler);
+        vec![base]
     }
 }
 

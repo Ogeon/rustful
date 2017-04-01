@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate rustful;
 
 use std::io::{self, Read};

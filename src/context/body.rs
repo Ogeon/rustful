@@ -19,7 +19,7 @@ use header::Headers;
 
 ///A reader for a request body.
 pub struct BodyReader<'a, 'b: 'a> {
-    reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>,
+    reader: MaybeMock<HttpReader<&'a mut BufReader<&'b mut NetworkStream>>>,
 
     #[cfg(feature = "multipart")]
     multipart_boundary: Option<String>
@@ -47,7 +47,7 @@ impl<'a, 'b> BodyReader<'a, 'b> {
         };
 
         BodyReader {
-            reader: reader,
+            reader: MaybeMock::Actual(reader),
             multipart_boundary: boundary
         }
     }
@@ -57,7 +57,40 @@ impl<'a, 'b> BodyReader<'a, 'b> {
     ///Internal and may change without warning.
     pub fn from_reader(reader: HttpReader<&'a mut BufReader<&'b mut NetworkStream>>, _headers: &Headers) -> BodyReader<'a, 'b> {
         BodyReader {
-            reader: reader
+            reader: MaybeMock::Actual(reader)
+        }
+    }
+
+    ///Create a non-functional body reader for testing purposes.
+    #[cfg(feature = "multipart")]
+    pub fn mock(headers: &'b Headers) -> BodyReader<'static, 'static> {
+        use header::ContentType;
+        use mime::{Mime, TopLevel, SubLevel, Attr, Value};
+
+        let boundary = match headers.get() {
+            Some(&ContentType(Mime(TopLevel::Multipart, SubLevel::FormData, ref attrs))) => {
+                attrs.iter()
+                    .find(|&&(ref attr, _)| attr == &Attr::Boundary)
+                    .and_then(|&(_, ref val)| if let Value::Ext(ref boundary) = *val {
+                        Some(boundary.clone())
+                    } else {
+                        None
+                    })
+            },
+            _ => None
+        };
+
+        BodyReader {
+            reader: MaybeMock::Mock,
+            multipart_boundary: boundary,
+        }
+    }
+
+    ///Create a non-functional body reader for testing purposes.
+    #[cfg(not(feature = "multipart"))]
+    pub fn mock(_headers: &'b Headers) -> BodyReader<'static, 'static> {
+        BodyReader {
+            reader: MaybeMock::Mock
         }
     }
 }
@@ -103,13 +136,16 @@ impl<'a, 'b> BodyReader<'a, 'b> {
     ///```
     #[cfg(feature = "multipart")]
     pub fn as_multipart<'r>(&'r mut self) -> Option<Multipart<MultipartRequest<'r, 'a, 'b>>> {
-        let reader = &mut self.reader;
-        self.multipart_boundary.as_ref().and_then(move |boundary|
-            Multipart::from_request(MultipartRequest {
-                boundary: boundary,
-                reader: reader
-            }).ok()
-        )
+        if let MaybeMock::Actual(ref mut reader) = self.reader {
+            self.multipart_boundary.as_ref().and_then(move |boundary|
+                Multipart::from_request(MultipartRequest {
+                    boundary: boundary,
+                    reader: reader
+                }).ok()
+            )
+        } else {
+            None
+        }
     }
 
     ///Read and parse the request body as a query string. The body will be
@@ -230,5 +266,20 @@ impl<'r, 'a, 'b> Read for MultipartRequest<'r, 'a, 'b> {
     ///Read the request body.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.reader.read(buf)
+    }
+}
+
+enum MaybeMock<R: Read> {
+    Actual(R),
+    Mock
+}
+
+impl<R: Read> Read for MaybeMock<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if let &mut MaybeMock::Actual(ref mut reader) = self {
+            reader.read(buf)
+        } else {
+            Ok(0)
+        }
     }
 }

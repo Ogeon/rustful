@@ -18,7 +18,7 @@ use rustful::{
     Context,
     Response,
     Handler,
-    TreeRouter
+    DefaultRouter
 };
 use rustful::header::{
     ContentType,
@@ -34,7 +34,7 @@ fn main() {
     env_logger::init().unwrap();
 
     let mut router = insert_routes!{
-        TreeRouter::new() => {
+        DefaultRouter::new() => {
             Get: Api(Some(list_all)),
             Post: Api(Some(store)),
             Delete: Api(Some(clear)),
@@ -184,7 +184,7 @@ fn delete_todo(database: &Database, context: Context) -> Result<Option<String>, 
 struct Api(Option<fn(&Database, Context) -> Result<Option<String>, Error>>);
 
 impl Handler for Api {
-    fn handle_request(&self, context: Context, mut response: Response) {
+    fn handle(&self, context: Context, mut response: Response) {
         //Collect the accepted methods from the provided hyperlinks
         let mut methods: Vec<_> = context.hyperlinks.iter().filter_map(|l| l.method.clone()).collect();
         methods.push(context.method.clone());

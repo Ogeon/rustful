@@ -109,7 +109,7 @@
 //![log]: ../log/index.html
 //![body_reader]: body/struct.BodyReader.html
 
-use std::net::SocketAddr;
+use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
 use std::fmt;
 use std::borrow::Cow;
 
@@ -131,7 +131,7 @@ mod parameters;
 pub use self::parameters::Parameters;
 
 ///A container for handler input, like request data and utilities.
-pub struct Context<'a, 'b: 'a, 's> {
+pub struct Context<'a, 'b: 'a, 'l, 'g> {
     ///Headers from the HTTP request.
     pub headers: Headers,
 
@@ -148,7 +148,7 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub uri_path: UriPath,
 
     ///Hyperlinks from the current endpoint.
-    pub hyperlinks: Vec<Link<'s>>,
+    pub hyperlinks: Vec<Link<'l>>,
 
     ///Route variables.
     pub variables: Parameters,
@@ -160,10 +160,54 @@ pub struct Context<'a, 'b: 'a, 's> {
     pub fragment: Option<MaybeUtf8Owned>,
 
     ///Globally accessible data.
-    pub global: &'s Global,
+    pub global: &'g Global,
 
     ///A reader for the request body.
     pub body: BodyReader<'a, 'b>,
+}
+
+impl<'a, 'b, 'l, 'g> Context<'a, 'b, 'l, 'g> {
+    ///Create a context with minimal setup, for testing purposes.
+    pub fn mock<P: Into<String>>(method: Method, path: P, headers: Headers, global: &'g Global) -> Context<'static, 'static, 'l, 'g> {
+        let body = BodyReader::mock(&headers);
+
+        Context {
+            headers: headers,
+            http_version: HttpVersion::Http11,
+            address: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 80)),
+            method: method,
+            uri_path: UriPath::Path(path.into().into()),
+            hyperlinks: vec![],
+            variables: Parameters::new(),
+            query: Parameters::new(),
+            fragment: None,
+            global: global,
+            body: body
+        }
+    }
+
+    ///Replace the hyperlinks. This consumes the context and returns a new one
+    ///with a different lifetime, together with the old hyperlinks.
+    pub fn replace_hyperlinks<'n>(self, hyperlinks: Vec<Link<'n>>) -> (Context<'a, 'b, 'n, 'g>, Vec<Link<'l>>) {
+        let old_links = self.hyperlinks;
+
+        (
+            Context {
+                headers: self.headers,
+                http_version: self.http_version,
+                address: self.address,
+                method: self.method,
+                uri_path: self.uri_path,
+                hyperlinks: hyperlinks,
+                variables: self.variables,
+                query: self.query,
+                fragment: self.fragment,
+                global: self.global,
+                body: self.body,
+            },
+            old_links
+        )
+    }
 }
 
 ///A URI Path that can be a path or an asterisk (`*`).

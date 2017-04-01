@@ -16,7 +16,7 @@ use rustful::{
     Context,
     Response,
     Handler,
-    TreeRouter,
+    DefaultRouter,
     StatusCode
 };
 use rustful::file::check_path;
@@ -33,7 +33,7 @@ fn main() {
     let value = Arc::new(RwLock::new(0));
 
     let router = insert_routes!{
-        TreeRouter::new() => {
+        DefaultRouter::new() => {
             Get: Api::Counter {
                 page: page.clone(),
                 value: value.clone(),
@@ -93,7 +93,7 @@ enum Api {
 }
 
 impl Handler for Api {
-    fn handle_request(&self, context: Context, mut response: Response) {
+    fn handle(&self, context: Context, mut response: Response) {
         match *self {
             Api::Counter { ref page, ref value, ref operation }  => {
                 operation.map(|op| {

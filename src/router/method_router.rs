@@ -1,8 +1,9 @@
 use std::collections::hash_map::{HashMap, Entry};
 
-use router::{Router, Endpoint, InsertState, RouteState};
+use router::{Insert, InsertState};
 use context::hypermedia::Link;
 use Method;
+use handler::{HandleRequest, Environment};
 
 ///A router that selects an item from an HTTP method.
 ///
@@ -14,24 +15,8 @@ pub struct MethodRouter<T> {
     items: HashMap<Method, T>,
 }
 
-impl<T: Router> Router for MethodRouter<T> {
+impl<T: Insert> Insert for MethodRouter<T> {
     type Handler = T::Handler;
-
-    fn find<'a>(&'a self, method: &Method, route: &mut RouteState) -> Endpoint<'a, Self::Handler> {
-        if let Some(item) = self.items.get(method) {
-            item.find(method, route)
-        } else {
-            Endpoint::from(None)
-        }
-    }
-
-    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>> {
-        self.items.iter().flat_map(|(method, item)| {
-            let mut link = base.clone();
-            link.method = Some(method.clone());
-            item.hyperlinks(link)
-        }).collect()
-    }
 
     fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> MethodRouter<T> {
         let mut router = MethodRouter::default();
@@ -64,6 +49,24 @@ impl<T: Router> Router for MethodRouter<T> {
         for (_, item) in &mut self.items {
             item.prefix(route.clone());
         }
+    }
+}
+
+impl<T: HandleRequest> HandleRequest for MethodRouter<T> {
+    fn handle_request<'a, 'b, 'l, 'g>(&self, environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
+        if let Some(item) = self.items.get(&environment.context.method) {
+            item.handle_request(environment)
+        } else {
+            Err(environment)
+        }
+    }
+
+    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>> {
+        self.items.iter().flat_map(|(method, item)| {
+            let mut link = base.clone();
+            link.method = Some(method.clone());
+            item.hyperlinks(link)
+        }).collect()
     }
 }
 

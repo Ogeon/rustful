@@ -2,7 +2,7 @@
 //!
 //!# Building Routers
 //!
-//!Rustful provides a tree structured all-round router called `TreeRouter`,
+//!Rustful provides a tree structured all-round router called `DefaultRouter`,
 //!but any other type of router can be used, as long as it implements the
 //!`Router` trait. This will also make it possible to initialize it using the
 //![`insert_routes!`][insert_routes] macro:
@@ -10,12 +10,12 @@
 //!```
 //!#[macro_use]
 //!extern crate rustful;
-//!use rustful::TreeRouter;
+//!use rustful::DefaultRouter;
 //!# use rustful::{Handler, Context, Response};
 //!
 //!# struct DummyHandler;
 //!# impl Handler for DummyHandler {
-//!#     fn handle_request(&self, _: Context, _: Response){}
+//!#     fn handle(&self, _: Context, _: Response){}
 //!# }
 //!# fn main() {
 //!# let about_us = DummyHandler;
@@ -26,7 +26,7 @@
 //!# let show_error = DummyHandler;
 //!# let show_welcome = DummyHandler;
 //!let router = insert_routes! {
-//!    TreeRouter::new() => {
+//!    DefaultRouter::new() => {
 //!        Get: show_welcome,
 //!        "about" => Get: about_us,
 //!        "users" => {
@@ -53,12 +53,12 @@
 //!```
 //!extern crate rustful;
 //!use rustful::Method::Get;
-//!use rustful::{Router, TreeRouter};
+//!use rustful::{Insert, DefaultRouter};
 //!# use rustful::{Handler, Context, Response};
 //!
 //!# struct DummyHandler;
 //!# impl Handler for DummyHandler {
-//!#     fn handle_request(&self, _: Context, _: Response){}
+//!#     fn handle(&self, _: Context, _: Response){}
 //!# }
 //!# fn main() {
 //!# let about_us = DummyHandler;
@@ -68,7 +68,7 @@
 //!# let list_products = DummyHandler;
 //!# let show_error = DummyHandler;
 //!# let show_welcome = DummyHandler;
-//!let mut router = TreeRouter::new();
+//!let mut router = DefaultRouter::new();
 //!
 //!router.insert(Get, "/", show_welcome);
 //!router.insert(Get, "/about", about_us);
@@ -127,7 +127,7 @@
 //!
 //!# Router Composition
 //!
-//!The default tree router is actually a composition of three routers:
+//!The default router is actually a composition of three routers:
 //![`TreeRouter`][tree_router], [`MethodRouter`][method_router] and
 //![`Variables`][variables]. They come together as the type
 //!`TreeRouter<MethodRouter<Variables<_>>>`, but the `TreeRouter` assumes that
@@ -139,14 +139,13 @@
 //!internally. Sure, no problem:
 //!
 //!```
-//!use rustful::TreeRouter;
-//!use rustful::router::Variables;
+//!use rustful::router::{Variables, TreeRouter};
 //!
 //!let my_router = TreeRouter::<Option<Variables<_>>>::default();
 //!# let _r: TreeRouter<Option<Variables<DummyHandler>>> = my_router;
 //!# struct DummyHandler;
 //!# impl rustful::Handler for DummyHandler {
-//!#     fn handle_request(&self, _: rustful::Context, _: rustful::Response){}
+//!#     fn handle(&self, _: rustful::Context, _: rustful::Response){}
 //!# }
 //!```
 //!
@@ -154,13 +153,13 @@
 //!remove them too, if you don't want them:
 //!
 //!```
-//!use rustful::TreeRouter;
+//!use rustful::router::TreeRouter;
 //!
 //!let my_router = TreeRouter::<Option<_>>::default();
 //!# let _r: TreeRouter<Option<DummyHandler>> = my_router;
 //!# struct DummyHandler;
 //!# impl rustful::Handler for DummyHandler {
-//!#     fn handle_request(&self, _: rustful::Context, _: rustful::Response){}
+//!#     fn handle(&self, _: rustful::Context, _: rustful::Response){}
 //!# }
 //!```
 //!
@@ -178,9 +177,8 @@ use std::ops::Deref;
 use std::marker::PhantomData;
 use hyper::method::Method;
 
-use handler::Handler;
+use handler::{Handler, HandleRequest};
 use context::MaybeUtf8Owned;
-use context::hypermedia::Link;
 
 pub use self::tree_router::TreeRouter;
 pub use self::method_router::MethodRouter;
@@ -190,34 +188,19 @@ mod tree_router;
 mod method_router;
 mod variables;
 
-///API endpoint data.
-pub struct Endpoint<'a, T: 'a> {
-    ///A request handler, if found.
-    pub handler: Option<&'a T>,
-    ///Path variables for the matching endpoint. May be empty, depending on
-    ///the router implementation.
-    pub variables: HashMap<MaybeUtf8Owned, MaybeUtf8Owned>,
-    ///Any associated hyperlinks.
-    pub hyperlinks: Vec<Link<'a>>
-}
-
-impl<'a, T> From<Option<&'a T>> for Endpoint<'a, T> {
-    fn from(handler: Option<&'a T>) -> Endpoint<'a, T> {
-        Endpoint {
-            handler: handler,
-            variables: HashMap::new(),
-            hyperlinks: vec![]
-        }
-    }
-}
-
-///A common trait for routers.
+///Alias for `TreeRouter<MethodRouter<Variables<T>>>`.
 ///
-///A router must to implement this trait to be usable in a Rustful server. This
-///trait will also make the router compatible with the `insert_routes!` macro.
-pub trait Router: Send + Sync + 'static {
+///This is probably the most common composition, which will select handlers
+///based on path and then HTTP method, and collect any variables on the way.
+pub type DefaultRouter<T> = TreeRouter<MethodRouter<Variables<T>>>;
+
+///A common trait for building routers.
+///
+///A router has to implement this trait to be compatible with the
+///`insert_routes!` macro.
+pub trait Insert {
     ///The request handler type that is stored within this router.
-    type Handler: Handler;
+    type Handler: HandleRequest;
 
     ///Build a new router from a route. The router may choose to ignore
     ///both `method` and `route`, depending on its implementation.
@@ -238,16 +221,9 @@ pub trait Router: Send + Sync + 'static {
     fn merge(&mut self, other: Self) where Self: Sized {
         self.insert_router("", other);
     }
-
-    ///Find and return the matching handler and variable values.
-    fn find<'a>(&'a self, method: &Method, route: &mut RouteState) -> Endpoint<'a, Self::Handler>;
-
-    ///List all of the hyperlinks into this router, based on the provided base
-    ///link. It's up to the router implementation to decide how deep to go.
-    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>>;
 }
 
-impl<H: Handler> Router for H {
+impl<H: Handler> Insert for H {
     type Handler = H;
 
     fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> H {
@@ -263,18 +239,9 @@ impl<H: Handler> Router for H {
     }
 
     fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R) {}
-
-    fn find<'a>(&'a self, _method: &Method, _route: &mut RouteState) -> Endpoint<'a, H> {
-        Some(self).into()
-    }
-
-    fn hyperlinks<'a>(&'a self, mut base: Link<'a>) -> Vec<Link<'a>> {
-        base.handler = Some(self);
-        vec![base]
-    }
 }
 
-impl<T: Router> Router for Option<T> {
+impl<T: Insert> Insert for Option<T> {
     type Handler = T::Handler;
 
     fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> Option<T> {
@@ -302,22 +269,6 @@ impl<T: Router> Router for Option<T> {
 
     fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R) {
         self.as_mut().map(|r| r.prefix(route));
-    }
-
-    fn find<'a>(&'a self, method: &Method, route: &mut RouteState) -> Endpoint<'a, Self::Handler> {
-        if let Some(ref router) = *self {
-            router.find(method, route)
-        } else {
-            None.into()
-        }
-    }
-
-    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>> {
-        if let Some(ref router) = *self {
-            router.hyperlinks(base)
-        } else {
-            vec![]
-        }
     }
 }
 
@@ -441,8 +392,8 @@ pub struct InsertState<'a, I: Iterator<Item=&'a [u8]>> {
 
 impl<'a, I: Iterator<Item=&'a [u8]>> InsertState<'a, I> {
     ///Extract the variable names from the parsed path.
-    pub fn variables(self) -> Vec<MaybeUtf8Owned> {
-        self.variables
+    pub fn variables(&mut self) -> Vec<MaybeUtf8Owned> {
+        ::std::mem::replace(&mut self.variables, vec![])
     }
 
     ///Check if there are no more segments.
@@ -476,6 +427,7 @@ impl<'a, R: Route<'a> + ?Sized> From<&'a R> for InsertState<'a, R::Segments> {
 }
 
 ///A state object for routing.
+#[derive(Clone)]
 pub struct RouteState<'a> {
     route: Vec<&'a [u8]>,
     variables: Vec<Option<usize>>,
