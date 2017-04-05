@@ -28,7 +28,7 @@
 //!# fn main() {
 //!let my_router = insert_routes!{
 //!    //Create a new DefaultRouter
-//!    DefaultRouter::new() => {
+//!    DefaultRouter::<Greeting>::new() => {
 //!        //Receive GET requests to /hello and /hello/:name
 //!        "hello" => {
 //!            Get: Greeting("hello"),

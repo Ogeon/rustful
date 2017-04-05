@@ -4,7 +4,7 @@ use std::io::{self, Read};
 use std::fs::File;
 use std::path::Path;
 use std::borrow::Cow;
-use std::error::Error;
+use std::error::Error as ErrorTrait;
 
 #[macro_use]
 extern crate log;
@@ -12,25 +12,12 @@ extern crate env_logger;
 
 use rustful::{Server, Context, Response};
 use rustful::StatusCode::{InternalServerError, BadRequest};
+use rustful::handler::ContentFactory;
+use rustful::response::SendResponse;
 
-fn say_hello(mut context: Context, mut response: Response) {
-    let body = match context.body.read_query_body() {
-        Ok(body) => body,
-        Err(_) => {
-            //Oh no! Could not read the body
-            response.set_status(BadRequest);
-            return;
-        }
-    };
-
-    let files: &Files = if let Some(files) = context.global.get() {
-        files
-    } else {
-        //Oh no! Why is the global data not a File instance?!
-        error!("the global data should be of the type `Files`, but it's not");
-        response.set_status(InternalServerError);
-        return;
-    };
+fn say_hello(mut context: Context) -> Result<String, Error> {
+    let body = context.body.read_query_body().map_err(|_| Error::CouldNotReadBody)?;
+    let files: &Files = context.global.get().ok_or(Error::MissingFileCache)?;
 
     //Format the name or use the cached form
     let content = if let Some(name) = body.get("name") {
@@ -40,8 +27,7 @@ fn say_hello(mut context: Context, mut response: Response) {
     };
 
     //Insert the content into the page and write it to the response
-    let complete_page = files.page.replace("{}", &content);
-    response.send(complete_page);
+    Ok(files.page.replace("{}", &content))
 }
 
 fn main() {
@@ -55,11 +41,12 @@ fn main() {
         form: read_string("examples/post/form.html").unwrap()
     };
 
-    //Handlers implements the Router trait, so it can be passed to the server as it is
+    //The ContentFactory wrapper allows simplified handlers that return their
+    //responses
     let server_result = Server {
         host: 8080.into(),
         global: Box::new(files).into(),
-        ..Server::new(say_hello)
+        ..Server::new(ContentFactory(say_hello))
     }.run();
 
     //Check if the server started successfully
@@ -79,4 +66,25 @@ fn read_string<P: AsRef<Path>>(path: P) -> io::Result<String> {
 struct Files {
     page: String,
     form: String
+}
+
+enum Error {
+    CouldNotReadBody,
+    MissingFileCache
+}
+
+impl<'a, 'b> SendResponse<'a, 'b> for Error {
+    type Error = rustful::Error;
+
+    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), rustful::Error> {
+        match self {
+            Error::CouldNotReadBody => response.set_status(BadRequest),
+            Error::MissingFileCache => {
+                error!("the global data should be of the type `Files`, but it's not");
+                response.set_status(InternalServerError);
+            },
+        }
+
+        response.try_send("")
+    }
 }

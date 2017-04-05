@@ -34,7 +34,7 @@ fn main() {
     env_logger::init().unwrap();
 
     let mut router = insert_routes!{
-        DefaultRouter::new() => {
+        DefaultRouter::<Api>::new() => {
             Get: Api(Some(list_all)),
             Post: Api(Some(store)),
             Delete: Api(Some(clear)),

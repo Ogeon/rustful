@@ -76,7 +76,7 @@ fn main() {
     println!("Append ?jsonp=someFunction to get a JSONP response.");
     println!("Run this example with the environment variable 'RUST_LOG' set to 'debug' to see the debug prints.");
 
-    let mut router = DefaultRouter::new();
+    let mut router = DefaultRouter::<Handler>::new();
     insert_routes!{
         &mut router => {
             "print" => {

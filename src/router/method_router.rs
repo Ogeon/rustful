@@ -1,6 +1,6 @@
 use std::collections::hash_map::{HashMap, Entry};
 
-use router::{Insert, InsertState};
+use router::{Insert, InsertExt, InsertState};
 use context::hypermedia::Link;
 use Method;
 use handler::{HandleRequest, Environment};
@@ -15,19 +15,19 @@ pub struct MethodRouter<T> {
     items: HashMap<Method, T>,
 }
 
-impl<T: Insert> Insert for MethodRouter<T> {
-    type Handler = T::Handler;
-
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> MethodRouter<T> {
+impl<T: Insert<H>, H> Insert<H> for MethodRouter<T> {
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> MethodRouter<T> {
         let mut router = MethodRouter::default();
         router.insert(method, route, item);
         router
     }
 
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler) {
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H) {
         self.items.insert(method.clone(), T::build(method, route, item));
     }
+}
 
+impl<T: InsertExt> InsertExt for MethodRouter<T> {
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: MethodRouter<T>) {
         let route = route.into();
         for (method, mut item) in router.items {

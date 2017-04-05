@@ -33,7 +33,7 @@ fn main() {
 
         //Create a DefaultRouter and fill it with handlers.
         handlers: insert_routes!{
-            DefaultRouter::new() => {
+            DefaultRouter::<fn(Context, Response)>::new() => {
                 //Handle requests for root...
                 Get: say_hello,
 

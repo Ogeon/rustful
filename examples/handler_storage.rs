@@ -33,7 +33,7 @@ fn main() {
     let value = Arc::new(RwLock::new(0));
 
     let router = insert_routes!{
-        DefaultRouter::new() => {
+        DefaultRouter::<Api>::new() => {
             Get: Api::Counter {
                 page: page.clone(),
                 value: value.clone(),

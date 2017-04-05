@@ -1,11 +1,12 @@
 //!Request handlers.
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use context::Context;
 use context::hypermedia::Link;
 use response::{Response, SendResponse};
-use std::sync::Arc;
-use router::RouteState;
+use router::{Insert, RouteState, InsertState};
+use Method;
 
 ///A trait for request handlers.
 pub trait Handler: Send + Sync + 'static {
@@ -122,18 +123,33 @@ impl<H: HandleRequest> HandleRequest for Option<H> {
 ///type Router<T> = DefaultRouter<ContentFactory<T>>;
 ///
 ///let mut router = Router::new();
-///router.insert(Get, "*", (|context: Context| format!("Visiting {}", context.uri_path)).into());
+///router.insert(Get, "*", |context: Context| format!("Visiting {}", context.uri_path));
 ///
 ///let server = Server {
 ///    handlers: router,
 ///    ..Server::default()
 ///};
 ///```
-pub struct ContentFactory<T: CreateContent>(T);
+pub struct ContentFactory<T: CreateContent>(pub T);
 
-impl<T: CreateContent> Handler for ContentFactory<T> {
-    fn handle(&self, context: Context, response: Response) {
-        response.send(self.0.create_content(context));
+impl<T: CreateContent> HandleRequest for ContentFactory<T> {
+    fn handle_request<'a, 'b, 'l, 'g>(&self, environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
+        environment.response.send(self.0.create_content(environment.context));
+        Ok(())
+    }
+
+    fn hyperlinks<'a>(&'a self, base_link: Link<'a>) -> Vec<Link<'a>> {
+        vec![base_link]
+    }
+}
+
+impl<H: Into<ContentFactory<T>>, T: CreateContent> Insert<H> for ContentFactory<T> {
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> ContentFactory<T> {
+        item.into()
+    }
+
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, _method: Method, _route: R, item: H) {
+        *self = item.into();
     }
 }
 

@@ -4,7 +4,7 @@ use std::iter::{Iterator, IntoIterator, FromIterator};
 use std::ops::Deref;
 use hyper::method::Method;
 
-use router::{Insert, Route, MethodRouter, InsertState, Variables};
+use router::{Insert, InsertExt, Route, MethodRouter, InsertState, Variables};
 use context::{MaybeUtf8Owned, MaybeUtf8Slice};
 use context::hypermedia::{Link, LinkSegment, SegmentType};
 use handler::Handler;
@@ -50,10 +50,7 @@ impl<T: Default> TreeRouter<T> {
     pub fn new() -> TreeRouter<T> {
         TreeRouter::default()
     }
-}
 
-
-impl<T: Insert + Default> TreeRouter<T> {
     //Tries to find a router matching the key or inserts a new one if none exists.
     fn find_or_insert_router<'a>(&'a mut self, key: &[u8]) -> &'a mut TreeRouter<T> {
         if let Some(&b'*') = key.get(0) {
@@ -73,7 +70,9 @@ impl<T: Insert + Default> TreeRouter<T> {
             }
         }
     }
+}
 
+impl<T: InsertExt + Default> TreeRouter<T> {
     //Mergers this TreeRouter with an other TreeRouter.
     fn merge_router<'a, I: Iterator<Item = &'a [u8]> + Clone>(&mut self, state: InsertState<'a, I>, router: TreeRouter<T>) {
         self.item.insert_router(state.clone(), router.item);
@@ -108,16 +107,14 @@ impl<T: Insert + Default> TreeRouter<T> {
     }
 }
 
-impl<T: Insert + Default> Insert for TreeRouter<T> {
-    type Handler = T::Handler;
-
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> TreeRouter<T> {
+impl<T: Insert<H> + Default, H> Insert<H> for TreeRouter<T> {
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> TreeRouter<T> {
         let mut router = TreeRouter::default();
         router.insert(method, route, item);
         router
     }
 
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler) {
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H) {
         let mut route = route.into();
         let mut endpoint = (&mut route).fold(self, |endpoint, segment| {
             endpoint.find_or_insert_router(segment)
@@ -125,7 +122,9 @@ impl<T: Insert + Default> Insert for TreeRouter<T> {
 
         endpoint.item.insert(method, route, item);
     }
+}
 
+impl<T: InsertExt + Default> InsertExt for TreeRouter<T> {
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: TreeRouter<T>) {
         let mut route = route.into();
         let mut endpoint = (&mut route).fold(self, |endpoint, segment| {
@@ -396,7 +395,7 @@ mod test {
     use std::collections::HashMap;
 
     use super::TreeRouter;
-    use router::{Insert, MethodRouter, Variables};
+    use router::{Insert, InsertExt, MethodRouter, Variables};
     #[cfg(feature = "benchmark")]
     use test::Bencher;
     use context::Context;

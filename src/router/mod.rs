@@ -13,20 +13,20 @@
 //!use rustful::DefaultRouter;
 //!# use rustful::{Handler, Context, Response};
 //!
-//!# struct DummyHandler;
-//!# impl Handler for DummyHandler {
+//!# struct ExampleHandler;
+//!# impl Handler for ExampleHandler {
 //!#     fn handle(&self, _: Context, _: Response){}
 //!# }
 //!# fn main() {
-//!# let about_us = DummyHandler;
-//!# let show_user = DummyHandler;
-//!# let list_users = DummyHandler;
-//!# let show_product = DummyHandler;
-//!# let list_products = DummyHandler;
-//!# let show_error = DummyHandler;
-//!# let show_welcome = DummyHandler;
+//!# let about_us = ExampleHandler;
+//!# let show_user = ExampleHandler;
+//!# let list_users = ExampleHandler;
+//!# let show_product = ExampleHandler;
+//!# let list_products = ExampleHandler;
+//!# let show_error = ExampleHandler;
+//!# let show_welcome = ExampleHandler;
 //!let router = insert_routes! {
-//!    DefaultRouter::new() => {
+//!    DefaultRouter::<ExampleHandler>::new() => {
 //!        Get: show_welcome,
 //!        "about" => Get: about_us,
 //!        "users" => {
@@ -56,19 +56,19 @@
 //!use rustful::{Insert, DefaultRouter};
 //!# use rustful::{Handler, Context, Response};
 //!
-//!# struct DummyHandler;
-//!# impl Handler for DummyHandler {
+//!# struct ExampleHandler;
+//!# impl Handler for ExampleHandler {
 //!#     fn handle(&self, _: Context, _: Response){}
 //!# }
 //!# fn main() {
-//!# let about_us = DummyHandler;
-//!# let show_user = DummyHandler;
-//!# let list_users = DummyHandler;
-//!# let show_product = DummyHandler;
-//!# let list_products = DummyHandler;
-//!# let show_error = DummyHandler;
-//!# let show_welcome = DummyHandler;
-//!let mut router = DefaultRouter::new();
+//!# let about_us = ExampleHandler;
+//!# let show_user = ExampleHandler;
+//!# let list_users = ExampleHandler;
+//!# let show_product = ExampleHandler;
+//!# let list_products = ExampleHandler;
+//!# let show_error = ExampleHandler;
+//!# let show_welcome = ExampleHandler;
+//!let mut router = DefaultRouter::<ExampleHandler>::new();
 //!
 //!router.insert(Get, "/", show_welcome);
 //!router.insert(Get, "/about", about_us);
@@ -142,9 +142,9 @@
 //!use rustful::router::{Variables, TreeRouter};
 //!
 //!let my_router = TreeRouter::<Option<Variables<_>>>::default();
-//!# let _r: TreeRouter<Option<Variables<DummyHandler>>> = my_router;
-//!# struct DummyHandler;
-//!# impl rustful::Handler for DummyHandler {
+//!# let _r: TreeRouter<Option<Variables<ExampleHandler>>> = my_router;
+//!# struct ExampleHandler;
+//!# impl rustful::Handler for ExampleHandler {
 //!#     fn handle(&self, _: rustful::Context, _: rustful::Response){}
 //!# }
 //!```
@@ -156,9 +156,9 @@
 //!use rustful::router::TreeRouter;
 //!
 //!let my_router = TreeRouter::<Option<_>>::default();
-//!# let _r: TreeRouter<Option<DummyHandler>> = my_router;
-//!# struct DummyHandler;
-//!# impl rustful::Handler for DummyHandler {
+//!# let _r: TreeRouter<Option<ExampleHandler>> = my_router;
+//!# struct ExampleHandler;
+//!# impl rustful::Handler for ExampleHandler {
 //!#     fn handle(&self, _: rustful::Context, _: rustful::Response){}
 //!# }
 //!```
@@ -177,7 +177,7 @@ use std::ops::Deref;
 use std::marker::PhantomData;
 use hyper::method::Method;
 
-use handler::{Handler, HandleRequest};
+use handler::Handler;
 use context::MaybeUtf8Owned;
 
 pub use self::tree_router::TreeRouter;
@@ -198,18 +198,18 @@ pub type DefaultRouter<T> = TreeRouter<MethodRouter<Variables<T>>>;
 ///
 ///A router has to implement this trait to be compatible with the
 ///`insert_routes!` macro.
-pub trait Insert {
-    ///The request handler type that is stored within this router.
-    type Handler: HandleRequest;
-
+pub trait Insert<H> {
     ///Build a new router from a route. The router may choose to ignore
     ///both `method` and `route`, depending on its implementation.
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> Self;
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> Self;
 
     ///Insert a new route into the router. The router may choose to ignore
     ///both `method` and `route`, depending on its implementation.
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler);
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H);
+}
 
+///Additional insertion and modification methods.
+pub trait InsertExt {
     ///Insert an other router at a path. The content of the other router will
     ///be merged with this one and conflicting content will be overwritten.
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: Self);
@@ -223,9 +223,7 @@ pub trait Insert {
     }
 }
 
-impl<H: Handler> Insert for H {
-    type Handler = H;
-
+impl<H: Handler> Insert<H> for H {
     fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> H {
         item
     }
@@ -233,7 +231,9 @@ impl<H: Handler> Insert for H {
     fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, _method: Method, _route: R, item: H) {
         *self = item;
     }
+}
 
+impl<H: Handler> InsertExt for H {
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R, router: H) {
         *self = router;
     }
@@ -241,20 +241,20 @@ impl<H: Handler> Insert for H {
     fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R) {}
 }
 
-impl<T: Insert> Insert for Option<T> {
-    type Handler = T::Handler;
-
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> Option<T> {
+impl<T: Insert<H>, H> Insert<H> for Option<T> {
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> Option<T> {
         Some(T::build(method, route, item))
     }
 
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler) {
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H) {
         match *self {
             Some(ref mut r) => r.insert(method, route, item),
             ref mut s @ None => *s = Some(T::build(method, route, item)),
         }
     }
+}
 
+impl<T: InsertExt> InsertExt for Option<T> {
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: Option<T>) {
         if let Some(mut other) = router {
             match *self {
