@@ -178,17 +178,21 @@ use context::Context;
 use context::hypermedia::Link;
 use response::{Response, SendResponse};
 use self::routing::{Insert, RouteState, InsertState};
-use Method;
+use {Method, StatusCode};
 
 pub use self::tree_router::TreeRouter;
 pub use self::method_router::MethodRouter;
 pub use self::variables::Variables;
+pub use self::or_else::OrElse;
+pub use self::status_router::StatusRouter;
 
 pub mod routing;
 
 mod tree_router;
 mod method_router;
 mod variables;
+mod or_else;
+mod status_router;
 
 ///Alias for `TreeRouter<MethodRouter<Variables<T>>>`.
 ///
@@ -283,10 +287,11 @@ impl<H: Handler> HandleRequest for H {
 }
 
 impl<H: HandleRequest> HandleRequest for Option<H> {
-    fn handle_request<'a, 'b, 'l, 'g>(&self, environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
+    fn handle_request<'a, 'b, 'l, 'g>(&self, mut environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
         if let Some(ref handler) = *self {
             handler.handle_request(environment)
         } else {
+            environment.response.set_status(StatusCode::NotFound);
             Err(environment)
         }
     }

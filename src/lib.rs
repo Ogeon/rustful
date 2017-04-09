@@ -101,6 +101,8 @@ pub use self::handler::Handler;
 pub use self::handler::DefaultRouter;
 pub use self::handler::ContentFactory;
 pub use self::handler::CreateContent;
+pub use self::handler::OrElse;
+pub use self::handler::StatusRouter;
 pub use self::handler::routing::Insert;
 
 mod utils;

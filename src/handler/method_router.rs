@@ -1,7 +1,7 @@
 use std::collections::hash_map::{HashMap, Entry};
 
+use {Method, StatusCode};
 use context::hypermedia::Link;
-use Method;
 use handler::{HandleRequest, Environment};
 use handler::routing::{Insert, InsertExt, InsertState};
 
@@ -53,10 +53,11 @@ impl<T: InsertExt> InsertExt for MethodRouter<T> {
 }
 
 impl<T: HandleRequest> HandleRequest for MethodRouter<T> {
-    fn handle_request<'a, 'b, 'l, 'g>(&self, environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
+    fn handle_request<'a, 'b, 'l, 'g>(&self, mut environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
         if let Some(item) = self.items.get(&environment.context.method) {
             item.handle_request(environment)
         } else {
+            environment.response.set_status(StatusCode::MethodNotAllowed);
             Err(environment)
         }
     }

@@ -180,11 +180,10 @@ impl<T: HandleRequest> HandleRequest for TreeRouter<T> {
                     let (new_environment, old_hyperlinks) = environment.replace_hyperlinks(vec![]);
                     if let Err(returned_environment) = current.item.handle_request(new_environment) {
                         environment = returned_environment.replace_hyperlinks(old_hyperlinks).0;
+                        return Err(environment);
                     } else {
                         return Ok(());
-                    };
-
-                    continue;
+                    }
                 }
 
                 matches.push((&current.item, environment.route_state.clone()));
@@ -273,7 +272,9 @@ impl<T: HandleRequest> HandleRequest for TreeRouter<T> {
             }
         }
 
-        if self.find_hyperlinks {
+        if matches.is_empty() {
+            environment.response.set_status(StatusCode::NotFound);
+        } else if self.find_hyperlinks {
             hyperlinks.sort();
             hyperlinks.dedup();
             let (mut new_environment, old_hyperlinks) = environment.replace_hyperlinks(hyperlinks);
@@ -290,9 +291,6 @@ impl<T: HandleRequest> HandleRequest for TreeRouter<T> {
             environment = new_environment.replace_hyperlinks(old_hyperlinks).0;
         }
 
-        if environment.response.status().is_success() {
-            environment.response.set_status(StatusCode::NotFound);
-        }
 
         Err(environment)
     }
@@ -475,7 +473,11 @@ mod test {
 
                     handler_state.reset();
                 } else {
-                    assert!(result.is_err());
+                    if let Err(environment) = result {
+                        assert!(environment.response.status().is_client_error());
+                    } else {
+                        panic!("expected the environment to be returned");
+                    }
                 }
             }
         );
