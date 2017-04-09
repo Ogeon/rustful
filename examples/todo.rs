@@ -18,7 +18,8 @@ use rustful::{
     Context,
     Response,
     Handler,
-    DefaultRouter
+    DefaultRouter,
+    SendResponse
 };
 use rustful::header::{
     ContentType,
@@ -28,7 +29,6 @@ use rustful::header::{
     Host
 };
 use rustful::StatusCode;
-use rustful::response::SendResponse;
 
 fn main() {
     env_logger::init().unwrap();

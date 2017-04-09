@@ -89,7 +89,7 @@
 macro_rules! insert_routes {
     ($router:expr => {$($paths:tt)+}) => {
         {
-            use $crate::router::Insert;
+            use $crate::handler::routing::Insert;
             let mut router = $router;
             __rustful_insert_internal!(router, [], $($paths)+);
             router

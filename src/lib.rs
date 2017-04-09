@@ -96,9 +96,12 @@ pub use self::server::Server;
 pub use self::context::Context;
 pub use self::response::Response;
 pub use self::response::Error;
+pub use self::response::SendResponse;
 pub use self::handler::Handler;
-pub use self::router::Insert;
-pub use self::router::DefaultRouter;
+pub use self::handler::DefaultRouter;
+pub use self::handler::ContentFactory;
+pub use self::handler::CreateContent;
+pub use self::handler::routing::Insert;
 
 mod utils;
 #[macro_use]
@@ -106,7 +109,6 @@ mod utils;
 pub mod macros;
 
 pub mod server;
-pub mod router;
 pub mod handler;
 pub mod context;
 pub mod response;

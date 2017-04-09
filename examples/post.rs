@@ -10,10 +10,8 @@ use std::error::Error as ErrorTrait;
 extern crate log;
 extern crate env_logger;
 
-use rustful::{Server, Context, Response};
+use rustful::{Server, Context, Response, ContentFactory, SendResponse};
 use rustful::StatusCode::{InternalServerError, BadRequest};
-use rustful::handler::ContentFactory;
-use rustful::response::SendResponse;
 
 fn say_hello(mut context: Context) -> Result<String, Error> {
     let body = context.body.read_query_body().map_err(|_| Error::CouldNotReadBody)?;

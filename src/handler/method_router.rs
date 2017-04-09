@@ -1,9 +1,9 @@
 use std::collections::hash_map::{HashMap, Entry};
 
-use router::{Insert, InsertExt, InsertState};
 use context::hypermedia::Link;
 use Method;
 use handler::{HandleRequest, Environment};
+use handler::routing::{Insert, InsertExt, InsertState};
 
 ///A router that selects an item from an HTTP method.
 ///

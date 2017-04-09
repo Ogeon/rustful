@@ -4,11 +4,11 @@ use std::iter::{Iterator, IntoIterator, FromIterator};
 use std::ops::Deref;
 use hyper::method::Method;
 
-use router::{Insert, InsertExt, Route, MethodRouter, InsertState, Variables};
 use context::{MaybeUtf8Owned, MaybeUtf8Slice};
 use context::hypermedia::{Link, LinkSegment, SegmentType};
 use handler::Handler;
-use handler::{HandleRequest, Environment};
+use handler::{HandleRequest, Environment, MethodRouter, Variables};
+use handler::routing::{Insert, InsertExt, Route, InsertState};
 use StatusCode;
 
 use self::Branch::{Static, Variable, Wildcard};
@@ -337,7 +337,7 @@ impl<T: Handler + 'static, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> Fr
     ///```
     ///extern crate rustful;
     ///use rustful::Method::Get;
-    ///use rustful::router::TreeRouter;
+    ///use rustful::handler::TreeRouter;
     ///# use rustful::{Handler, Context, Response};
     ///
     ///# struct DummyHandler;
@@ -395,14 +395,14 @@ mod test {
     use std::collections::HashMap;
 
     use super::TreeRouter;
-    use router::{Insert, InsertExt, MethodRouter, Variables};
     #[cfg(feature = "benchmark")]
     use test::Bencher;
     use context::Context;
     use context::{MaybeUtf8Slice, Parameters};
     use context::hypermedia::{LinkSegment, SegmentType};
     use response::Response;
-    use handler::Handler;
+    use handler::{Handler, MethodRouter, Variables};
+    use handler::routing::{Insert, InsertExt};
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
     use Method;
 
