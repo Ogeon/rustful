@@ -9,7 +9,7 @@ rust:
   - nightly
 os:
   - linux
-  - osx
+#  - osx
 branches:
   only:
     - master
