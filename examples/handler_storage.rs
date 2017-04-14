@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate rustful;
 
 use std::io::{self, Read};
@@ -32,26 +31,25 @@ fn main() {
     //The shared counter state
     let value = Arc::new(RwLock::new(0));
 
-    let router = insert_routes!{
-        DefaultRouter::<Api>::new() => {
-            Get: Api::Counter {
-                page: page.clone(),
-                value: value.clone(),
-                operation: None
-            },
-            "add" => Get: Api::Counter {
-                page: page.clone(),
-                value: value.clone(),
-                operation: Some(add)
-            },
-            "sub" => Get: Api::Counter {
-                page: page.clone(),
-                value: value.clone(),
-                operation: Some(sub)
-            },
-            "res/*file" => Get: Api::File
-        }
-    };
+    let mut router = DefaultRouter::<Api>::new();
+    router.build().many(|mut node| {
+        node.then().on_get(Api::Counter {
+            page: page.clone(),
+            value: value.clone(),
+            operation: None
+        });
+        node.path("add").then().on_get(Api::Counter {
+            page: page.clone(),
+            value: value.clone(),
+            operation: Some(add)
+        });
+        node.path("sub").then().on_get(Api::Counter {
+            page: page.clone(),
+            value: value.clone(),
+            operation: Some(sub)
+        });
+        node.path("res/*file").then().on_get(Api::File);
+    });
 
     let server_result = Server {
         host: 8080.into(),

@@ -55,7 +55,6 @@ Olivia) to try it.
 extern crate log;
 extern crate env_logger;
 
-#[macro_use]
 extern crate rustful;
 
 use std::error::Error;
@@ -76,22 +75,23 @@ fn say_hello(context: Context, response: Response) {
 fn main() {
     env_logger::init().unwrap();
 
+    //Create a DefaultRouter and fill it with handlers.
+    let mut router = DefaultRouter::<fn(Context, Response)>::new();
+    router.build().many(|mut node| {
+        //Handle requests for root...
+        node.then().on_get(say_hello);
+
+        //...and one level below.
+        //`:person` is a path variable and it will be accessible in the handler.
+        node.path(":person").then().on_get(say_hello);
+    });
+
     //Build and run the server.
     let server_result = Server {
+        handlers: router,
+
         //Turn a port number into an IPV4 host address (0.0.0.0:8080 in this case).
         host: 8080.into(),
-
-        //Create a DefaultRouter and fill it with handlers.
-        handlers: insert_routes!{
-            DefaultRouter::<fn(Context, Response)>::new() => {
-                //Handle requests for root...
-                Get: say_hello,
-
-                //...and one level below.
-                //`:person` is a path variable and it will be accessible in the handler.
-                ":person" => Get: say_hello
-            }
-        },
 
         //Use default values for everything else.
         ..Server::default()

@@ -1,15 +1,13 @@
-//!Request handlers.
+//!Request handlers and routers.
 //!
 //!# Building Routers
 //!
 //!Rustful provides a tree structured all-round router called `DefaultRouter`,
 //!but any other type of router can be used, as long as it implements the
-//![`HandleRequest`][handle_request] trait. Implementing the
-//![`Insert`][insert] trait will also make it possible to initialize it using
-//!the [`insert_routes!`][insert_routes] macro:
+//![`HandleRequest`][handle_request] trait. Implementing the [`Build`][build]
+//!trait will also make it compatible with router builders:
 //!
 //!```
-//!#[macro_use]
 //!extern crate rustful;
 //!use rustful::DefaultRouter;
 //!# use rustful::{Handler, Context, Response};
@@ -26,69 +24,30 @@
 //!# let list_products = ExampleHandler;
 //!# let show_error = ExampleHandler;
 //!# let show_welcome = ExampleHandler;
-//!let router = insert_routes! {
-//!    DefaultRouter::<ExampleHandler>::new() => {
-//!        Get: show_welcome,
-//!        "about" => Get: about_us,
-//!        "users" => {
-//!            Get: list_users,
-//!            ":id" => Get: show_user
-//!        },
-//!        "products" => {
-//!            Get: list_products,
-//!            ":id" => Get: show_product
-//!        },
-//!        "*" => Get: show_error
-//!    }
-//!};
-//!# }
-//!```
-//!
-//!This macro creates the same structure as the example below, but it allows
-//!tree structures to be defined without the need to write the same paths
-//!multiple times. This can be useful to lower the risk of typing errors,
-//!among other things.
-//!
-//!Routes may also be added using the insert method, like this:
-//!
-//!```
-//!extern crate rustful;
-//!use rustful::Method::Get;
-//!use rustful::{Insert, DefaultRouter};
-//!# use rustful::{Handler, Context, Response};
-//!
-//!# struct ExampleHandler;
-//!# impl Handler for ExampleHandler {
-//!#     fn handle(&self, _: Context, _: Response){}
-//!# }
-//!# fn main() {
-//!# let about_us = ExampleHandler;
-//!# let show_user = ExampleHandler;
-//!# let list_users = ExampleHandler;
-//!# let show_product = ExampleHandler;
-//!# let list_products = ExampleHandler;
-//!# let show_error = ExampleHandler;
-//!# let show_welcome = ExampleHandler;
 //!let mut router = DefaultRouter::<ExampleHandler>::new();
-//!
-//!router.insert(Get, "/", show_welcome);
-//!router.insert(Get, "/about", about_us);
-//!router.insert(Get, "/users", list_users);
-//!router.insert(Get, "/users/:id", show_user);
-//!router.insert(Get, "/products", list_products);
-//!router.insert(Get, "/products/:id", show_product);
-//!router.insert(Get, "/*", show_error);
+//!router.build().many(|mut node| {
+//!    node.then().on_get(show_welcome);
+//!    node.path("about").then().on_get(about_us);
+//!    node.path("users").many(|mut node| {
+//!        node.then().on_get(list_users);
+//!        node.path(":id").then().on_get(show_user);
+//!    });
+//!    node.path("products").many(|mut node| {
+//!        node.then().on_get(list_products);
+//!        node.path(":id").then().on_get(show_product);
+//!    });
+//!    node.path("*").then().on_get(show_error);
+//!});
 //!# }
 //!```
-//!
-//![insert_routes]: ../macro.insert_routes!.html
 //!
 //!#Variables
 //!
-//!Routes may contain variables, that are useful for capturing parts of the
-//!requested path as input to the handler. The syntax for a variable is simply
-//!an indicator character (`:` or `*`) followed by a label. Variables without
-//!labels are also valid, but their values will be discarded.
+//!Routes in the [`TreeRouter`][tree_router] may contain variables, that are
+//!useful for capturing parts of the requested path as input to the handler.
+//!The syntax for a variable is simply an indicator character (`:` or `*`)
+//!followed by a label. Variables without labels are also valid, but their
+//!values will be discarded.
 //!
 //!##Variable Segments (:label)
 //!
@@ -161,24 +120,23 @@
 //!```
 //!
 //!You can simply recombine and reorder the router types however you want, or
-//!why not make your own router? Just implement
-//![`HandleRequest`][handle_request] and the optional [`Insert`][insert]
-//!trait.
+//!why not make your own router?
 //!
 //![tree_router]: struct.TreeRouter.html
 //![method_router]: struct.MethodRouter.html
 //![variables]: struct.Variables.html
 //![handle_request]: trait.HandleRequest.html
-//![insert]: routing/trait.Insert.html
+//![build]: trait.Build.html
 
 use std::borrow::Cow;
 use std::sync::Arc;
+use anymap;
 
-use context::Context;
+use context::{Context, MaybeUtf8Owned};
 use context::hypermedia::Link;
 use response::{Response, SendResponse};
-use self::routing::{Insert, RouteState, InsertState};
-use {Method, StatusCode};
+use self::routing::RouteState;
+use StatusCode;
 
 pub use self::tree_router::TreeRouter;
 pub use self::method_router::MethodRouter;
@@ -188,11 +146,11 @@ pub use self::status_router::StatusRouter;
 
 pub mod routing;
 
-mod tree_router;
-mod method_router;
+pub mod tree_router;
+pub mod method_router;
+pub mod or_else;
+pub mod status_router;
 mod variables;
-mod or_else;
-mod status_router;
 
 ///Alias for `TreeRouter<MethodRouter<Variables<T>>>`.
 ///
@@ -308,13 +266,13 @@ impl<H: HandleRequest> HandleRequest for Option<H> {
 ///An adapter for simple content creation handlers.
 ///
 ///```
-///use rustful::{DefaultRouter, Context, Server, Insert, ContentFactory};
+///use rustful::{DefaultRouter, Context, Server, ContentFactory};
 ///use rustful::Method::Get;
 ///
 ///type Router<T> = DefaultRouter<ContentFactory<T>>;
 ///
 ///let mut router = Router::new();
-///router.insert(Get, "*", |context: Context| format!("Visiting {}", context.uri_path));
+///router.build().path("*").then().on_get(|context: Context| format!("Visiting {}", context.uri_path));
 ///
 ///let server = Server {
 ///    handlers: router,
@@ -322,6 +280,23 @@ impl<H: HandleRequest> HandleRequest for Option<H> {
 ///};
 ///```
 pub struct ContentFactory<T: CreateContent>(pub T);
+
+impl<T: CreateContent, H: Into<ContentFactory<T>>> FromHandler<H> for ContentFactory<T> {
+    fn from_handler(_context: BuilderContext, handler: H) -> ContentFactory<T> {
+        handler.into()
+    }
+}
+
+impl<T: CreateContent> ApplyContext for ContentFactory<T> {
+    fn apply_context(&mut self, _context: BuilderContext) {}
+    fn prepend_context(&mut self, _context: BuilderContext) {}
+}
+
+impl<T: CreateContent> Merge for ContentFactory<T> {
+    fn merge(&mut self, other: ContentFactory<T>) {
+        *self = other;
+    }
+}
 
 impl<T: CreateContent> HandleRequest for ContentFactory<T> {
     fn handle_request<'a, 'b, 'l, 'g>(&self, environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
@@ -331,16 +306,6 @@ impl<T: CreateContent> HandleRequest for ContentFactory<T> {
 
     fn hyperlinks<'a>(&'a self, base_link: Link<'a>) -> Vec<Link<'a>> {
         vec![base_link]
-    }
-}
-
-impl<H: Into<ContentFactory<T>>, T: CreateContent> Insert<H> for ContentFactory<T> {
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> ContentFactory<T> {
-        item.into()
-    }
-
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, _method: Method, _route: R, item: H) {
-        *self = item.into();
     }
 }
 
@@ -373,3 +338,85 @@ impl<T, R> CreateContent for T where
         self(context)
     }
 }
+
+/// A collection of information that can be passed to child handlers while
+/// building a handler.
+pub type BuilderContext = anymap::Map<anymap::any::CloneAny>;
+
+/// A trait for handlers that can be build, using a chainable API.
+pub trait Build<'a> {
+    /// The type that provides the builder API.
+    type Builder: 'a;
+
+    /// Get the builder type for this type, and prepare it with a context.
+    fn get_builder(&'a mut self, context: BuilderContext) -> Self::Builder;
+}
+
+/// Create a handler from another handler.
+pub trait FromHandler<T> {
+    /// Create a handler from another handler and a `BuilderContext`.
+    fn from_handler(context: BuilderContext, handler: T) -> Self;
+}
+
+impl<T: Handler> FromHandler<T> for T {
+    fn from_handler(_context: BuilderContext, handler: T) -> T {
+        handler
+    }
+}
+
+impl<T: FromHandler<H>, H> FromHandler<H> for Option<T> {
+    fn from_handler(context: BuilderContext, handler: H) -> Option<T> {
+        Some(T::from_handler(context, handler))
+    }
+}
+
+/// Apply a `BuilderContext` in various ways.
+pub trait ApplyContext {
+    /// Set properties, based on a given context.
+    fn apply_context(&mut self, context: BuilderContext);
+
+    /// Prepend existing properties, based on a given context.
+    fn prepend_context(&mut self, context: BuilderContext);
+}
+
+impl<T: Handler> ApplyContext for T {
+    fn apply_context(&mut self, _context: BuilderContext) {}
+    fn prepend_context(&mut self, _context: BuilderContext) {}
+}
+
+impl<T: ApplyContext> ApplyContext for Option<T> {
+    fn apply_context(&mut self, context: BuilderContext) {
+        self.as_mut().map(|handler| handler.apply_context(context));
+    }
+    fn prepend_context(&mut self, context: BuilderContext) {
+        self.as_mut().map(|handler| handler.prepend_context(context));
+    }
+}
+
+/// A trait for handlers that can be merged.
+pub trait Merge {
+    /// Combine this handler with another, overwriting conflicting properties.
+    fn merge(&mut self, other: Self);
+}
+
+impl<T: Handler> Merge for T {
+    fn merge(&mut self, other: T) {
+        *self = other;
+    }
+}
+
+impl<T: Merge> Merge for Option<T> {
+    fn merge(&mut self, other: Option<T>) {
+        if let &mut Some(ref mut this_handler) = self {
+            if let Some(other_handler) = other {
+                this_handler.merge(other_handler);
+            }
+        } else {
+            *self = other;
+        }
+    }
+}
+
+///Context type for storing path variable names.
+#[derive(Clone, Debug, Default)]
+pub struct VariableNames(pub Vec<MaybeUtf8Owned>);

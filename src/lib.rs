@@ -7,13 +7,12 @@
 //!all the necessary settings as fields:
 //!
 //!```no_run
-//!#[macro_use]
 //!extern crate rustful;
 //!use rustful::{Server, Handler, Context, Response, DefaultRouter};
 //!
-//!struct Greeting(&'static str);
+//!struct Phrase(&'static str);
 //!
-//!impl Handler for Greeting {
+//!impl Handler for Phrase {
 //!    fn handle(&self, context: Context, response: Response) {
 //!        //Check if the client accessed /hello/:name or /good_bye/:name
 //!        if let Some(name) = context.variables.get("name") {
@@ -26,21 +25,20 @@
 //!}
 //!
 //!# fn main() {
-//!let my_router = insert_routes!{
-//!    //Create a new DefaultRouter
-//!    DefaultRouter::<Greeting>::new() => {
-//!        //Receive GET requests to /hello and /hello/:name
-//!        "hello" => {
-//!            Get: Greeting("hello"),
-//!            ":name" => Get: Greeting("hello")
-//!        },
-//!        //Receive GET requests to /good_bye and /good_bye/:name
-//!        "good_bye" => {
-//!            Get: Greeting("good bye"),
-//!            ":name" => Get: Greeting("good bye")
-//!        }
-//!    }
-//!};
+//!let mut my_router = DefaultRouter::<Phrase>::new();
+//!my_router.build().many(|mut node| {
+//!    //Receive GET requests to /hello and /hello/:name
+//!    node.path("hello").many(|mut node| {
+//!        node.then().on_get(Phrase("hello"));
+//!        node.path(":name").then().on_get(Phrase("hello"));
+//!    });
+//!
+//!    //Receive GET requests to /good_bye and /good_bye/:name
+//!    node.path("good_bye").many(|mut node| {
+//!        node.then().on_get(Phrase("good bye"));
+//!        node.path(":name").then().on_get(Phrase("good bye"));
+//!    });
+//!});
 //!
 //!Server {
 //!    //Use a closure to handle requests.
@@ -103,7 +101,6 @@ pub use self::handler::ContentFactory;
 pub use self::handler::CreateContent;
 pub use self::handler::OrElse;
 pub use self::handler::StatusRouter;
-pub use self::handler::routing::Insert;
 
 mod utils;
 #[macro_use]

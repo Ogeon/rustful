@@ -1,9 +1,9 @@
-use handler::routing::{Insert, InsertState};
-use context::hypermedia::Link;
-use handler::{HandleRequest, Environment};
-use Method;
+//! A router that selects a secondary handler on error.
 
-/// A router that selects an item from a secondary handler on error.
+use context::hypermedia::Link;
+use handler::{HandleRequest, Environment, Build, BuilderContext, ApplyContext, Merge};
+
+/// A router that selects a secondary handler on error.
 ///
 /// ```
 /// use rustful::{OrElse, Context, Response};
@@ -35,19 +35,56 @@ impl<A, B> OrElse<A, B> {
             secondary: secondary,
         }
     }
+
+    /// Build the router and its children using a chaninable API.
+    ///
+    /// ```
+    /// use rustful::{Context, Response, OrElse};
+    /// use rustful::handler::MethodRouter;
+    ///
+    /// type Inner = MethodRouter<fn(Context, Response)>;
+    ///
+    /// fn get(_context: Context, response: Response) {
+    ///     response.send("A GET request.");
+    /// }
+    ///
+    /// fn post(_context: Context, response: Response) {
+    ///     response.send("A POST request.");
+    /// }
+    ///
+    /// fn or_else(_context: Context, response: Response) {
+    ///     response.send("Hello world!");
+    /// }
+    ///
+    /// let mut router = OrElse::<Inner, _>::with_secondary(or_else as fn(Context, Response));
+    ///
+    /// router.build().primary().many(|mut inner_router|{
+    ///     inner_router.on_get(get as fn(Context, Response));
+    ///     inner_router.on_post(post);
+    /// });
+    /// ```
+    pub fn build(&mut self) -> Builder<A, B> {
+        self.get_builder(BuilderContext::new())
+    }
 }
 
-///Handlers will only be inserted into the primary router.
-impl<A: Insert<H>, B: Default, H> Insert<H> for OrElse<A, B> {
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> OrElse<A, B> {
+impl<A, B: Default> OrElse<A, B> {
+    ///Create a new `OrElse` with a given primary and a default secondary handler.
+    pub fn with_primary(primary: A) -> OrElse<A, B> {
         OrElse {
-            primary: A::build(method, route, item),
-            secondary: B::default()
+            primary: primary,
+            secondary: B::default(),
         }
     }
+}
 
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H) {
-        self.primary.insert(method, route, item);
+impl<A: Default, B> OrElse<A, B> {
+    ///Create a new `OrElse` with a given secondary and a default primary handler.
+    pub fn with_secondary(secondary: B) -> OrElse<A, B> {
+        OrElse {
+            primary: A::default(),
+            secondary: secondary,
+        }
     }
 }
 
@@ -69,5 +106,85 @@ impl<A: Default, B: Default> Default for OrElse<A, B> {
             primary: A::default(),
             secondary: B::default(),
         }
+    }
+}
+
+impl<'a, A: 'a, B: 'a> Build<'a> for OrElse<A, B> {
+    type Builder = Builder<'a, A, B>;
+
+    fn get_builder(&'a mut self, context: BuilderContext) -> Builder<'a, A, B> {
+        Builder {
+            router: self,
+            context: context
+        }
+    }
+}
+
+impl<A: ApplyContext, B: ApplyContext> ApplyContext for OrElse<A, B> {
+    fn apply_context(&mut self, context: BuilderContext) {
+        self.primary.apply_context(context.clone());
+        self.secondary.apply_context(context);
+    }
+
+    fn prepend_context(&mut self, context: BuilderContext) {
+        self.primary.prepend_context(context.clone());
+        self.secondary.prepend_context(context);
+    }
+}
+
+impl<A: Merge, B: Merge> Merge for OrElse<A, B> {
+    fn merge(&mut self, other: OrElse<A, B>) {
+        self.primary.merge(other.primary);
+        self.secondary.merge(other.secondary);
+    }
+}
+
+/// A builder for an `OrElse`.
+pub struct Builder<'a, A: 'a, B: 'a> {
+    router: &'a mut OrElse<A, B>,
+    context: BuilderContext
+}
+
+impl<'a, A, B> Builder<'a, A, B> {
+    /// Perform more than one operation on this builder.
+    ///
+    /// ```
+    /// use rustful::{Context, Response, OrElse};
+    /// use rustful::handler::MethodRouter;
+    ///
+    /// type Inner = MethodRouter<fn(Context, Response)>;
+    ///
+    /// fn get(_context: Context, response: Response) {
+    ///     response.send("A GET request.");
+    /// }
+    ///
+    /// fn post(_context: Context, response: Response) {
+    ///     response.send("A POST request.");
+    /// }
+    ///
+    /// let mut router = OrElse::<Inner, Inner>::default();
+    ///
+    /// router.build().many(|mut router|{
+    ///     router.primary().on_get(get as fn(Context, Response));
+    ///     router.secondary().on_post(post);
+    /// });
+    /// ```
+    pub fn many<F: FnOnce(&mut Builder<'a, A, B>)>(&mut self, build: F) -> &mut Builder<'a, A, B> {
+        build(self);
+        self
+    }
+}
+
+impl<'a: 'b, 'b, A: Build<'b>, B> Builder<'a, A, B> {
+    /// Build the primary router and its children.
+    pub fn primary(&'b mut self) -> A::Builder {
+        self.router.primary.get_builder(self.context.clone())
+    }
+}
+
+impl<'a: 'b, 'b, A, B: Build<'b>> Builder<'a, A, B> {
+    /// Build the secondary router and its children.
+    pub fn secondary(&'b mut self) -> B::Builder {
+        self.router.secondary.get_builder(self.context.clone())
     }
 }

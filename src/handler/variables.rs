@@ -1,8 +1,6 @@
 use context::MaybeUtf8Owned;
 use context::hypermedia::Link;
-use {Method, Handler};
-use handler::{HandleRequest, Environment};
-use handler::routing::{Insert, InsertExt, InsertState};
+use handler::{HandleRequest, Environment, FromHandler, Build, BuilderContext, ApplyContext, Merge, VariableNames};
 
 ///Assigns names to route variables.
 ///
@@ -17,37 +15,47 @@ pub struct Variables<H> {
     variables: Vec<MaybeUtf8Owned>,
 }
 
-impl<T: Insert<H>, H> Insert<H> for Variables<T> {
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> Variables<T> {
-        let mut route = route.into();
+impl<T: FromHandler<H>, H> FromHandler<H> for Variables<T> {
+    fn from_handler(mut context: BuilderContext, handler: H) -> Variables<T> {
         Variables {
-            variables: route.variables(),
-            handler: T::build(method, route, item),
+            variables: context.remove::<VariableNames>().unwrap_or_default().0,
+            handler: T::from_handler(context, handler),
         }
-    }
-
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H) {
-        let mut route = route.into();
-        self.variables = route.variables();
-        self.handler.insert(method, route, item);
     }
 }
 
-impl<H: InsertExt> InsertExt for Variables<H> {
-    fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: Variables<H>) {
-        let mut route = route.into();
-        let mut new_vars = route.variables();
-        new_vars.extend(self.variables.drain(..));
-        self.variables = new_vars;
-        self.handler.insert_router(route, router.handler);
+impl<T: ApplyContext> ApplyContext for Variables<T> {
+    fn apply_context(&mut self, mut context: BuilderContext) {
+        if let Some(VariableNames(variables)) = context.remove() {
+            self.variables = variables;
+        }
+
+        self.handler.apply_context(context);
     }
 
-    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R) {
-        let mut route = route.into();
-        let mut new_vars = route.variables();
-        new_vars.extend(self.variables.drain(..));
-        self.variables = new_vars;
-        self.handler.prefix(route);
+    fn prepend_context(&mut self, mut context: BuilderContext) {
+        if let Some(VariableNames(mut variables)) = context.remove() {
+            ::std::mem::swap(&mut self.variables, &mut variables);
+            self.variables.extend(variables);
+        }
+
+        self.handler.prepend_context(context);
+    }
+}
+
+impl<T: Merge> Merge for Variables<T> {
+    fn merge(&mut self, other: Variables<T>) {
+        self.variables = other.variables;
+        self.handler.merge(other.handler);
+    }
+}
+
+impl<'a, H: Build<'a>> Build<'a> for Variables<H> {
+    type Builder = H::Builder;
+
+    fn get_builder(&'a mut self, mut context: BuilderContext) -> Self::Builder {
+        context.remove::<VariableNames>();
+        self.handler.get_builder(context)
     }
 }
 
@@ -62,7 +70,7 @@ impl<H: HandleRequest> HandleRequest for Variables<H> {
     }
 }
 
-impl<H: Handler + Default> Default for Variables<H> {
+impl<H: Default> Default for Variables<H> {
     fn default() -> Variables<H> {
         Variables {
             handler: H::default(),

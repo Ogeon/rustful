@@ -1,14 +1,15 @@
+//! A tree shaped router that selects handlers using paths.
+
 use std::collections::HashMap;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::iter::{Iterator, IntoIterator, FromIterator};
-use std::ops::Deref;
+use std::borrow::Cow;
 use hyper::method::Method;
 
 use context::{MaybeUtf8Owned, MaybeUtf8Slice};
 use context::hypermedia::{Link, LinkSegment, SegmentType};
-use handler::Handler;
-use handler::{HandleRequest, Environment, MethodRouter, Variables};
-use handler::routing::{Insert, InsertExt, Route, InsertState};
+use handler::{HandleRequest, Environment, MethodRouter, Variables, Build, FromHandler, ApplyContext, Merge, BuilderContext, VariableNames};
+use handler::routing::Route;
 use StatusCode;
 
 use self::Branch::{Static, Variable, Wildcard};
@@ -20,148 +21,139 @@ enum Branch {
     Wildcard
 }
 
-///A tree shaped router that selects handlers using paths.
+/// A tree shaped router that selects handlers using paths.
 ///
-///Each tree node stores an other router of type `T`, which has to implement
-///`Default` to allow "empty" nodes, and a number of child references. The
-///requested path must always be exhausted before sub-routers are searched, so
-///there is no point in storing other path based routers in a `TreeRouter`.
+/// Each tree node stores an other router of type `T`, which has to implement
+/// `Default` to allow "empty" nodes, and a number of child references. The
+/// requested path must always be exhausted before sub-routers are searched, so
+/// there is no point in storing other path based routers in a `TreeRouter`.
 ///
-///The `TreeRouter` has support for shallow hyperlinks to children, siblings,
-///cousins, and so forth. The use of variable sequences complicates this
-///process and may cause confusing results in certain situations. The
-///hyperlinks may or may not point to a handler.
+/// The `TreeRouter` has support for shallow hyperlinks to children, siblings,
+/// cousins, and so forth. The use of variable sequences complicates this
+/// process and may cause confusing results in certain situations. The
+/// hyperlinks may or may not point to a handler.
 ///
-///Hyperlinks has to be activated by setting `find_hyperlinks` to  `true`.
-
+/// Hyperlinks has to be activated by setting `find_hyperlinks` to  `true`.
 #[derive(Clone)]
 pub struct TreeRouter<T> {
     item: T,
     static_routes: HashMap<MaybeUtf8Owned, TreeRouter<T>>,
     variable_route: Option<Box<TreeRouter<T>>>,
     wildcard_route: Option<Box<TreeRouter<T>>>,
-    ///Should the router search for hyperlinks? Setting this to `true` may
-    ///slow down endpoint search, but enables hyperlinks.
+    /// Should the router search for hyperlinks? Setting this to `true` may
+    /// slow down endpoint search, but enables hyperlinks.
     pub find_hyperlinks: bool
 }
 
 impl<T: Default> TreeRouter<T> {
-    ///Creates an empty `TreeRouter`.
+    /// Creates an empty `TreeRouter`.
     pub fn new() -> TreeRouter<T> {
         TreeRouter::default()
     }
+}
 
-    //Tries to find a router matching the key or inserts a new one if none exists.
-    fn find_or_insert_router<'a>(&'a mut self, key: &[u8]) -> &'a mut TreeRouter<T> {
+impl<T> TreeRouter<T> {
+    /// Creates a `TreeRouter` with only a root handler.
+    ///
+    /// ```
+    /// use rustful::{Context, Response};
+    /// use rustful::handler::TreeRouter;
+    ///
+    /// fn handler(_context: Context, response: Response) {
+    ///     response.send("Hello world!");
+    /// }
+    ///
+    /// let router = TreeRouter::with_handler(handler);
+    /// ```
+    pub fn with_handler(handler: T) -> TreeRouter<T> {
+        TreeRouter {
+            item: handler,
+            static_routes: HashMap::new(),
+            variable_route: None,
+            wildcard_route: None,
+            find_hyperlinks: false
+        }
+    }
+
+    /// Build the router and its children using a chaninable API.
+    ///
+    /// ```
+    /// use rustful::{Context, Response};
+    /// use rustful::handler::TreeRouter;
+    ///
+    /// fn handler(_context: Context, response: Response) {
+    ///     response.send("Hello world!");
+    /// }
+    ///
+    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// router.build().on_path("hello/world", handler);
+    /// ```
+    pub fn build(&mut self) -> Builder<T> {
+        self.get_builder(BuilderContext::new())
+    }
+
+    // Tries to find a router matching the key or inserts a new one if none exists.
+    fn find_or_insert_router<'a, F: FnOnce() -> T>(&'a mut self, key: &[u8], create_handler: F) -> &'a mut TreeRouter<T> {
         if let Some(&b'*') = key.get(0) {
             if self.wildcard_route.is_none() {
-                self.wildcard_route = Some(Box::new(TreeRouter::default()));
+                self.wildcard_route = Some(Box::new(TreeRouter::with_handler(create_handler())));
             }
             &mut **self.wildcard_route.as_mut::<'a>().unwrap()
         } else if let Some(&b':') = key.get(0) {
             if self.variable_route.is_none() {
-                self.variable_route = Some(Box::new(TreeRouter::default()));
+                self.variable_route = Some(Box::new(TreeRouter::with_handler(create_handler())));
             }
             &mut **self.variable_route.as_mut::<'a>().unwrap()
         } else {
             match self.static_routes.entry(key.to_owned().into()) {
                 Occupied(entry) => entry.into_mut(),
-                Vacant(entry) => entry.insert(TreeRouter::default())
+                Vacant(entry) => entry.insert(TreeRouter::with_handler(create_handler()))
             }
         }
     }
 }
 
-impl<T: InsertExt + Default> TreeRouter<T> {
-    //Mergers this TreeRouter with an other TreeRouter.
-    fn merge_router<'a, I: Iterator<Item = &'a [u8]> + Clone>(&mut self, state: InsertState<'a, I>, router: TreeRouter<T>) {
-        self.item.insert_router(state.clone(), router.item);
+impl<T: FromHandler<H> + ApplyContext, D: AsRef<[u8]>, H> FromIterator<(Method, D, H)> for TreeRouter<MethodRouter<Variables<T>>> {
+    /// Create a `DefaultRouter` from a collection of routes.
+    ///
+    /// ```
+    /// extern crate rustful;
+    /// use rustful::Method::Get;
+    /// # use rustful::{Handler, Context, Response, DefaultRouter};
+    ///
+    /// # struct ExampleHandler;
+    /// # impl Handler for ExampleHandler {
+    /// #     fn handle(&self, _: Context, _: Response){}
+    /// # }
+    /// # fn main() {
+    /// # let about_us = ExampleHandler;
+    /// # let show_user = ExampleHandler;
+    /// # let list_users = ExampleHandler;
+    /// # let show_product = ExampleHandler;
+    /// # let list_products = ExampleHandler;
+    /// # let show_error = ExampleHandler;
+    /// # let show_welcome = ExampleHandler;
+    /// let routes = vec![
+    ///     (Get, "/about", about_us),
+    ///     (Get, "/users", list_users),
+    ///     (Get, "/users/:id", show_user),
+    ///     (Get, "/products", list_products),
+    ///     (Get, "/products/:id", show_product),
+    ///     (Get, "/*", show_error),
+    ///     (Get, "/", show_welcome)
+    /// ];
+    ///
+    /// let router: DefaultRouter<ExampleHandler> = routes.into_iter().collect();
+    /// # }
+    /// ```
+    fn from_iter<I: IntoIterator<Item=(Method, D, H)>>(iterator: I) -> TreeRouter<MethodRouter<Variables<T>>> {
+        let mut root = TreeRouter::<MethodRouter<Variables<T>>>::new();
 
-        for (key, router) in router.static_routes {
-            let next = match self.static_routes.entry(key.clone()) {
-                Occupied(entry) => entry.into_mut(),
-                Vacant(entry) => entry.insert(TreeRouter::default())
-            };
-            next.merge_router(state.clone(), router);
+        for (method, route, item) in iterator {
+            root.build().path(route).then().on(method, item);
         }
 
-        if let Some(router) = router.variable_route {
-            if self.variable_route.is_none() {
-                self.variable_route = Some(Box::new(TreeRouter::default()));
-            }
-
-            if let Some(ref mut next) = self.variable_route {
-                next.merge_router(state.clone(), *router);
-            }
-        }
-
-        if let Some(router) = router.wildcard_route {
-            if self.wildcard_route.is_none() {
-                self.wildcard_route = Some(Box::new(TreeRouter::default()));
-            }
-
-            if let Some(ref mut next) = self.wildcard_route {
-                next.merge_router(state, *router);
-            }
-        }
-    }
-}
-
-impl<T: Insert<H> + Default, H> Insert<H> for TreeRouter<T> {
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> TreeRouter<T> {
-        let mut router = TreeRouter::default();
-        router.insert(method, route, item);
-        router
-    }
-
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H) {
-        let mut route = route.into();
-        let mut endpoint = (&mut route).fold(self, |endpoint, segment| {
-            endpoint.find_or_insert_router(segment)
-        });
-
-        endpoint.item.insert(method, route, item);
-    }
-}
-
-impl<T: InsertExt + Default> InsertExt for TreeRouter<T> {
-    fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: TreeRouter<T>) {
-        let mut route = route.into();
-        let mut endpoint = (&mut route).fold(self, |endpoint, segment| {
-            endpoint.find_or_insert_router(segment)
-        });
-
-        endpoint.merge_router(route, router);
-    }
-
-    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R) {
-        let mut route = route.into();
-        if !route.is_empty() {
-            let mut new_root = TreeRouter::default();
-            new_root.find_hyperlinks = self.find_hyperlinks;
-            {
-                let mut endpoint = (&mut route).fold(&mut new_root, |endpoint, segment| {
-                    endpoint.find_or_insert_router(segment)
-                });
-
-                ::std::mem::swap(endpoint, self);
-            }
-            *self = new_root;
-        }
-
-        for (_, router) in &mut self.static_routes {
-            router.prefix(route.clone());
-        }
-
-        if let Some(router) = self.variable_route.as_mut() {
-            router.prefix(route.clone());
-        }
-
-        if let Some(router) = self.wildcard_route.as_mut() {
-            router.prefix(route.clone());
-        }
-
-        self.item.prefix(route);
+        root
     }
 }
 
@@ -329,60 +321,382 @@ impl<T: HandleRequest> HandleRequest for TreeRouter<T> {
     }
 }
 
-impl<T: Handler + 'static, D: Deref<Target=R>, R: ?Sized + for<'a> Route<'a>> FromIterator<(Method, D, T)> for TreeRouter<MethodRouter<Variables<T>>> {
-    ///Create a `TreeRouter` from a collection of routes.
-    ///
-    ///```
-    ///extern crate rustful;
-    ///use rustful::Method::Get;
-    ///use rustful::handler::TreeRouter;
-    ///# use rustful::{Handler, Context, Response};
-    ///
-    ///# struct DummyHandler;
-    ///# impl Handler for DummyHandler {
-    ///#     fn handle(&self, _: Context, _: Response){}
-    ///# }
-    ///# fn main() {
-    ///# let about_us = DummyHandler;
-    ///# let show_user = DummyHandler;
-    ///# let list_users = DummyHandler;
-    ///# let show_product = DummyHandler;
-    ///# let list_products = DummyHandler;
-    ///# let show_error = DummyHandler;
-    ///# let show_welcome = DummyHandler;
-    ///let routes = vec![
-    ///    (Get, "/about", about_us),
-    ///    (Get, "/users", list_users),
-    ///    (Get, "/users/:id", show_user),
-    ///    (Get, "/products", list_products),
-    ///    (Get, "/products/:id", show_product),
-    ///    (Get, "/*", show_error),
-    ///    (Get, "/", show_welcome)
-    ///];
-    ///
-    ///let router: TreeRouter<_> = routes.into_iter().collect();
-    ///# }
-    ///```
-    fn from_iter<I: IntoIterator<Item=(Method, D, T)>>(iterator: I) -> TreeRouter<MethodRouter<Variables<T>>> {
-        let mut root = TreeRouter::new();
-
-        for (method, route, item) in iterator {
-            root.insert(method, &*route, item);
-        }
-
-        root
+impl<T: Default> Default for TreeRouter<T> {
+    fn default() -> TreeRouter<T> {
+        TreeRouter::with_handler(T::default())
     }
 }
 
-impl<T: Default> Default for TreeRouter<T> {
-    fn default() -> TreeRouter<T> {
-        TreeRouter {
-            item: T::default(),
-            static_routes: HashMap::new(),
-            variable_route: None,
-            wildcard_route: None,
-            find_hyperlinks: false
+impl<'a, T: 'a> Build<'a> for TreeRouter<T> {
+    type Builder = Builder<'a, T>;
+
+    fn get_builder(&'a mut self, mut context: BuilderContext) -> Builder<'a, T> {
+        Builder {
+            node: self,
+            variables: Cow::Owned(context.remove::<VariableNames>().unwrap_or_default().0),
+            context: Cow::Owned(context)
         }
+    }
+}
+
+impl<T: FromHandler<H>, H> FromHandler<H> for TreeRouter<T> {
+    fn from_handler(context: BuilderContext, handler: H) -> TreeRouter<T> {
+        TreeRouter::with_handler(T::from_handler(context, handler))
+    }
+}
+
+impl<T: ApplyContext> ApplyContext for TreeRouter<T> {
+    fn apply_context(&mut self, mut context: BuilderContext) {
+        if let Some(VariableNames(variables)) = context.remove() {
+            let mut variable_context = BuilderContext::new();
+            variable_context.insert(VariableNames(variables.clone()));
+
+            self.item.prepend_context(variable_context);
+            self.item.apply_context(context.clone());
+
+            context.insert(VariableNames(variables));
+        }
+
+
+        for (_, mut node) in &mut self.static_routes {
+            node.apply_context(context.clone());
+        }
+
+        if let Some(ref mut node) = self.variable_route {
+            node.apply_context(context.clone())
+        }
+
+        if let Some(ref mut node) = self.wildcard_route {
+            node.apply_context(context)
+        }
+    }
+
+    fn prepend_context(&mut self, context: BuilderContext) {
+        self.item.prepend_context(context.clone());
+
+        for (_, node) in &mut self.static_routes {
+            node.prepend_context(context.clone());
+        }
+
+        if let Some(ref mut node) = self.variable_route {
+            node.prepend_context(context.clone())
+        }
+
+        if let Some(ref mut node) = self.wildcard_route {
+            node.prepend_context(context)
+        }
+    }
+}
+
+impl<T: Merge> Merge for TreeRouter<T> {
+    fn merge(&mut self, other: TreeRouter<T>) {
+        self.item.merge(other.item);
+
+        for (key, other_node) in other.static_routes {
+            println!("merging {:}", key.as_utf8_lossy());
+            match self.static_routes.entry(key) {
+                Vacant(entry) => { entry.insert(other_node); },
+                Occupied(mut entry) => entry.get_mut().merge(other_node)
+            }
+        }
+
+        if let Some(ref mut this_node) = self.variable_route {
+            if let Some(other_node) = other.variable_route {
+                this_node.merge(*other_node);
+            }
+        } else {
+            self.variable_route = other.variable_route;
+        }
+
+        if let Some(ref mut this_node) = self.wildcard_route {
+            if let Some(other_node) = other.wildcard_route {
+                this_node.merge(*other_node);
+            }
+        } else {
+            self.wildcard_route = other.wildcard_route;
+        }
+    }
+}
+
+/// A builder for a `TreeRouter`.
+pub struct Builder<'a, T: 'a> {
+    node: &'a mut TreeRouter<T>,
+    variables: Cow<'a, [MaybeUtf8Owned]>,
+    context: Cow<'a, BuilderContext>
+}
+
+impl<'a, T: Default + ApplyContext> Builder<'a, T> {
+    /// Add a path to the router and keep building the resulting node.
+    ///
+    /// ```
+    /// use rustful::{Context, Response};
+    /// use rustful::handler::TreeRouter;
+    ///
+    /// fn handler1(_context: Context, response: Response) {
+    ///     response.send("Hello world 1!");
+    /// }
+    ///
+    /// fn handler2(_context: Context, response: Response) {
+    ///     response.send("Hello world 2!");
+    /// }
+    ///
+    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// router.build().path("hello/world").many(|mut node| {
+    ///     node.on_route("1", handler1);
+    ///     node.on_route("2", handler2);
+    /// });
+    /// ```
+    pub fn path<'b, S: AsRef<[u8]>>(&'b mut self, path: S) -> Builder<'b, T> {
+        let mut variables = self.variables.clone();
+        let context = self.context.clone();
+
+        let node = path.as_ref().segments().fold(&mut *self.node, |node, segment| {
+            if segment[0] == b':' || segment[0] == b'*' {
+                variables.to_mut().push(segment[1..].to_owned().into());
+            }
+
+            node.find_or_insert_router(segment, || {
+                let mut new_context = context.clone().into_owned();
+                new_context.insert(VariableNames(variables.clone().into_owned()));
+                let mut handler = T::default();
+                handler.apply_context(new_context);
+                handler
+            })
+        });
+
+        Builder {
+            node: node,
+            variables: variables,
+            context: self.context.clone()
+        }
+    }
+
+    /// Add a handler at the end of a path and keep building the resulting node.
+    ///
+    /// ```
+    /// use rustful::{Context, Response};
+    /// use rustful::handler::TreeRouter;
+    ///
+    /// fn handler(_context: Context, response: Response) {
+    ///     response.send("Hello world!");
+    /// }
+    ///
+    /// fn handler1(_context: Context, response: Response) {
+    ///     response.send("Hello world 1!");
+    /// }
+    ///
+    /// fn handler2(_context: Context, response: Response) {
+    ///     response.send("Hello world 2!");
+    /// }
+    ///
+    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// router.build().on_path("hello/world", handler).many(|mut node| {
+    ///     node.on_route("1", handler1);
+    ///     node.on_route("2", handler2);
+    /// });
+    /// ```
+    pub fn on_path<'b, S: AsRef<[u8]>, H>(&'b mut self, path: S, handler: H) -> Builder<'b, T> where T: FromHandler<H> {
+        let mut variables = self.variables.clone();
+        let context = self.context.clone();
+
+        let node = path.as_ref().segments().fold(&mut *self.node, |node, segment| {
+            if segment[0] == b':' || segment[0] == b'*' {
+                variables.to_mut().push(segment[1..].to_owned().into());
+            }
+
+            node.find_or_insert_router(segment, || {
+                let mut new_context = context.clone().into_owned();
+                new_context.insert(VariableNames(variables.clone().into_owned()));
+                let mut handler = T::default();
+                handler.apply_context(new_context);
+                handler
+            })
+        });
+
+        let mut new_context = context.clone().into_owned();
+        new_context.insert(VariableNames(variables.clone().into_owned()));
+        node.item = T::from_handler(new_context, handler);
+
+        Builder {
+            node: node,
+            variables: variables,
+            context: context
+        }
+    }
+}
+
+impl<'a, T> Builder<'a, T> {
+    /// Perform more than one operation on this builder.
+    ///
+    /// ```
+    /// use rustful::{Context, Response};
+    /// use rustful::handler::TreeRouter;
+    ///
+    /// fn handler1(_context: Context, response: Response) {
+    ///     response.send("Hello world 1!");
+    /// }
+    ///
+    /// fn handler2(_context: Context, response: Response) {
+    ///     response.send("Hello world 2!");
+    /// }
+    ///
+    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// router.build().many(|mut node| {
+    ///     node.on_route("1", handler1);
+    ///     node.on_route("2", handler2);
+    /// });
+    /// ```
+    pub fn many<F: FnOnce(&mut Builder<'a, T>)>(&mut self, build: F) -> &mut Builder<'a, T> {
+        build(self);
+        self
+    }
+
+    /// Add a handler at the end of a route segment and keep building the resulting node.
+    ///
+    /// ```
+    /// use rustful::{Context, Response};
+    /// use rustful::handler::TreeRouter;
+    ///
+    /// fn handler(_context: Context, response: Response) {
+    ///     response.send("Hello world!");
+    /// }
+    ///
+    /// fn handler1(_context: Context, response: Response) {
+    ///     response.send("Hello world 1!");
+    /// }
+    ///
+    /// fn handler2(_context: Context, response: Response) {
+    ///     response.send("Hello world 2!");
+    /// }
+    ///
+    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// router.build().on_route("hello_world", handler).many(|mut node| {
+    ///     node.on_route("1", handler1);
+    ///     node.on_route("2", handler2);
+    /// });
+    /// ```
+    pub fn on_route<'b, S: AsRef<[u8]>, H>(&'b mut self, label: S, handler: H) -> Builder<'b, T> where T: FromHandler<H> {
+        let mut variables = self.variables.clone();
+        let context = self.context.clone();
+
+        let mut label_iter = label.as_ref().segments();
+        let label = if let Some(label) = label_iter.next() {
+            label
+        } else {
+            return Builder {
+                node: self.node,
+                variables: self.variables.clone(),
+                context: self.context.clone()
+            };
+        };
+
+        if label_iter.next().is_some() {
+            panic!("expected at most a single label, but got a longer path");
+        }
+
+        if label[0] == b':' || label[0] == b'*' {
+            variables.to_mut().push(label[1..].to_owned().into());
+        }
+
+        let node = self.node.find_or_insert_router(label, || {
+            let mut new_context = context.clone().into_owned();
+            new_context.insert(VariableNames(variables.clone().into_owned()));
+            T::from_handler(new_context, handler)
+        });
+
+        Builder {
+            node: node,
+            variables: variables,
+            context: self.context.clone()
+        }
+    }
+
+
+    /// Try to get a node at the end of an existing path.
+    ///
+    /// ```
+    /// use rustful::{Context, Response};
+    /// use rustful::handler::TreeRouter;
+    ///
+    /// fn handler(_context: Context, response: Response) {
+    ///     response.send("Hello world!");
+    /// }
+    ///
+    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    ///
+    /// router.build().path("hello/world");
+    /// router.build().get_path("hello/world").expect("where did it go?!").handler(handler);
+    /// ```
+    pub fn get_path<'b, S: AsRef<[u8]>>(&'b mut self, path: S) -> Option<Builder<'b, T>> {
+        let mut variables = self.variables.clone();
+
+        let node = path.as_ref().segments().fold(Some(&mut *self.node), |maybe_node, segment| {
+            maybe_node.and_then(|node| {
+                if let Some(&b'*') = segment.get(0) {
+                    variables.to_mut().push(segment[1..].to_owned().into());
+                    node.wildcard_route.as_mut().map(|node| &mut **node)
+                } else if let Some(&b':') = segment.get(0) {
+                    variables.to_mut().push(segment[1..].to_owned().into());
+                    node.variable_route.as_mut().map(|node| &mut **node)
+                } else {
+                    node.static_routes.get_mut(segment)
+                }
+            })
+        });
+
+        let new_context = self.context.clone();
+        node.map(|node| Builder {
+            node: node,
+            variables: variables,
+            context: new_context
+        })
+    }
+
+    /// Set or replace the handler at the current node.
+    pub fn handler<'b, H>(&'b mut self, handler: H) -> Builder<'b, T> where T: FromHandler<H> {
+        let mut new_context = self.context.clone().into_owned();
+        new_context.insert(VariableNames(self.variables.clone().into_owned()));
+        self.node.item = T::from_handler(new_context, handler);
+
+        Builder {
+            node: self.node,
+            variables: self.variables.clone(),
+            context: self.context.clone()
+        }
+    }
+}
+
+impl<'a: 'b, 'b, T: Build<'b>> Builder<'a, T> {
+    /// Build the handler at the current node.
+    ///
+    /// ```
+    /// use rustful::{Context, Response};
+    /// use rustful::handler::{TreeRouter, MethodRouter};
+    ///
+    /// fn handler(_context: Context, response: Response) {
+    ///     response.send("Hello world!");
+    /// }
+    ///
+    /// let mut router = TreeRouter::<MethodRouter<fn(Context, Response)>>::new();
+    /// router.build().path("hello/world").then().on_get(handler);
+    /// ```
+    pub fn then(&'b mut self) -> T::Builder {
+        let mut new_context = self.context.clone().into_owned();
+        new_context.insert(VariableNames(self.variables.clone().into_owned()));
+        self.node.item.get_builder(new_context)
+    }
+}
+
+impl<'a, T: Merge + ApplyContext> Builder<'a, T> {
+    ///Move handlers from another router into this, overwriting conflicting handlers and properties.
+    pub fn merge(&mut self, mut other: TreeRouter<T>) -> &mut Builder<'a, T> {
+        let mut new_context = self.context.clone().into_owned();
+        new_context.insert(VariableNames(self.variables.clone().into_owned()));
+        other.apply_context(new_context);
+
+        self.node.merge(other);
+
+        self
     }
 }
 
@@ -400,7 +714,6 @@ mod test {
     use context::hypermedia::{LinkSegment, SegmentType};
     use response::Response;
     use handler::{Handler, MethodRouter, Variables};
-    use handler::routing::{Insert, InsertExt};
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
     use Method;
 
@@ -415,7 +728,7 @@ mod test {
                     links: vec![$(link!($($links)*)),*],
                 };
 
-                $router.insert($method, $path, handler);
+                $router.build().path($path).then().on($method, handler);
                 state
             }
         );
@@ -783,7 +1096,7 @@ mod test {
         let router2_test5 = route!(router2(Get, "test/no5"));
         let router2_test3_post = route!(router2(Post, "test1/no/test3"), [[./Get]]);
 
-        router1.insert_router("path/to", router2);
+        router1.build().path("path/to").merge(router2);
 
         check!(router1(Get, "") => Some(&router1_test1));
         check!(router1(Get, "path/to/test/no2") => Some(&router1_test2));
@@ -805,7 +1118,7 @@ mod test {
 
         let test2 = route!(router2(Get, ":b/:c/test"));
 
-        router1.insert_router(":a", router2);
+        router1.build().path(":a").merge(router2);
 
         check!(router1(Get, "path/to/test1") => Some(&test1), {"a" => "path", "b" => "to", "c" => "test1"});
         check!(router1(Get, "path/to/test1/test") => Some(&test2), {"a" => "path", "b" => "to", "c" => "test1"});
@@ -823,44 +1136,13 @@ mod test {
 
         let test1 = route!(router2(Get, "*/test1"), [["test1"]]);
 
-        router1.insert_router("path", router2);
+        router1.build().path("path").merge(router2);
 
         check!(router1(Get, "path/to/test1") => Some(&test1));
         check!(router1(Get, "path/to/same/test1") => Some(&test1));
         check!(router1(Get, "path/to/the/same/test1") => Some(&test1));
         check!(router1(Get, "path/to") => Some(&test2));
         check!(router1(Get, "path") => None);
-    }
-
-    #[test]
-    fn prefix_router_variables() {
-        let mut router = TestRouter::new();
-        router.find_hyperlinks = true;
-
-        let test2 = route!(router(Get, ":b/:c"), [["test"]]);
-        let test1 = route!(router(Get, ":b/:c/test"));
-
-        router.prefix(":a");
-
-        check!(router(Get, "path/to/test1") => Some(&test2), {"a" => "path", "b" => "to", "c" => "test1"});
-        check!(router(Get, "path/to/test1/test") => Some(&test1), {"a" => "path", "b" => "to", "c" => "test1"});
-    }
-
-    #[test]
-    fn prefix_router_wildcard() {
-        let mut router = TestRouter::new();
-        router.find_hyperlinks = true;
-
-        let test2 = route!(router(Get, "path/to"), [["test1"]]);
-        let test1 = route!(router(Get, "*/test1"), [["test1"]]);
-
-        router.prefix(":a");
-
-        check!(router(Get, "a/path/to/test1") => Some(&test1), {"a" => "a"});
-        check!(router(Get, "a/path/to/same/test1") => Some(&test1), {"a" => "a"});
-        check!(router(Get, "a/path/to/the/same/test1") => Some(&test1), {"a" => "a"});
-        check!(router(Get, "a/path/to") => Some(&test2), {"a" => "a"});
-        check!(router(Get, "a/path") => None);
     }
 
    //  #[bench]
