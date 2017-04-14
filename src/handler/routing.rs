@@ -1,175 +1,4 @@
-//!Routers stores request handlers, using an HTTP method and a path as keys.
-//!
-//!# Building Routers
-//!
-//!Rustful provides a tree structured all-round router called `TreeRouter`,
-//!but any other type of router can be used, as long as it implements the
-//!`Router` trait. This will also make it possible to initialize it using the
-//![`insert_routes!`][insert_routes] macro:
-//!
-//!```
-//!#[macro_use]
-//!extern crate rustful;
-//!use rustful::TreeRouter;
-//!# use rustful::{Handler, Context, Response};
-//!
-//!# struct DummyHandler;
-//!# impl Handler for DummyHandler {
-//!#     fn handle_request(&self, _: Context, _: Response){}
-//!# }
-//!# fn main() {
-//!# let about_us = DummyHandler;
-//!# let show_user = DummyHandler;
-//!# let list_users = DummyHandler;
-//!# let show_product = DummyHandler;
-//!# let list_products = DummyHandler;
-//!# let show_error = DummyHandler;
-//!# let show_welcome = DummyHandler;
-//!let router = insert_routes! {
-//!    TreeRouter::new() => {
-//!        Get: show_welcome,
-//!        "about" => Get: about_us,
-//!        "users" => {
-//!            Get: list_users,
-//!            ":id" => Get: show_user
-//!        },
-//!        "products" => {
-//!            Get: list_products,
-//!            ":id" => Get: show_product
-//!        },
-//!        "*" => Get: show_error
-//!    }
-//!};
-//!# }
-//!```
-//!
-//!This macro creates the same structure as the example below, but it allows
-//!tree structures to be defined without the need to write the same paths
-//!multiple times. This can be useful to lower the risk of typing errors,
-//!among other things.
-//!
-//!Routes may also be added using the insert method, like this:
-//!
-//!```
-//!extern crate rustful;
-//!use rustful::Method::Get;
-//!use rustful::{Router, TreeRouter};
-//!# use rustful::{Handler, Context, Response};
-//!
-//!# struct DummyHandler;
-//!# impl Handler for DummyHandler {
-//!#     fn handle_request(&self, _: Context, _: Response){}
-//!# }
-//!# fn main() {
-//!# let about_us = DummyHandler;
-//!# let show_user = DummyHandler;
-//!# let list_users = DummyHandler;
-//!# let show_product = DummyHandler;
-//!# let list_products = DummyHandler;
-//!# let show_error = DummyHandler;
-//!# let show_welcome = DummyHandler;
-//!let mut router = TreeRouter::new();
-//!
-//!router.insert(Get, "/", show_welcome);
-//!router.insert(Get, "/about", about_us);
-//!router.insert(Get, "/users", list_users);
-//!router.insert(Get, "/users/:id", show_user);
-//!router.insert(Get, "/products", list_products);
-//!router.insert(Get, "/products/:id", show_product);
-//!router.insert(Get, "/*", show_error);
-//!# }
-//!```
-//!
-//![insert_routes]: ../macro.insert_routes!.html
-//!
-//!#Variables
-//!
-//!Routes may contain variables, that are useful for capturing parts of the
-//!requested path as input to the handler. The syntax for a variable is simply
-//!an indicator character (`:` or `*`) followed by a label. Variables without
-//!labels are also valid, but their values will be discarded.
-//!
-//!##Variable Segments (:label)
-//!
-//!A variable segment will match a single arbitrary segment. They are probably
-//!the most commonly used variables and may, for example, be used to select a
-//!blog post: `"posts/:year/:month/:day/:title_slug"`.
-//!
-//!```text
-//!pattern = "a/:v/b"
-//!"a/c/b" -> v = "c"
-//!"a/c/d/b" -> no match
-//!"a/b" -> no match
-//!"a/c/b/d" -> no match
-//!```
-//!
-//!##Variable Sequences (*label)
-//!
-//!A variable sequence is similar to a variable segment, but with the
-//!difference that it may consume multiple segments until the rest of the path
-//!gives a match. An example use case is a route for downloadable files that
-//!may be arranged in arbitrary directories: `"downloads/*file_path"`.
-//!
-//!```text
-//!pattern = "a/*v/b"
-//!"a/c/b" -> v = "c"
-//!"a/c/d/b" -> v = "c/d"
-//!"a/b" -> no match
-//!"a/c/b/d" -> no match
-//!```
-//!
-//!```text
-//!pattern = "a/b/*v"
-//!"a/b/c" -> v = "c"
-//!"a/b/c/d" -> v = "c/d"
-//!"a/b" -> no match
-//!```
-//!
-//!# Router Composition
-//!
-//!The default tree router is actually a composition of three routers:
-//![`TreeRouter`][tree_router], [`MethodRouter`][method_router] and
-//![`Variables`][variables]. They come together as the type
-//!`TreeRouter<MethodRouter<Variables<_>>>`, but the `TreeRouter` assumes that
-//!this is most probably what you want, so this is what `TreeRouter::new()`
-//!gives you. No need to write it all out in most of the cases.
-//!
-//!There may, however, be cases where you want something else. What if you
-//!don't care about the HTTP method? Maybe your handler takes care of that
-//!internally. Sure, no problem:
-//!
-//!```
-//!use rustful::TreeRouter;
-//!use rustful::router::Variables;
-//!
-//!let my_router = TreeRouter::<Option<Variables<_>>>::default();
-//!# let _r: TreeRouter<Option<Variables<DummyHandler>>> = my_router;
-//!# struct DummyHandler;
-//!# impl rustful::Handler for DummyHandler {
-//!#     fn handle_request(&self, _: rustful::Context, _: rustful::Response){}
-//!# }
-//!```
-//!
-//!And what about those route variables? Not using them at all? Well, just
-//!remove them too, if you don't want them:
-//!
-//!```
-//!use rustful::TreeRouter;
-//!
-//!let my_router = TreeRouter::<Option<_>>::default();
-//!# let _r: TreeRouter<Option<DummyHandler>> = my_router;
-//!# struct DummyHandler;
-//!# impl rustful::Handler for DummyHandler {
-//!#     fn handle_request(&self, _: rustful::Context, _: rustful::Response){}
-//!# }
-//!```
-//!
-//!You can simply recombine and reorder the router types however you want, or
-//!why not make your own router? Just implement the `Router` trait.
-//!
-//![tree_router]: struct.TreeRouter.html
-//![method_router]: struct.MethodRouter.html
-//![variables]: struct.Variables.html
+//!Routing related traits and types.
 
 use std::collections::HashMap;
 use std::iter::{Iterator, FlatMap, Peekable};
@@ -180,53 +9,23 @@ use hyper::method::Method;
 
 use handler::Handler;
 use context::MaybeUtf8Owned;
-use context::hypermedia::Link;
 
-pub use self::tree_router::TreeRouter;
-pub use self::method_router::MethodRouter;
-pub use self::variables::Variables;
-
-mod tree_router;
-mod method_router;
-mod variables;
-
-///API endpoint data.
-pub struct Endpoint<'a, T: 'a> {
-    ///A request handler, if found.
-    pub handler: Option<&'a T>,
-    ///Path variables for the matching endpoint. May be empty, depending on
-    ///the router implementation.
-    pub variables: HashMap<MaybeUtf8Owned, MaybeUtf8Owned>,
-    ///Any associated hyperlinks.
-    pub hyperlinks: Vec<Link<'a>>
-}
-
-impl<'a, T> From<Option<&'a T>> for Endpoint<'a, T> {
-    fn from(handler: Option<&'a T>) -> Endpoint<'a, T> {
-        Endpoint {
-            handler: handler,
-            variables: HashMap::new(),
-            hyperlinks: vec![]
-        }
-    }
-}
-
-///A common trait for routers.
+///A common trait for building routers.
 ///
-///A router must to implement this trait to be usable in a Rustful server. This
-///trait will also make the router compatible with the `insert_routes!` macro.
-pub trait Router: Send + Sync + 'static {
-    ///The request handler type that is stored within this router.
-    type Handler: Handler;
-
+///A router has to implement this trait to be compatible with the
+///`insert_routes!` macro.
+pub trait Insert<H> {
     ///Build a new router from a route. The router may choose to ignore
     ///both `method` and `route`, depending on its implementation.
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> Self;
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> Self;
 
     ///Insert a new route into the router. The router may choose to ignore
     ///both `method` and `route`, depending on its implementation.
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler);
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H);
+}
 
+///Additional insertion and modification methods.
+pub trait InsertExt {
     ///Insert an other router at a path. The content of the other router will
     ///be merged with this one and conflicting content will be overwritten.
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: Self);
@@ -238,18 +37,9 @@ pub trait Router: Send + Sync + 'static {
     fn merge(&mut self, other: Self) where Self: Sized {
         self.insert_router("", other);
     }
-
-    ///Find and return the matching handler and variable values.
-    fn find<'a>(&'a self, method: &Method, route: &mut RouteState) -> Endpoint<'a, Self::Handler>;
-
-    ///List all of the hyperlinks into this router, based on the provided base
-    ///link. It's up to the router implementation to decide how deep to go.
-    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>>;
 }
 
-impl<H: Handler> Router for H {
-    type Handler = H;
-
+impl<H: Handler> Insert<H> for H {
     fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> H {
         item
     }
@@ -257,37 +47,30 @@ impl<H: Handler> Router for H {
     fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, _method: Method, _route: R, item: H) {
         *self = item;
     }
+}
 
+impl<H: Handler> InsertExt for H {
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R, router: H) {
         *self = router;
     }
 
     fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R) {}
-
-    fn find<'a>(&'a self, _method: &Method, _route: &mut RouteState) -> Endpoint<'a, H> {
-        Some(self).into()
-    }
-
-    fn hyperlinks<'a>(&'a self, mut base: Link<'a>) -> Vec<Link<'a>> {
-        base.handler = Some(self);
-        vec![base]
-    }
 }
 
-impl<T: Router> Router for Option<T> {
-    type Handler = T::Handler;
-
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> Option<T> {
+impl<T: Insert<H>, H> Insert<H> for Option<T> {
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> Option<T> {
         Some(T::build(method, route, item))
     }
 
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler) {
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H) {
         match *self {
             Some(ref mut r) => r.insert(method, route, item),
             ref mut s @ None => *s = Some(T::build(method, route, item)),
         }
     }
+}
 
+impl<T: InsertExt> InsertExt for Option<T> {
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: Option<T>) {
         if let Some(mut other) = router {
             match *self {
@@ -303,22 +86,6 @@ impl<T: Router> Router for Option<T> {
     fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R) {
         self.as_mut().map(|r| r.prefix(route));
     }
-
-    fn find<'a>(&'a self, method: &Method, route: &mut RouteState) -> Endpoint<'a, Self::Handler> {
-        if let Some(ref router) = *self {
-            router.find(method, route)
-        } else {
-            None.into()
-        }
-    }
-
-    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>> {
-        if let Some(ref router) = *self {
-            router.hyperlinks(base)
-        } else {
-            vec![]
-        }
-    }
 }
 
 ///A segmented route.
@@ -330,7 +97,7 @@ pub trait Route<'a> {
     ///None for a root path (`/`).
     ///
     ///```rust
-    ///# use rustful::router::Route;
+    ///# use rustful::handler::routing::Route;
     ///let root = "/";
     ///assert_eq!(root.segments().next(), None);
     ///
@@ -441,8 +208,8 @@ pub struct InsertState<'a, I: Iterator<Item=&'a [u8]>> {
 
 impl<'a, I: Iterator<Item=&'a [u8]>> InsertState<'a, I> {
     ///Extract the variable names from the parsed path.
-    pub fn variables(self) -> Vec<MaybeUtf8Owned> {
-        self.variables
+    pub fn variables(&mut self) -> Vec<MaybeUtf8Owned> {
+        ::std::mem::replace(&mut self.variables, vec![])
     }
 
     ///Check if there are no more segments.
@@ -476,6 +243,7 @@ impl<'a, R: Route<'a> + ?Sized> From<&'a R> for InsertState<'a, R::Segments> {
 }
 
 ///A state object for routing.
+#[derive(Clone)]
 pub struct RouteState<'a> {
     route: Vec<&'a [u8]>,
     variables: Vec<Option<usize>>,

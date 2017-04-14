@@ -52,15 +52,15 @@ Olivia) to try it.
 ```rust
 //Include macros to be able to use `insert_routes!`.
 #[macro_use]
-extern crate rustful;
-
-#[macro_use]
 extern crate log;
 extern crate env_logger;
 
+#[macro_use]
+extern crate rustful;
+
 use std::error::Error;
 
-use rustful::{Server, Context, Response, TreeRouter};
+use rustful::{Server, Context, Response, DefaultRouter};
 
 fn say_hello(context: Context, response: Response) {
     //Get the value of the path variable `:person`, from below.
@@ -81,9 +81,9 @@ fn main() {
         //Turn a port number into an IPV4 host address (0.0.0.0:8080 in this case).
         host: 8080.into(),
 
-        //Create a TreeRouter and fill it with handlers.
+        //Create a DefaultRouter and fill it with handlers.
         handlers: insert_routes!{
-            TreeRouter::new() => {
+            DefaultRouter::<fn(Context, Response)>::new() => {
                 //Handle requests for root...
                 Get: say_hello,
 

@@ -8,7 +8,7 @@ use std::error::Error;
 extern crate log;
 extern crate env_logger;
 
-use rustful::{Server, TreeRouter, Context, Response};
+use rustful::{Server, DefaultRouter, Context, Response};
 use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilter, ContextAction};
 use rustful::response::Data;
 use rustful::StatusCode;
@@ -64,7 +64,7 @@ enum Format {
 struct Handler(fn(Context, Response, &Format), Format);
 
 impl rustful::Handler for Handler {
-    fn handle_request(&self, context: Context, response: Response) {
+    fn handle(&self, context: Context, response: Response) {
         self.0(context, response, &self.1);
     }
 }
@@ -76,7 +76,7 @@ fn main() {
     println!("Append ?jsonp=someFunction to get a JSONP response.");
     println!("Run this example with the environment variable 'RUST_LOG' set to 'debug' to see the debug prints.");
 
-    let mut router = TreeRouter::new();
+    let mut router = DefaultRouter::<Handler>::new();
     insert_routes!{
         &mut router => {
             "print" => {

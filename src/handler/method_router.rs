@@ -1,8 +1,9 @@
 use std::collections::hash_map::{HashMap, Entry};
 
-use router::{Router, Endpoint, InsertState, RouteState};
+use {Method, StatusCode};
 use context::hypermedia::Link;
-use Method;
+use handler::{HandleRequest, Environment};
+use handler::routing::{Insert, InsertExt, InsertState};
 
 ///A router that selects an item from an HTTP method.
 ///
@@ -14,35 +15,19 @@ pub struct MethodRouter<T> {
     items: HashMap<Method, T>,
 }
 
-impl<T: Router> Router for MethodRouter<T> {
-    type Handler = T::Handler;
-
-    fn find<'a>(&'a self, method: &Method, route: &mut RouteState) -> Endpoint<'a, Self::Handler> {
-        if let Some(item) = self.items.get(method) {
-            item.find(method, route)
-        } else {
-            Endpoint::from(None)
-        }
-    }
-
-    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>> {
-        self.items.iter().flat_map(|(method, item)| {
-            let mut link = base.clone();
-            link.method = Some(method.clone());
-            item.hyperlinks(link)
-        }).collect()
-    }
-
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: Self::Handler) -> MethodRouter<T> {
+impl<T: Insert<H>, H> Insert<H> for MethodRouter<T> {
+    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> MethodRouter<T> {
         let mut router = MethodRouter::default();
         router.insert(method, route, item);
         router
     }
 
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: Self::Handler) {
+    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H) {
         self.items.insert(method.clone(), T::build(method, route, item));
     }
+}
 
+impl<T: InsertExt> InsertExt for MethodRouter<T> {
     fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: MethodRouter<T>) {
         let route = route.into();
         for (method, mut item) in router.items {
@@ -64,6 +49,25 @@ impl<T: Router> Router for MethodRouter<T> {
         for (_, item) in &mut self.items {
             item.prefix(route.clone());
         }
+    }
+}
+
+impl<T: HandleRequest> HandleRequest for MethodRouter<T> {
+    fn handle_request<'a, 'b, 'l, 'g>(&self, mut environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
+        if let Some(item) = self.items.get(&environment.context.method) {
+            item.handle_request(environment)
+        } else {
+            environment.response.set_status(StatusCode::MethodNotAllowed);
+            Err(environment)
+        }
+    }
+
+    fn hyperlinks<'a>(&'a self, base: Link<'a>) -> Vec<Link<'a>> {
+        self.items.iter().flat_map(|(method, item)| {
+            let mut link = base.clone();
+            link.method = Some(method.clone());
+            item.hyperlinks(link)
+        }).collect()
     }
 }
 

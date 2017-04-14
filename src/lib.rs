@@ -9,12 +9,12 @@
 //!```no_run
 //!#[macro_use]
 //!extern crate rustful;
-//!use rustful::{Server, Handler, Context, Response, TreeRouter};
+//!use rustful::{Server, Handler, Context, Response, DefaultRouter};
 //!
 //!struct Greeting(&'static str);
 //!
 //!impl Handler for Greeting {
-//!    fn handle_request(&self, context: Context, response: Response) {
+//!    fn handle(&self, context: Context, response: Response) {
 //!        //Check if the client accessed /hello/:name or /good_bye/:name
 //!        if let Some(name) = context.variables.get("name") {
 //!            //Use the value of :name
@@ -27,8 +27,8 @@
 //!
 //!# fn main() {
 //!let my_router = insert_routes!{
-//!    //Create a new TreeRouter
-//!    TreeRouter::new() => {
+//!    //Create a new DefaultRouter
+//!    DefaultRouter::<Greeting>::new() => {
 //!        //Receive GET requests to /hello and /hello/:name
 //!        "hello" => {
 //!            Get: Greeting("hello"),
@@ -81,6 +81,8 @@ extern crate hyper;
 extern crate anymap;
 extern crate phf;
 extern crate num_cpus;
+#[macro_use]
+extern crate log;
 
 pub use hyper::mime;
 pub use hyper::method::Method;
@@ -94,9 +96,14 @@ pub use self::server::Server;
 pub use self::context::Context;
 pub use self::response::Response;
 pub use self::response::Error;
+pub use self::response::SendResponse;
 pub use self::handler::Handler;
-pub use self::router::Router;
-pub use self::router::TreeRouter;
+pub use self::handler::DefaultRouter;
+pub use self::handler::ContentFactory;
+pub use self::handler::CreateContent;
+pub use self::handler::OrElse;
+pub use self::handler::StatusRouter;
+pub use self::handler::routing::Insert;
 
 mod utils;
 #[macro_use]
@@ -104,7 +111,6 @@ mod utils;
 pub mod macros;
 
 pub mod server;
-pub mod router;
 pub mod handler;
 pub mod context;
 pub mod response;

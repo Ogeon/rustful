@@ -10,21 +10,21 @@
 ///```rust
 ///#[macro_use]
 ///extern crate rustful;
-///use rustful::TreeRouter;
+///use rustful::DefaultRouter;
 ///# use rustful::{Handler, Context, Response};
 ///
-///# struct DummyHandler;
-///# impl Handler for DummyHandler {
-///#     fn handle_request(&self, _: Context, _: Response){}
+///# struct ExampleHandler;
+///# impl Handler for ExampleHandler {
+///#     fn handle(&self, _: Context, _: Response){}
 ///# }
 ///# fn main() {
-///# let about_us = DummyHandler;
-///# let show_user = DummyHandler;
-///# let show_product = DummyHandler;
-///# let show_error = DummyHandler;
-///# let show_welcome = DummyHandler;
+///# let about_us = ExampleHandler;
+///# let show_user = ExampleHandler;
+///# let show_product = ExampleHandler;
+///# let show_error = ExampleHandler;
+///# let show_welcome = ExampleHandler;
 ///let router = insert_routes! {
-///    TreeRouter::new() => {
+///    DefaultRouter::<ExampleHandler>::new() => {
 ///        "/" => Get: show_welcome,
 ///        "/about" => Get: about_us,
 ///        "/user/:user" => Get: show_user,
@@ -40,25 +40,25 @@
 ///```rust
 ///#[macro_use]
 ///extern crate rustful;
-///use rustful::TreeRouter;
+///use rustful::DefaultRouter;
 ///# use rustful::{Handler, Context, Response};
 ///
 ///# #[derive(Clone, Copy)]
-///# struct DummyHandler;
-///# impl Handler for DummyHandler {
-///#     fn handle_request(&self, _: Context, _: Response){}
+///# struct ExampleHandler;
+///# impl Handler for ExampleHandler {
+///#     fn handle(&self, _: Context, _: Response){}
 ///# }
 ///# fn main() {
-///# let show_home = DummyHandler;
-///# let show_user = DummyHandler;
-///# let save_user = DummyHandler;
-///# let show_all_products = DummyHandler;
-///# let send_all_product_data = DummyHandler;
-///# let show_product = DummyHandler;
-///# let edit_product = DummyHandler;
-///# let send_product_data = DummyHandler;
+///# let show_home = ExampleHandler;
+///# let show_user = ExampleHandler;
+///# let save_user = ExampleHandler;
+///# let show_all_products = ExampleHandler;
+///# let send_all_product_data = ExampleHandler;
+///# let show_product = ExampleHandler;
+///# let edit_product = ExampleHandler;
+///# let send_product_data = ExampleHandler;
 ///
-///let mut router = TreeRouter::new();
+///let mut router = DefaultRouter::<ExampleHandler>::new();
 ///
 ///insert_routes! {
 ///    &mut router => {
@@ -89,7 +89,7 @@
 macro_rules! insert_routes {
     ($router:expr => {$($paths:tt)+}) => {
         {
-            use $crate::router::Router;
+            use $crate::handler::routing::Insert;
             let mut router = $router;
             __rustful_insert_internal!(router, [], $($paths)+);
             router

@@ -39,7 +39,8 @@ use std::convert::From;
 use std::str::{from_utf8, Utf8Error};
 use std::string::{FromUtf8Error};
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::fmt;
 
 use hyper;
 
@@ -75,12 +76,18 @@ impl From<io::Error> for Error {
     }
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::Filter(ref desc) => write!(f, "filter error: {}", desc),
             Error::Io(ref e) => write!(f, "io error: {}", e)
         }
+    }
+}
+
+impl ResponseError for Error {
+    fn handle(self) {
+        error!("Failed to send response: {}", self);
     }
 }
 
@@ -141,6 +148,15 @@ impl<'a, 'b> FileError<'a, 'b> {
     }
 }
 
+impl<'a, 'b> ResponseError for FileError<'a, 'b> {
+    fn handle(self) {
+        if let Err((e, mut response)) = self.send_not_found("").or_else(FileError::ignore_send_error) {
+            response.set_status(StatusCode::InternalServerError);
+            error!("Failed to open file: {}", e);
+        }
+    }
+}
+
 impl<'a, 'b> Into<io::Error> for FileError<'a, 'b> {
     fn into(self) -> io::Error {
         match self {
@@ -149,8 +165,8 @@ impl<'a, 'b> Into<io::Error> for FileError<'a, 'b> {
     }
 }
 
-impl<'a, 'b> std::fmt::Debug for FileError<'a, 'b> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<'a, 'b> fmt::Debug for FileError<'a, 'b> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             FileError::Open(ref e, _) => write!(f, "FileError::Open({:?}, Response)", e),
             FileError::Send(ref e) => write!(f, "FileError::Send({:?})", e)
@@ -158,8 +174,8 @@ impl<'a, 'b> std::fmt::Debug for FileError<'a, 'b> {
     }
 }
 
-impl<'a, 'b> std::fmt::Display for FileError<'a, 'b> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<'a, 'b> fmt::Display for FileError<'a, 'b> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             FileError::Open(ref e, _) => write!(f, "failed to open a file: {}", e),
             FileError::Send(ref e) => write!(f, "failed to send a file: {}", e)
@@ -249,6 +265,218 @@ impl<'a> Into<Data<'a>> for &'a str {
     }
 }
 
+///A trait for higher level types that can be sent as responses, like
+///`Result`.
+///
+///Such a type is allowed to modify the response headers and status before
+///sending, to lower the amount of boiler plate code, and makes it a bit
+///easier to use together with the usual error handling methods. The default
+///implementations will only change the status code when semantically
+///appropriate, and otherwise not touch it at all.
+pub trait SendResponse<'a, 'b> {
+    ///Any error that may occur while sending the response.
+    type Error: ResponseError;
+
+    ///Send a response to the client.
+    fn send_response(self, response: Response<'a, 'b>) -> Result<(), Self::Error>;
+}
+
+impl<'a, 'b, 'd, T: Into<Data<'d>>> SendResponse<'a, 'b> for T {
+    type Error = Error;
+
+    fn send_response(self, response: Response<'a, 'b>) -> Result<(), Error> {
+        response.try_send_data(self)
+    }
+}
+
+impl<'a, 'b, T: SendResponse<'a, 'b>, U: SendResponse<'a, 'b>> SendResponse<'a, 'b> for Result<T, U> where
+    U::Error: Into<T::Error>
+{
+    type Error = T::Error;
+
+    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), T::Error> {
+        match self {
+            Ok(data) => {
+                response.set_status(StatusCode::Ok);
+                data.send_response(response)
+            },
+            Err(error) => {
+                response.set_status(StatusCode::InternalServerError);
+                error.send_response(response).map_err(Into::into)
+            }
+        }
+    }
+}
+
+impl<'a, 'b, T: SendResponse<'a, 'b>> SendResponse<'a, 'b> for Option<T> {
+    type Error = T::Error;
+
+    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), T::Error> {
+        if let Some(data) = self {
+            data.send_response(response)
+        } else {
+            response.set_status(StatusCode::NotFound);
+            Ok(())
+        }
+    }
+}
+
+impl<'a, 'b> SendResponse<'a, 'b> for io::Error {
+    type Error = Error;
+
+    fn send_response(self, mut resonse: Response<'a, 'b>) -> Result<(), Error> {
+        match self.kind() {
+            io::ErrorKind::NotFound => resonse.set_status(StatusCode::NotFound),
+            _ => {},
+        }
+
+        resonse.try_send_data(self.to_string())
+    }
+}
+
+impl<'d, 'a, 'b> SendResponse<'a, 'b> for &'d Path {
+    type Error = FileError<'a, 'b>;
+
+    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), FileError<'a, 'b>> {
+        let mime = self
+            .extension()
+            //.and_then(|ext| to_mime(&ext.to_string_lossy()))
+            .and_then(|ext| ::file::ext_to_mime(&ext.to_string_lossy()))
+            .unwrap_or_else(|| Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
+
+        let file = match File::open(self) {
+            Ok(file) => file,
+            Err(e) => return Err(FileError::Open(e, response))
+        };
+
+        response.headers_mut().set(ContentType(mime));
+        file.send_response(response)
+    }
+}
+
+impl<'a, 'b> SendResponse<'a, 'b> for PathBuf {
+    type Error = FileError<'a, 'b>;
+
+    fn send_response(self, response: Response<'a, 'b>) -> Result<(), FileError<'a, 'b>> {
+        (&*self).send_response(response)
+    }
+}
+
+impl<'a, 'b> SendResponse<'a, 'b> for File {
+    type Error = FileError<'a, 'b>;
+
+    fn send_response(mut self, response: Response<'a, 'b>) -> Result<(), FileError<'a, 'b>> {
+        let metadata = match self.metadata() {
+            Ok(metadata) => metadata,
+            Err(e) => return Err(FileError::Open(e, response)),
+        };
+
+        let mut writer = unsafe { response.into_raw(metadata.len()) };
+        io::copy(&mut self, &mut writer).map_err(FileError::Send).map(|_| ())
+    }
+}
+
+///Helper trait for dealing with errors that may occur while sending a
+///response. It provides a default method of handling the error.
+pub trait ResponseError {
+    ///Handle the error to "make it go away".
+    fn handle(self);
+}
+
+enum MaybeMock<T> {
+    Actual(T),
+    Mock {
+        headers: Headers,
+        status: StatusCode,
+    }
+}
+
+impl<T> MaybeMock<T> {
+    fn actual(response: T) -> MaybeMock<T> {
+        MaybeMock::Actual(response)
+    }
+
+    fn mock() -> MaybeMock<T> {
+        MaybeMock::Mock {
+            headers: Headers::new(),
+            status: StatusCode::Ok
+        }
+    }
+}
+
+impl<'a> MaybeMock<hyper::server::response::Response<'a>> {
+    fn status(&self) -> StatusCode {
+        match *self {
+            MaybeMock::Actual(ref response) => response.status(),
+            MaybeMock::Mock{status, ..} => status
+        }
+    }
+
+    fn status_mut(&mut self) -> &mut StatusCode {
+        match *self {
+            MaybeMock::Actual(ref mut response) => response.status_mut(),
+            MaybeMock::Mock{ref mut status, ..} => status
+        }
+    }
+
+    fn headers(&self) -> &Headers {
+        match *self {
+            MaybeMock::Actual(ref response) => response.headers(),
+            MaybeMock::Mock{ref headers, ..} => headers
+        }
+    }
+
+    fn headers_mut(&mut self) -> &mut Headers {
+        match *self {
+            MaybeMock::Actual(ref mut response) => response.headers_mut(),
+            MaybeMock::Mock{ref mut headers, ..} => headers
+        }
+    }
+
+    fn send(self, payload: &[u8]) -> io::Result<()> {
+        if let MaybeMock::Actual(response) = self {
+            response.send(payload)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn start(self) -> io::Result<MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>> {
+        if let MaybeMock::Actual(response) = self {
+            response.start().map(MaybeMock::Actual)
+        } else {
+            Ok(MaybeMock::mock())
+        }
+    }
+}
+
+impl<'a> MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>> {
+    fn end(self) -> io::Result<()> {
+        if let MaybeMock::Actual(response) = self {
+            response.end()
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl<'a> Write for MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>> {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        if let MaybeMock::Actual(ref mut response) = *self {
+            response.write(buffer)
+        } else {
+            Ok(0)
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if let MaybeMock::Actual(ref mut response) = *self {
+            response.flush()
+        } else {
+            Ok(())
+        }
+    }
+}
 
 ///An interface for sending data to the client.
 ///
@@ -256,7 +484,7 @@ impl<'a> Into<Data<'a>> for &'a str {
 ///response body. The body can be directly written through the `Response` if
 ///its size is known.
 pub struct Response<'a, 'b> {
-    writer: Option<hyper::server::response::Response<'a>>,
+    writer: Option<MaybeMock<hyper::server::response::Response<'a>>>,
     filters: &'b [Box<ResponseFilter>],
     global: &'b Global,
     filter_storage: Option<AnyMap>,
@@ -273,11 +501,22 @@ impl<'a, 'b> Response<'a, 'b> {
         force_close: bool
     ) -> Response<'a, 'b> {
         Response {
-            writer: Some(response),
+            writer: Some(MaybeMock::actual(response)),
             filters: filters,
             global: global,
             filter_storage: Some(AnyMap::new()),
             force_close: force_close
+        }
+    }
+
+    ///Create a non-functional `Response` for testing purposes.
+    pub fn mock(global: &'b Global) -> Response<'static, 'b> {
+        Response {
+            writer: Some(MaybeMock::mock()),
+            filters: &[],
+            global: global,
+            filter_storage: Some(AnyMap::new()),
+            force_close: false
         }
     }
 
@@ -314,23 +553,78 @@ impl<'a, 'b> Response<'a, 'b> {
         self.filter_storage.as_mut().expect("filter storage mutably accessed after drop")
     }
 
-    ///Send data to the client and finish the response, ignoring eventual
-    ///errors. Use `try_send` to get error information.
+    ///Send content to the client and finish the response, ignoring eventual
+    ///errors. Higher level content may manipulate the response before sending
+    ///it. Use `send_data` to restrict the content to lower level data.
+    ///
+    ///```
+    ///use rustful::{Context, Response};
+    ///use std::io;
+    ///# fn read_number() -> Result<u64, io::Error> { Ok(42) }
+    ///
+    ///fn make_data() -> Result<String, io::Error> {
+    ///    let number = try!(read_number());
+    ///    Ok(format!("got number {}", number))
+    ///}
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    response.send(make_data());
+    ///}
+    ///```
+    pub fn send<Content: SendResponse<'a, 'b>>(self, content: Content) where
+        Content::Error: ResponseError,
+    {
+        if let Err(e) = self.try_send(content) {
+            e.handle();
+        }
+    }
+
+    ///Send content to the client and finish the response. Higher level
+    ///content may manipulate the response before sending it. Use
+    ///`try_send_data` to restrict the content to lower level data.
+    ///
+    ///```
+    ///# #[macro_use] extern crate rustful;
+    ///#[macro_use] extern crate log;
+    ///use rustful::{Context, Response};
+    ///use rustful::response::Error;
+    ///use std::io;
+    ///# fn read_number() -> Result<u64, io::Error> { Ok(42) }
+    ///
+    ///fn make_data() -> Result<String, io::Error> {
+    ///    let number = try!(read_number());
+    ///    Ok(format!("got number {}", number))
+    ///}
+    ///
+    ///fn my_handler(context: Context, response: Response) {
+    ///    if let Err(Error::Filter(e)) = response.try_send(make_data()) {
+    ///        error!("a filter failed: {}", e);
+    ///    }
+    ///}
+    ///# fn main() {}
+    ///```
+    pub fn try_send<Content: SendResponse<'a, 'b>>(self, content: Content) -> Result<(), Content::Error> {
+        content.send_response(self)
+    }
+
+    ///Send simple data to the client and finish the response, ignoring
+    ///eventual errors. Use `try_send_data` to get error information.
     ///
     ///```
     ///use rustful::{Context, Response};
     ///
     ///fn my_handler(context: Context, response: Response) {
-    ///    response.send("hello");
+    ///    response.send_data("hello");
     ///}
     ///```
-    #[allow(unused_must_use)]
-    pub fn send<'d, Content: Into<Data<'d>>>(self, content: Content) {
-        self.try_send(content);
+    pub fn send_data<'d, Content: Into<Data<'d>>>(self, content: Content) {
+        if let Err(e) = self.try_send_data(content) {
+            e.handle();
+        }
     }
 
-    ///Try to send data to the client and finish the response. This is the
-    ///same as `send`, but errors are not ignored.
+    ///Try to send simple data to the client and finish the response. This is
+    ///the same as `send_data`, but errors are not ignored.
     ///
     ///```
     ///# #[macro_use] extern crate rustful;
@@ -339,14 +633,13 @@ impl<'a, 'b> Response<'a, 'b> {
     ///use rustful::response::Error;
     ///
     ///fn my_handler(context: Context, response: Response) {
-    ///    if let Err(Error::Filter(e)) = response.try_send("hello") {
+    ///    if let Err(Error::Filter(e)) = response.try_send_data("hello") {
     ///        error!("a filter failed: {}", e);
     ///    }
     ///}
-    ///
     ///# fn main() {}
     ///```
-    pub fn try_send<'d, Content: Into<Data<'d>>>(mut self, content: Content) -> Result<(), Error> {
+    pub fn try_send_data<'d, Content: Into<Data<'d>>>(mut self, content: Content) -> Result<(), Error> {
         self.send_sized(content)
     }
 
@@ -398,65 +691,10 @@ impl<'a, 'b> Response<'a, 'b> {
                     Action::SilentAbort => break
                 }
             }
-            
+
             writer.send(&buffer).map_err(|e| e.into())
         }
     }
-
-    ///Send a static file to the client.
-    ///
-    ///A MIME type is automatically applied to the response, based on the file
-    ///extension, and `application/octet-stream` is used as a fallback if the
-    ///extension is unknown. Use `send_file_with_mime` to override the MIME
-    ///guessing. See also [`ext_to_mime`](../file/fn.ext_to_mime.html) for more
-    ///information.
-    ///
-    ///An error is returned upon failure and the response may be recovered
-    ///from there if the file could not be opened.
-    ///
-    ///```
-    ///# #[macro_use] extern crate rustful;
-    ///#[macro_use] extern crate log;
-    ///use std::path::Path;
-    ///use rustful::{Context, Response};
-    ///use rustful::StatusCode;
-    ///use rustful::file::check_path;
-    ///
-    ///fn my_handler(mut context: Context, mut response: Response) {
-    ///    if let Some(file) = context.variables.get("file") {
-    ///        let file_path = Path::new(file.as_ref());
-    ///
-    ///        //Check if the path is valid
-    ///        if check_path(file_path).is_ok() {
-    ///            //Make a full path from the filename
-    ///            let path = Path::new("path/to/files").join(file_path);
-    ///
-    ///            //Send the file
-    ///            let res = response.send_file(&path)
-    ///                .or_else(|e| e.send_not_found("the file was not found"))
-    ///                .or_else(|e| e.ignore_send_error());
-    ///
-    ///            //Check if a more fatal file error than "not found" occurred
-    ///            if let Err((e, mut response)) = res {
-    ///                //Something went horribly wrong
-    ///                error!("failed to open '{}': {}", file, e);
-    ///                response.set_status(StatusCode::InternalServerError);
-    ///            }
-    ///        } else {
-    ///            //Accessing parent directories is forbidden
-    ///            response.set_status(StatusCode::Forbidden);
-    ///        }
-    ///    } else {
-    ///        //No filename was specified
-    ///        response.set_status(StatusCode::Forbidden);
-    ///    }
-    ///}
-    ///# fn main() {}
-    ///```
-    pub fn send_file<P: AsRef<Path>>(self, path: P) -> Result<(), FileError<'a, 'b>> {
-        self.send_file_with_mime(path, ::file::ext_to_mime)
-    }
-
 
     ///Send a static file with a specified MIME type to the client.
     ///
@@ -521,20 +759,13 @@ impl<'a, 'b> Response<'a, 'b> {
             .and_then(|ext| to_mime(&ext.to_string_lossy()))
             .unwrap_or_else(|| Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
 
-        let mut file = match File::open(path) {
+        let file = match File::open(path) {
             Ok(file) => file,
-            Err(e) => return Err(FileError::Open(e, self))
-        };
-        let metadata = match file.metadata() {
-            Ok(metadata) => metadata,
             Err(e) => return Err(FileError::Open(e, self))
         };
 
         self.headers_mut().set(ContentType(mime));
-
-        let mut writer = unsafe { self.into_raw(metadata.len()) };
-
-        io::copy(&mut file, &mut writer).map_err(FileError::Send).map(|_| ())
+        file.send_response(self)
     }
 
     ///Write the status code and headers to the client and turn the `Response`
@@ -617,7 +848,7 @@ impl<'a, 'b> Drop for Response<'a, 'b> {
 ///This is useful for when the size of the data is unknown, but it comes with
 ///an overhead for each time `send` or `try_send` is called (simply put).
 pub struct Chunked<'a, 'b> {
-    writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, Error>>,
+    writer: Option<Result<MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>, Error>>,
     filters: &'b [Box<ResponseFilter>],
     global: &'b Global,
     filter_storage: AnyMap
@@ -652,9 +883,10 @@ impl<'a, 'b> Chunked<'a, 'b> {
     ///    }
     ///}
     ///```
-    #[allow(unused_must_use)]
     pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
-        self.try_send(content);
+        if let Err(e) = self.try_send(content) {
+            e.handle();
+        }
     }
 
     ///Send a chunk of data to the client. This is the same as `send`, but
@@ -738,7 +970,7 @@ impl<'a, 'b> Chunked<'a, 'b> {
         writer.end().map_err(Error::Io)
     }
 
-    fn borrow_writer(&mut self) -> Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>, Error> {
+    fn borrow_writer(&mut self) -> Result<&mut MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>, Error> {
         match self.writer {
             Some(Ok(ref mut writer)) => Ok(writer),
             None => Err(Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),
@@ -782,7 +1014,7 @@ impl<'a, 'b> Drop for Chunked<'a, 'b> {
 ///__Unsafety__: The content length is set beforehand, which makes it possible
 ///to send responses that are too short.
 pub struct Raw<'a> {
-    writer: Option<Result<hyper::server::response::Response<'a, hyper::net::Streaming>, io::Error>>
+    writer: Option<Result<MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>, io::Error>>
 }
 
 impl<'a> Raw<'a> {
@@ -849,7 +1081,7 @@ impl<'a> Raw<'a> {
         writer.end()
     }
 
-    fn borrow_writer(&mut self) -> io::Result<&mut hyper::server::response::Response<'a, hyper::net::Streaming>> {
+    fn borrow_writer(&mut self) -> io::Result<&mut MaybeMock<hyper::server::response::Response<'a, hyper::net::Streaming>>> {
         match self.writer {
             Some(Ok(ref mut writer)) => Ok(writer),
             None => Err(io::Error::new(io::ErrorKind::BrokenPipe, "write after close")),

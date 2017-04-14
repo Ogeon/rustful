@@ -2,7 +2,6 @@
 extern crate log;
 extern crate env_logger;
 
-#[macro_use]
 extern crate rustful;
 use std::error::Error;
 use rustful::{Server, Context, Response};

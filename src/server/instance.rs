@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -29,8 +28,7 @@ use StatusCode;
 
 use context::{self, Context, UriPath, MaybeUtf8Owned, Parameters};
 use filter::{FilterContext, ContextFilter, ContextAction, ResponseFilter};
-use router::{Router, Endpoint};
-use handler::Handler;
+use handler::{HandleRequest, Environment};
 use response::Response;
 use header::HttpDate;
 use server::{Scheme, Global, KeepAlive};
@@ -50,7 +48,7 @@ use utils;
 ///# #[derive(Default)]
 ///# struct R;
 ///# impl Handler for R {
-///#     fn handle_request(&self, _context: Context, _response: Response) {}
+///#     fn handle(&self, _context: Context, _response: Response) {}
 ///# }
 ///# let router = R;
 ///let (server_instance, scheme) = Server {
@@ -59,9 +57,8 @@ use utils;
 ///    ..Server::default()
 ///}.build();
 ///```
-pub struct ServerInstance<R: Router> {
+pub struct ServerInstance<R> {
     handlers: R,
-    fallback_handler: Option<R::Handler>,
 
     host: SocketAddr,
 
@@ -78,13 +75,12 @@ pub struct ServerInstance<R: Router> {
     global: Global,
 }
 
-impl<R: Router> ServerInstance<R> {
+impl<R: HandleRequest + 'static> ServerInstance<R> {
     ///Create a new server instance, with the provided configuration. This is
     ///the same as `Server{...}.build()`.
     pub fn new(config: Server<R>) -> (ServerInstance<R>, Scheme) {
         (ServerInstance {
             handlers: config.handlers,
-            fallback_handler: config.fallback_handler,
             host: config.host.into(),
             server: config.server,
             content_type: config.content_type,
@@ -149,8 +145,8 @@ struct ParsedUri {
     fragment: Option<MaybeUtf8Owned>
 }
 
-impl<R: Router> HyperHandler for ServerInstance<R> {
-    fn handle(&self, request: hyper::server::request::Request, writer: hyper::server::response::Response) {
+impl<R: HandleRequest + 'static> HyperHandler for ServerInstance<R> {
+    fn handle<'a, 'b>(&'a self, request: hyper::server::request::Request<'a, 'b>, writer: hyper::server::response::Response<'a>) {
         let (
             request_addr,
             request_method,
@@ -216,26 +212,19 @@ impl<R: Router> HyperHandler for ServerInstance<R> {
                     ContextAction::Next => {
                         *response.filter_storage_mut() = filter_storage;
 
-                        let endpoint = context.uri_path.as_path().map_or_else(|| {
-                            Endpoint {
-                                handler: None,
-                                variables: HashMap::new(),
-                                hyperlinks: vec![]
+                        let path = context.uri_path.clone();
+                        if let Some(path) = path.as_path() {
+                            let result = self.handlers.handle_request(Environment {
+                                context: context,
+                                response: response,
+                                route_state: (&path[..]).into(),
+                            });
+
+                            if let Err(mut environment) = result {
+                                if environment.response.status() == StatusCode::Ok {
+                                    environment.response.set_status(StatusCode::NotFound);
+                                }
                             }
-                        }, |path| self.handlers.find(&context.method, &mut (&path[..]).into()));
-
-                        let Endpoint {
-                            handler,
-                            variables,
-                            hyperlinks
-                        } = endpoint;
-
-                        if let Some(handler) = handler.or(self.fallback_handler.as_ref()) {
-                            context.hyperlinks = hyperlinks;
-                            context.variables = variables.into();
-                            handler.handle_request(context, response);
-                        } else {
-                            response.set_status(StatusCode::NotFound);
                         }
                     },
                     ContextAction::Abort(status) => {
@@ -353,7 +342,7 @@ impl HyperServer {
     }
 
     #[cfg(feature = "ssl")]
-    fn run<R: Router>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> {
+    fn run<R: 'static>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> where ServerInstance<R>: HyperHandler {
         match self {
             HyperServer::Http(s) => s.handle_threads(server, threads),
             HyperServer::Https(s) => s.handle_threads(server, threads),
@@ -361,7 +350,7 @@ impl HyperServer {
     }
 
     #[cfg(not(feature = "ssl"))]
-    fn run<R: Router>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> {
+    fn run<R: 'static>(self, server: ServerInstance<R>, threads: usize) -> HttpResult<Listening> where ServerInstance<R>: HyperHandler {
         match self {
             HyperServer::Http(s) => s.handle_threads(server, threads),
         }

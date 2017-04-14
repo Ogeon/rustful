@@ -8,7 +8,7 @@ use hyper::mime::Mime;
 pub use hyper::server::Listening;
 
 use filter::{ContextFilter, ResponseFilter};
-use router::Router;
+use handler::HandleRequest;
 
 use HttpResult;
 
@@ -26,7 +26,7 @@ mod config;
 ///# #[derive(Default)]
 ///# struct R;
 ///# impl Handler for R {
-///#     fn handle_request(&self, _context: Context, _response: Response) {}
+///#     fn handle(&self, _context: Context, _response: Response) {}
 ///# }
 ///# let router = R;
 ///let server_result = Server {
@@ -40,14 +40,9 @@ mod config;
 ///    Err(e) => println!("could not start server: {}", e.description())
 ///}
 ///```
-pub struct Server<R: Router> {
+pub struct Server<R> {
     ///One or several response handlers.
     pub handlers: R,
-
-    ///A fallback handler for when none is found in `handlers`. Leaving this
-    ///unspecified will cause an empty `404` response to be automatically sent
-    ///instead.
-    pub fallback_handler: Option<R::Handler>,
 
     ///The host address and port where the server will listen for requests.
     ///Default is `0.0.0.0:80`.
@@ -82,7 +77,7 @@ pub struct Server<R: Router> {
     pub response_filters: Vec<Box<ResponseFilter>>
 }
 
-impl<R: Router> Server<R> {
+impl<R: HandleRequest> Server<R> {
     ///Set up a new standard server. This can be useful when `handlers`
     ///doesn't implement `Default`:
     ///
@@ -101,7 +96,6 @@ impl<R: Router> Server<R> {
     pub fn new(handlers: R) -> Server<R> {
         Server {
             handlers: handlers,
-            fallback_handler: None,
             host: 80.into(),
             scheme: Scheme::Http,
             threads: None,
@@ -130,7 +124,7 @@ impl<R: Router> Server<R> {
     }
 }
 
-impl<R: Router + Default> Default for Server<R> {
+impl<R: Default + HandleRequest> Default for Server<R> {
     fn default() -> Server<R> {
         Server::new(R::default())
     }
