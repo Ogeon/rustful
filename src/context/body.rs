@@ -114,7 +114,7 @@ impl<'a, 'b> BodyReader<'a, 'b> {
     ///        multipart.foreach_entry(|entry| match entry.data {
     ///            MultipartData::Text(text) => {
     ///                //Found data from a text field
-    ///                writeln!(&mut result, "{}: '{}'", entry.name, text);
+    ///                writeln!(&mut result, "{}: '{}'", entry.name, text.text);
     ///            },
     ///            MultipartData::File(file) => {
     ///                //Found an uploaded file
