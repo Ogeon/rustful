@@ -7,22 +7,6 @@ use std::time::Duration;
 use anymap::Map;
 use anymap::any::{Any, UncheckedAnyExt};
 
-///HTTP or HTTPS.
-pub enum Scheme {
-    ///Standard HTTP.
-    Http,
-
-    ///HTTP with SSL encryption.
-    #[cfg(feature = "ssl")]
-    Https {
-        ///Path to SSL certificate.
-        cert: ::std::path::PathBuf,
-
-        ///Path to key file.
-        key: ::std::path::PathBuf
-    }
-}
-
 ///A host address and a port.
 ///
 ///Can be conveniently converted from an existing address-port pair or just a port:
