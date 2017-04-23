@@ -9,11 +9,12 @@ pub use hyper::server::Listening;
 
 use filter::{ContextFilter, ResponseFilter};
 use handler::HandleRequest;
+use net::SslServer;
 
 use HttpResult;
 
 pub use self::instance::ServerInstance;
-pub use self::config::{Host, Global, Scheme, KeepAlive};
+pub use self::config::{Host, Global, KeepAlive};
 
 mod instance;
 mod config;
@@ -47,9 +48,6 @@ pub struct Server<R> {
     ///The host address and port where the server will listen for requests.
     ///Default is `0.0.0.0:80`.
     pub host: Host,
-
-    ///Use good old HTTP or the more secure HTTPS. Default is HTTP.
-    pub scheme: Scheme,
 
     ///The number of threads to be used in the server thread pool. The default
     ///(`None`) will cause the server to optimistically use the formula
@@ -97,7 +95,6 @@ impl<R: HandleRequest> Server<R> {
         Server {
             handlers: handlers,
             host: 80.into(),
-            scheme: Scheme::Http,
             threads: None,
             keep_alive: None,
             server: "rustful".to_owned(),
@@ -114,12 +111,16 @@ impl<R: HandleRequest> Server<R> {
 
     ///Start the server.
     pub fn run(self) -> HttpResult<Listening> {
-        let (server, scheme) = self.build();
-        server.run(scheme)
+        self.build().run()
+    }
+
+    ///Start the server with SSL.
+    pub fn run_https<S: SslServer + Clone + Send + 'static>(self, ssl: S) -> HttpResult<Listening> {
+        self.build().run_https(ssl)
     }
 
     ///Build a runnable instance of the server.
-    pub fn build(self) -> (ServerInstance<R>, Scheme) {
+    pub fn build(self) -> ServerInstance<R> {
         ServerInstance::new(self)
     }
 }

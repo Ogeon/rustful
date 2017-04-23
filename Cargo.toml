@@ -16,9 +16,8 @@ name = "rustful"
 path = "src/lib.rs"
 
 [features]
-default = ["rustc_json_body", "ssl", "multipart"]
+default = ["rustc_json_body", "multipart"]
 rustc_json_body = ["rustc-serialize"]
-ssl = ["hyper/ssl"]
 
 #internal
 benchmark = []
@@ -33,8 +32,7 @@ num_cpus = "0.2"
 log = "0.3"
 
 [dependencies.hyper]
-version = "0.9"
-default-features = false
+version = "0.10"
 
 [dependencies.multipart]
 #feature
