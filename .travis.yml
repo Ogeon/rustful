@@ -1,8 +1,8 @@
 language: rust
 sudo: false
 cache:
-  directories:
-    - $HOME/.cargo
+  cargo: true
+  bundler: true
 rust:
   - stable
   - beta
@@ -14,10 +14,15 @@ branches:
   only:
     - master
     - auto
+before_install:
+  - rvm install 2.1.2
+install:
+  - bundle install
 script:
   - cargo build -v --features strict
   - cargo test -v --features strict
   - bash scripts/test_features.sh
   - cargo doc
+  - bundle exec danger
 after_success:
   - sh scripts/upload_doc.sh
