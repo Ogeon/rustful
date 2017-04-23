@@ -1,92 +1,11 @@
 //!Routing related traits and types.
 
 use std::collections::HashMap;
-use std::iter::{Iterator, FlatMap, Peekable};
+use std::iter::{Iterator, FlatMap};
 use std::slice::Split;
 use std::ops::Deref;
-use std::marker::PhantomData;
-use hyper::method::Method;
 
-use handler::Handler;
 use context::MaybeUtf8Owned;
-
-///A common trait for building routers.
-///
-///A router has to implement this trait to be compatible with the
-///`insert_routes!` macro.
-pub trait Insert<H> {
-    ///Build a new router from a route. The router may choose to ignore
-    ///both `method` and `route`, depending on its implementation.
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> Self;
-
-    ///Insert a new route into the router. The router may choose to ignore
-    ///both `method` and `route`, depending on its implementation.
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H);
-}
-
-///Additional insertion and modification methods.
-pub trait InsertExt {
-    ///Insert an other router at a path. The content of the other router will
-    ///be merged with this one and conflicting content will be overwritten.
-    fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: Self);
-
-    ///Change the router as if it was placed under the provided route.
-    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R);
-
-    ///Merge this router with an other one, overwriting conflicting parts.
-    fn merge(&mut self, other: Self) where Self: Sized {
-        self.insert_router("", other);
-    }
-}
-
-impl<H: Handler> Insert<H> for H {
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(_method: Method, _route: R, item: H) -> H {
-        item
-    }
-
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, _method: Method, _route: R, item: H) {
-        *self = item;
-    }
-}
-
-impl<H: Handler> InsertExt for H {
-    fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R, router: H) {
-        *self = router;
-    }
-
-    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, _route: R) {}
-}
-
-impl<T: Insert<H>, H> Insert<H> for Option<T> {
-    fn build<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(method: Method, route: R, item: H) -> Option<T> {
-        Some(T::build(method, route, item))
-    }
-
-    fn insert<'a, R: Into<InsertState<'a, I>>, I: Iterator<Item = &'a [u8]>>(&mut self, method: Method, route: R, item: H) {
-        match *self {
-            Some(ref mut r) => r.insert(method, route, item),
-            ref mut s @ None => *s = Some(T::build(method, route, item)),
-        }
-    }
-}
-
-impl<T: InsertExt> InsertExt for Option<T> {
-    fn insert_router<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R, router: Option<T>) {
-        if let Some(mut other) = router {
-            match *self {
-                Some(ref mut r) => r.insert_router(route, other),
-                ref mut s @ None => {
-                    other.prefix(route);
-                    *s = Some(other)
-                }
-            }
-        }
-    }
-
-    fn prefix<'a, R: Into<InsertState<'a, I>>, I: Clone + Iterator<Item = &'a [u8]>>(&mut self, route: R) {
-        self.as_mut().map(|r| r.prefix(route));
-    }
-}
 
 ///A segmented route.
 pub trait Route<'a> {
@@ -191,53 +110,6 @@ impl<I: Iterator> Iterator for RouteIter<I> {
         match *self {
             RouteIter::Path(ref i) => i.size_hint(),
             RouteIter::Root => (0, Some(0))
-        }
-    }
-}
-
-///A state object for route insertion.
-///
-///It works as an iterator over the path segments and will, at the same time,
-///record the variable names.
-#[derive(Clone)]
-pub struct InsertState<'a, I: Iterator<Item=&'a [u8]>> {
-    route: Peekable<I>,
-    variables: Vec<MaybeUtf8Owned>,
-    _p: PhantomData<&'a [u8]>,
-}
-
-impl<'a, I: Iterator<Item=&'a [u8]>> InsertState<'a, I> {
-    ///Extract the variable names from the parsed path.
-    pub fn variables(&mut self) -> Vec<MaybeUtf8Owned> {
-        ::std::mem::replace(&mut self.variables, vec![])
-    }
-
-    ///Check if there are no more segments.
-    pub fn is_empty(&mut self) -> bool {
-        self.route.peek().is_none()
-    }
-}
-
-impl<'a, I: Iterator<Item=&'a [u8]>> Iterator for InsertState<'a, I> {
-    type Item = &'a [u8];
-
-    fn next(&mut self) -> Option<&'a [u8]> {
-        self.route.next().map(|segment| {
-            match segment.get(0) {
-                Some(&b'*') | Some(&b':') => self.variables.push(segment[1..].to_owned().into()),
-                _ => {}
-            }
-            segment
-        })
-    }
-}
-
-impl<'a, R: Route<'a> + ?Sized> From<&'a R> for InsertState<'a, R::Segments> {
-    fn from(route: &'a R) -> InsertState<'a, R::Segments> {
-        InsertState {
-            route: route.segments().peekable(),
-            variables: vec![],
-            _p: PhantomData,
         }
     }
 }

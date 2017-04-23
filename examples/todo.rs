@@ -33,20 +33,23 @@ use rustful::StatusCode;
 fn main() {
     env_logger::init().unwrap();
 
-    let mut router = insert_routes!{
-        DefaultRouter::<Api>::new() => {
-            Get: Api(Some(list_all)),
-            Post: Api(Some(store)),
-            Delete: Api(Some(clear)),
-            Options: Api(None),
-            ":id" => {
-                Get: Api(Some(get_todo)),
-                Patch: Api(Some(edit_todo)),
-                Delete: Api(Some(delete_todo)),
-                Options: Api(None)
-            }
-        }
-    };
+    let mut router = DefaultRouter::<Api>::new();
+
+    //Global actions
+    router.build().then().many(|mut endpoint| {
+        endpoint.on_get(Api(Some(list_all)));
+        endpoint.on_post(Api(Some(store)));
+        endpoint.on_delete(Api(Some(clear)));
+        endpoint.on_options(Api(None));
+    });
+
+    //Note actions
+    router.build().path(":id").then().many(|mut endpoint| {
+        endpoint.on_get(Api(Some(get_todo)));
+        endpoint.on_patch(Api(Some(edit_todo)));
+        endpoint.on_delete(Api(Some(delete_todo)));
+        endpoint.on_options(Api(None));
+    });
 
     //Enables hyperlink search, which will be used in CORS
     router.find_hyperlinks = true;

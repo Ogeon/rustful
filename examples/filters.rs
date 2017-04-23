@@ -77,19 +77,15 @@ fn main() {
     println!("Run this example with the environment variable 'RUST_LOG' set to 'debug' to see the debug prints.");
 
     let mut router = DefaultRouter::<Handler>::new();
-    insert_routes!{
-        &mut router => {
-            "print" => {
-                Get: Handler(say_hello, Format::Text),
-                ":person" => Get: Handler(say_hello, Format::Text),
+    router.build().path("print").many(|mut node| {
+        node.then().on_get(Handler(say_hello, Format::Text));
+        node.path(":person").then().on_get(Handler(say_hello, Format::Text));
 
-                "json" => {
-                    Get: Handler(say_hello, Format::Json),
-                    ":person" => Get: Handler(say_hello, Format::Json)
-                }
-            }
-        }
-    };
+        node.path("json").many(|mut node| {
+            node.then().on_get(Handler(say_hello, Format::Json));
+            node.path(":person").then().on_get(Handler(say_hello, Format::Json));
+        });
+    });
 
     let server_result = Server {
         host: 8080.into(),
