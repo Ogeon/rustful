@@ -21,7 +21,7 @@ ContentType(
 it can be written like this:
 
 ```
-#[macro_use]
+#[macro_use(content_type)]
 extern crate rustful;
 use rustful::header::ContentType;
 
@@ -35,7 +35,7 @@ may contain more than one parameter, or be omitted. Here are some more
 examples showing that and how strings can be used for more exotic values:
 
 ```
-#[macro_use]
+#[macro_use(content_type)]
 extern crate rustful;
 use rustful::header::ContentType;
 
@@ -45,7 +45,7 @@ ContentType(content_type!(Application / "octet-stream"; "type" = "image/gif"; "p
 ```
 
 ```
-#[macro_use]
+#[macro_use(content_type)]
 extern crate rustful;
 use rustful::header::ContentType;
 
@@ -62,12 +62,12 @@ macro_rules! content_type {
             {
                 #[allow(unused_imports)]
                 use $crate::mime::TopLevel::*;
-                MimeHelper::from(__rustful_to_expr!($main_type)).convert()
+                MimeHelper::from(content_type!(@__rustful_to_expr $main_type)).convert()
             },
             {
                 #[allow(unused_imports)]
                 use $crate::mime::SubLevel::*;
-                MimeHelper::from(__rustful_to_expr!($sub_type)).convert()
+                MimeHelper::from(content_type!(@__rustful_to_expr $sub_type)).convert()
             },
             Vec::new()
         )
@@ -79,30 +79,26 @@ macro_rules! content_type {
             {
                 #[allow(unused_imports)]
                 use $crate::mime::TopLevel::*;
-                MimeHelper::from(__rustful_to_expr!($main_type)).convert()
+                MimeHelper::from(content_type!(@__rustful_to_expr $main_type)).convert()
             },
             {
                 #[allow(unused_imports)]
                 use $crate::mime::SubLevel::*;
-                MimeHelper::from(__rustful_to_expr!($sub_type)).convert()
+                MimeHelper::from(content_type!(@__rustful_to_expr $sub_type)).convert()
             },
             vec![ $( ({
                 #[allow(unused_imports)]
                 use $crate::mime::Attr::*;
-                MimeHelper::from(__rustful_to_expr!($param)).convert()
+                MimeHelper::from(content_type!(@__rustful_to_expr $param)).convert()
             }, {
                 #[allow(unused_imports)]
                 use $crate::mime::Value::*;
-                MimeHelper::from(__rustful_to_expr!($value)).convert()
+                MimeHelper::from(content_type!(@__rustful_to_expr $value)).convert()
             })),+ ]
         )
     });
-}
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __rustful_to_expr {
-    ($e: expr) => ($e)
+    (@__rustful_to_expr $e: expr) => ($e);
 }
 
 use std::str::FromStr;
