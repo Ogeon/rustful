@@ -1,10 +1,5 @@
 //!Anything related to reading the request body.
 
-#[cfg(feature = "rustc_json_body")]
-use rustc_serialize::json;
-#[cfg(feature = "rustc_json_body")]
-use rustc_serialize::Decodable;
-
 #[cfg(feature = "multipart")]
 use multipart::server::{HttpRequest, Multipart};
 
@@ -174,65 +169,7 @@ impl<'a, 'b> BodyReader<'a, 'b> {
         Ok(::utils::parse_parameters(&buf))
     }
 
-    ///Read the request body into a generic JSON structure. This structure can
-    ///then be navigated and parsed freely.
-    ///
-    ///A simplified example of how to parse `{ "a": number, "b": number }`:
-    ///
-    ///```
-    ///use rustful::{Context, Response};
-    ///
-    ///fn my_handler(mut context: Context, response: Response) {
-    ///    //Parse the request body as JSON
-    ///    let json = context.body.read_json_body().unwrap();
-    ///
-    ///    //Find "a" and "b" in the root object and assume that they are numbers
-    ///    let a = json.find("a").and_then(|number| number.as_f64()).unwrap();
-    ///    let b = json.find("b").and_then(|number| number.as_f64()).unwrap();
-    ///
-    ///    response.send(format!("{} + {} = {}", a, b, a + b));
-    ///}
-    ///```
-    #[cfg(feature = "rustc_json_body")]
-    pub fn read_json_body(&mut self) -> Result<json::Json, json::BuilderError> {
-        json::Json::from_reader(self)
     }
-
-    ///Read and decode a request body as a type `T`. The target type must
-    ///implement `rustc_serialize::Decodable`.
-    ///
-    ///A simplified example of how to parse `{ "a": number, "b": number }`:
-    ///
-    ///```
-    ///extern crate rustful;
-    ///extern crate rustc_serialize;
-    ///
-    ///use rustful::{Context, Response};
-    ///
-    ///#[derive(RustcDecodable)]
-    ///struct Foo {
-    ///    a: f64,
-    ///    b: f64
-    ///}
-    ///
-    ///fn my_handler(mut context: Context, response: Response) {
-    ///    //Decode a JSON formatted request body into Foo
-    ///    let foo: Foo = context.body.decode_json_body().unwrap();
-    ///
-    ///    response.send(format!("{} + {} = {}", foo.a, foo.b, foo.a + foo.b));
-    ///}
-    ///# fn main() {}
-    ///```
-    #[cfg(feature = "rustc_json_body")]
-    pub fn decode_json_body<T: Decodable>(&mut self) -> json::DecodeResult<T> {
-        let mut buf = String::new();
-        try!(self.read_to_string(&mut buf).map_err(|e| {
-            let parse_err = json::ParserError::IoError(e);
-            json::DecoderError::ParseError(parse_err)
-        }));
-        json::decode(&buf)
-    }
-}
 
 impl<'a, 'b> Read for BodyReader<'a, 'b> {
     ///Read the request body.

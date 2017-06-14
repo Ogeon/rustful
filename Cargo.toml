@@ -16,8 +16,7 @@ name = "rustful"
 path = "src/lib.rs"
 
 [features]
-default = ["rustc_json_body", "multipart"]
-rustc_json_body = ["rustc-serialize"]
+default = ["multipart"]
 
 #internal
 benchmark = []
@@ -39,10 +38,6 @@ version = "0.10"
 version = "0.12"
 default-features = false
 features = ["server"]
-optional = true
-
-[dependencies.rustc-serialize]
-version = "0.3"
 optional = true
 
 [dev-dependencies]
