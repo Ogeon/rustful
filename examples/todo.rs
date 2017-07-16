@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate rustful;
-extern crate rustc_serialize;
+extern crate serde;
+extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
 extern crate unicase;
 
 #[macro_use]
@@ -10,7 +13,6 @@ extern crate env_logger;
 use std::sync::RwLock;
 use std::collections::btree_map::{BTreeMap, Iter};
 
-use rustc_serialize::json;
 use unicase::UniCase;
 
 use rustful::{
@@ -111,15 +113,13 @@ fn list_all(database: &Database, context: Context) -> Result<Option<String>, Err
       .map(|(&id, todo)| NetworkTodo::from_todo(todo, host, id))
       .collect();
 
-    Ok(Some(json::encode(&todos).unwrap()))
+    Ok(Some(serde_json::to_string(&todos).unwrap()))
 }
 
 //Store a new to-do with data from the request body
-fn store(database: &Database, mut context: Context) -> Result<Option<String>, Error> {
+fn store(database: &Database, context: Context) -> Result<Option<String>, Error> {
     let todo: NetworkTodo = try!(
-        context.body
-        .decode_json_body()
-        .map_err(|_| Error::ParseError)
+        serde_json::from_reader(context.body).map_err(|_| Error::ParseError)
     );
 
     let host = try!(context.headers.get().ok_or(Error::MissingHostHeader));
@@ -131,7 +131,7 @@ fn store(database: &Database, mut context: Context) -> Result<Option<String>, Er
         NetworkTodo::from_todo(todo, host, id)
     });
 
-    Ok(Some(json::encode(&todo).unwrap()))
+    Ok(Some(serde_json::to_string(&todo).unwrap()))
 }
 
 //Clear the database
@@ -149,15 +149,13 @@ fn get_todo(database: &Database, context: Context) -> Result<Option<String>, Err
         NetworkTodo::from_todo(&todo, host, id)
     });
 
-    Ok(todo.map(|todo| json::encode(&todo).unwrap()))
+    Ok(todo.map(|todo| serde_json::to_string(&todo).unwrap()))
 }
 
 //Update a to-do, selected by its id with data from the request body
-fn edit_todo(database: &Database, mut context: Context) -> Result<Option<String>, Error> {
+fn edit_todo(database: &Database, context: Context) -> Result<Option<String>, Error> {
     let edits: NetworkTodo = try!(
-        context.body
-        .decode_json_body()
-        .map_err(|_| Error::ParseError)
+        serde_json::from_reader(context.body).map_err(|_| Error::ParseError)
     );
     let host = try!(context.headers.get().ok_or(Error::MissingHostHeader));
     let id = try!(context.variables.parse("id").map_err(|_| Error::BadId));
@@ -170,7 +168,7 @@ fn edit_todo(database: &Database, mut context: Context) -> Result<Option<String>
         NetworkTodo::from_todo(&todo, host, id)
     });
 
-    Ok(Some(json::encode(&todo).unwrap()))
+    Ok(Some(serde_json::to_string(&todo).unwrap()))
 }
 
 //Delete a to-do, selected by its id
@@ -263,7 +261,7 @@ impl Table {
 
 
 //A structure for what will be sent and received over the network
-#[derive(RustcDecodable, RustcEncodable)]
+#[derive(Serialize, Deserialize)]
 struct NetworkTodo {
     title: Option<String>,
     completed: Option<bool>,

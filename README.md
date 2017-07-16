@@ -35,7 +35,6 @@ rustful = "0.9"
 
 Some parts of Rustful can be toggled using Cargo features:
 
- * `rustc_json_body` - Parse the request body as JSON. Enabled by default.
  * `ssl` - Enable SSL, and thereby HTTPS. Enabled by default.
  * `multipart` - Enable parsing of `multipart/form-data` requests. Enabled by default.
 
