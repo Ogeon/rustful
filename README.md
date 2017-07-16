@@ -70,9 +70,9 @@ extern crate rustful;
 
 use std::error::Error;
 
-use rustful::{Server, Context, Response, DefaultRouter};
+use rustful::{Server, &mut Context, DefaultRouter};
 
-fn say_hello(context: Context, response: Response) {
+fn say_hello(context: &mut Context) -> String {
     //Get the value of the path variable `:person`, from below.
     let person = match context.variables.get("person") {
         Some(name) => name,
@@ -80,14 +80,14 @@ fn say_hello(context: Context, response: Response) {
     };
 
     //Use the name from the path variable to say hello.
-    response.send(format!("Hello, {}!", person));
+    format!("Hello, {}!", person)
 }
 
 fn main() {
     env_logger::init().unwrap();
 
     //Create a DefaultRouter and fill it with handlers.
-    let mut router = DefaultRouter::<fn(Context, Response)>::new();
+    let mut router = DefaultRouter::<fn(&mut Context) -> String>::new();
     router.build().many(|mut node| {
         //Handle requests for root...
         node.then().on_get(say_hello);

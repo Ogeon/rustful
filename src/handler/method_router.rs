@@ -25,21 +25,21 @@ impl<T> MethodRouter<T> {
     /// Build the router and its children using a chaninable API.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::MethodRouter;
     ///
-    /// fn get(_context: Context, response: Response) {
-    ///     response.send("A GET request.");
+    /// fn get(_context: &mut Context) -> &'static str {
+    ///     "A GET request."
     /// }
     ///
-    /// fn post(_context: Context, response: Response) {
-    ///     response.send("A POST request.");
+    /// fn post(_context: &mut Context) -> &'static str {
+    ///     "A POST request."
     /// }
     ///
-    /// let mut method_router = MethodRouter::<fn(Context, Response)>::new();
+    /// let mut method_router = MethodRouter::<fn(&mut Context) -> &'static str>::new();
     ///
     /// method_router.build().many(|mut method_router|{
-    ///     method_router.on_get(get as fn(Context, Response));
+    ///     method_router.on_get(get);
     ///     method_router.on_post(post);
     /// });
     /// ```
@@ -50,10 +50,10 @@ impl<T> MethodRouter<T> {
     /// Insert a handler that will listen for a specific status code.
     ///
     /// ```
-    /// use rustful::{Context, Response, Method};
+    /// use rustful::{Context, Method};
     /// use rustful::handler::{MethodRouter, TreeRouter};
     ///
-    /// let route_tree = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// let route_tree = TreeRouter::<Option<fn(&mut Context) -> &'static str>>::new();
     /// //Fill route_tree with handlers...
     ///
     /// let mut method_router = MethodRouter::new();
@@ -139,21 +139,21 @@ impl<'a, T> Builder<'a, T> {
     /// Perform more than one operation on this builder.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::MethodRouter;
     ///
-    /// fn get(_context: Context, response: Response) {
-    ///     response.send("A GET request.");
+    /// fn get(_context: &mut Context) -> &'static str {
+    ///     "A GET request."
     /// }
     ///
-    /// fn post(_context: Context, response: Response) {
-    ///     response.send("A POST request.");
+    /// fn post(_context: &mut Context) -> &'static str {
+    ///     "A POST request."
     /// }
     ///
-    /// let mut method_router = MethodRouter::<fn(Context, Response)>::new();
+    /// let mut method_router = MethodRouter::<fn(&mut Context) -> &'static str>::new();
     ///
     /// method_router.build().many(|mut method_router|{
-    ///     method_router.on_get(get as fn(Context, Response));
+    ///     method_router.on_get(get);
     ///     method_router.on_post(post);
     /// });
     /// ```
@@ -165,16 +165,16 @@ impl<'a, T> Builder<'a, T> {
     /// Insert a handler for GET requests.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::MethodRouter;
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// let mut method_router = MethodRouter::<fn(Context, Response)>::new();
+    /// let mut method_router = MethodRouter::<fn(&mut Context) -> &'static str>::new();
     ///
-    /// method_router.build().on_get(handler as fn(Context, Response));
+    /// method_router.build().on_get(handler);
     /// ```
     pub fn on_get<H>(&mut self, handler: H) where T: FromHandler<H> {
         self.on(Method::Get, handler);
@@ -218,17 +218,17 @@ impl<'a, T> Builder<'a, T> {
     /// Insert a handler, similar to `on_get`, but for any HTTP method.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::MethodRouter;
     /// # fn choose_a_method() -> rustful::Method { rustful::Method::Get }
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// let mut method_router = MethodRouter::<fn(Context, Response)>::new();
+    /// let mut method_router = MethodRouter::<fn(&mut Context) -> &'static str>::new();
     ///
-    /// method_router.build().on(choose_a_method(), handler as fn(Context, Response));
+    /// method_router.build().on(choose_a_method(), handler);
     /// ```
     pub fn on<H>(&mut self, method: Method, handler: H) where T: FromHandler<H> {
         self.router.handlers.insert(method, T::from_handler(self.context.clone(), handler));
@@ -239,16 +239,16 @@ impl<'a: 'b, 'b, T: Default + ApplyContext + Build<'b>> Builder<'a, T> {
     /// Build a handler and its children, for GET requests.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::{MethodRouter, TreeRouter};
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// let mut method_router = MethodRouter::<TreeRouter<Option<fn(Context, Response)>>>::new();
+    /// let mut method_router = MethodRouter::<TreeRouter<Option<fn(&mut Context) -> &'static str>>>::new();
     ///
-    /// method_router.build().get().on_path("hello/world", handler as fn(Context, Response));
+    /// method_router.build().get().on_path("hello/world", handler);
     /// ```
     pub fn get<H>(&'b mut self) -> T::Builder where T: FromHandler<H> {
         self.method(Method::Get)
@@ -292,19 +292,19 @@ impl<'a: 'b, 'b, T: Default + ApplyContext + Build<'b>> Builder<'a, T> {
     /// Build a handler and its children, similar to `get`, but for any HTTP method.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::{MethodRouter, TreeRouter};
     /// # fn choose_a_method() -> rustful::Method { rustful::Method::Get }
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// let mut method_router = MethodRouter::<TreeRouter<Option<fn(Context, Response)>>>::new();
+    /// let mut method_router = MethodRouter::<TreeRouter<Option<fn(&mut Context) -> &'static str>>>::new();
     ///
     /// method_router.build()
     ///     .method(choose_a_method())
-    ///     .on_path("hello/world", handler as fn(Context, Response));
+    ///     .on_path("hello/world", handler);
     /// ```
     pub fn method<H>(&'b mut self, method: Method) -> T::Builder where T: FromHandler<H> {
         match self.router.handlers.entry(method) {

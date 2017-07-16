@@ -10,11 +10,12 @@
 //!```
 //!extern crate rustful;
 //!use rustful::DefaultRouter;
-//!# use rustful::{Handler, Context, Response};
+//!# use rustful::{CreateContent, Context, Response};
 //!
 //!# struct ExampleHandler;
-//!# impl Handler for ExampleHandler {
-//!#     fn handle(&self, _: Context, _: Response){}
+//!# impl CreateContent for ExampleHandler {
+//!#     type Output = ();
+//!#     fn create_content(&self, _: &mut Context, _: &Response) -> () {}
 //!# }
 //!# fn main() {
 //!# let about_us = ExampleHandler;
@@ -101,8 +102,9 @@
 //!
 //!let my_router = TreeRouter::<Option<Variables<ExampleHandler>>>::new();
 //!# struct ExampleHandler;
-//!# impl rustful::Handler for ExampleHandler {
-//!#     fn handle(&self, _: rustful::Context, _: rustful::Response){}
+//!# impl rustful::CreateContent for ExampleHandler {
+//!#     type Output = ();
+//!#     fn create_content(&self, _: &mut rustful::Context, _: &rustful::Response) -> () {}
 //!# }
 //!```
 //!
@@ -114,8 +116,9 @@
 //!
 //!let my_router = TreeRouter::<Option<ExampleHandler>>::new();
 //!# struct ExampleHandler;
-//!# impl rustful::Handler for ExampleHandler {
-//!#     fn handle(&self, _: rustful::Context, _: rustful::Response){}
+//!# impl rustful::CreateContent for ExampleHandler {
+//!#     type Output = ();
+//!#     fn create_content(&self, _: &mut rustful::Context, _: &rustful::Response) -> () {}
 //!# }
 //!```
 //!
@@ -130,6 +133,7 @@
 
 use std::borrow::Cow;
 use std::sync::Arc;
+use std::error::Error;
 use anymap;
 
 use context::{Context, MaybeUtf8Owned};
@@ -143,6 +147,7 @@ pub use self::method_router::MethodRouter;
 pub use self::variables::Variables;
 pub use self::or_else::OrElse;
 pub use self::status_router::StatusRouter;
+pub use self::sequence::Sequence;
 
 pub mod routing;
 
@@ -150,6 +155,7 @@ pub mod tree_router;
 pub mod method_router;
 pub mod or_else;
 pub mod status_router;
+pub mod sequence;
 mod variables;
 
 ///Alias for `TreeRouter<MethodRouter<Variables<T>>>`.
@@ -157,36 +163,6 @@ mod variables;
 ///This is probably the most common composition, which will select handlers
 ///based on path and then HTTP method, and collect any variables on the way.
 pub type DefaultRouter<T> = TreeRouter<MethodRouter<Variables<T>>>;
-
-///A trait for request handlers.
-pub trait Handler: Send + Sync + 'static {
-    ///Handle a request from the client. Panicking within this method is
-    ///discouraged, to allow the server to run smoothly.
-    fn handle(&self, context: Context, response: Response);
-
-    ///Get a description for the handler.
-    fn description(&self) -> Option<Cow<'static, str>> {
-        None
-    }
-}
-
-impl<F: Fn(Context, Response) + Send + Sync + 'static> Handler for F {
-    fn handle(&self, context: Context, response: Response) {
-        self(context, response);
-    }
-}
-
-impl<T: Handler> Handler for Arc<T> {
-    fn handle(&self, context: Context, response: Response) {
-        (**self).handle(context, response);
-    }
-}
-
-impl Handler for Box<Handler> {
-    fn handle(&self, context: Context, response: Response) {
-        (**self).handle(context, response);
-    }
-}
 
 ///A request environment, containing the context, response and route state.
 pub struct Environment<'a, 'b: 'a, 'l, 'g> {
@@ -230,17 +206,10 @@ pub trait HandleRequest: Send + Sync + 'static {
     ///base link. It's up to the handler implementation to decide how deep to
     ///go.
     fn hyperlinks<'a>(&'a self, base_link: Link<'a>) -> Vec<Link<'a>>;
-}
 
-impl<H: Handler> HandleRequest for H {
-    fn handle_request<'a, 'b, 'l, 'g>(&self, environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
-        self.handle(environment.context, environment.response);
-        Ok(())
-    }
-
-    fn hyperlinks<'a>(&'a self, mut base_link: Link<'a>) -> Vec<Link<'a>> {
-        base_link.handler = Some(self);
-        vec![base_link]
+    ///Get a description for the handler.
+    fn description(&self) -> Option<Cow<'static, str>> {
+        None
     }
 }
 
@@ -261,81 +230,105 @@ impl<H: HandleRequest> HandleRequest for Option<H> {
             vec![]
         }
     }
-}
 
-///An adapter for simple content creation handlers.
-///
-///```
-///use rustful::{DefaultRouter, Context, Server, ContentFactory};
-///use rustful::Method::Get;
-///
-///type Router<T> = DefaultRouter<ContentFactory<T>>;
-///
-///let mut router = Router::new();
-///router.build().path("*").then().on_get(|context: Context| format!("Visiting {}", context.uri_path));
-///
-///let server = Server {
-///    handlers: router,
-///    ..Server::default()
-///};
-///```
-pub struct ContentFactory<T: CreateContent>(pub T);
-
-impl<T: CreateContent, H: Into<ContentFactory<T>>> FromHandler<H> for ContentFactory<T> {
-    fn from_handler(_context: BuilderContext, handler: H) -> ContentFactory<T> {
-        handler.into()
+    fn description(&self) -> Option<Cow<'static, str>> {
+        self.as_ref().and_then(HandleRequest::description)
     }
 }
 
-impl<T: CreateContent> ApplyContext for ContentFactory<T> {
-    fn apply_context(&mut self, _context: BuilderContext) {}
-    fn prepend_context(&mut self, _context: BuilderContext) {}
-}
-
-impl<T: CreateContent> Merge for ContentFactory<T> {
-    fn merge(&mut self, other: ContentFactory<T>) {
-        *self = other;
-    }
-}
-
-impl<T: CreateContent> HandleRequest for ContentFactory<T> {
+impl HandleRequest for fn(Context, Response) {
     fn handle_request<'a, 'b, 'l, 'g>(&self, environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
-        environment.response.send(self.0.create_content(environment.context));
+        self(environment.context, environment.response);
         Ok(())
     }
 
-    fn hyperlinks<'a>(&'a self, base_link: Link<'a>) -> Vec<Link<'a>> {
+    fn hyperlinks<'a>(&'a self, mut base_link: Link<'a>) -> Vec<Link<'a>> {
+        base_link.handler = Some(self);
         vec![base_link]
     }
 }
 
-impl<T: CreateContent> From<T> for ContentFactory<T> {
-    fn from(factory: T) -> ContentFactory<T> {
-        ContentFactory(factory)
+impl<T: CreateContent + Send + Sync + 'static> HandleRequest for T {
+    fn handle_request<'a, 'b, 'l, 'g>(&self, mut environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
+        let content = self.create_content(&mut environment.context, &environment.response);
+        match environment.response.try_send(content) {
+            Err((Some(mut response), e)) => {
+                debug!("uncaught error at {:?}: {}", environment.context.uri_path, e.description());
+
+                response.reset();
+                environment.response = response;
+                Err(environment)
+            },
+            _ => Ok(())
+        }
+    }
+
+    fn hyperlinks<'a>(&'a self, mut base_link: Link<'a>) -> Vec<Link<'a>> {
+        base_link.handler = Some(self);
+        vec![base_link]
+    }
+}
+
+
+impl<T: HandleRequest> HandleRequest for Arc<T> {
+    fn handle_request<'a, 'b, 'l, 'g>(&self, environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
+        (**self).handle_request(environment)
+    }
+
+    fn hyperlinks<'a>(&'a self, base_link: Link<'a>) -> Vec<Link<'a>> {
+        (**self).hyperlinks(base_link)
+    }
+
+    fn description(&self) -> Option<Cow<'static, str>> {
+        (**self).description()
+    }
+}
+
+impl HandleRequest for Box<HandleRequest> {
+    fn handle_request<'a, 'b, 'l, 'g>(&self, environment: Environment<'a, 'b, 'l, 'g>) -> Result<(), Environment<'a, 'b, 'l, 'g>> {
+        (**self).handle_request(environment)
+    }
+
+    fn hyperlinks<'a>(&'a self, base_link: Link<'a>) -> Vec<Link<'a>> {
+        (**self).hyperlinks(base_link)
+    }
+
+    fn description(&self) -> Option<Cow<'static, str>> {
+        (**self).description()
     }
 }
 
 ///A simplified handler that returns the response content.
 ///
-///It's meant for situations where direct access to the `Response` is
-///unnecessary. The benefit is that it can use early returns in a more
+///It's meant for situations where ownership of the `Context` and `Response`
+///is unnecessary. The benefit is that it can use early returns in a more
 ///convenient way.
 pub trait CreateContent: Send + Sync + 'static {
     ///The type of content that is created.
-    type Output: for<'a, 'b> SendResponse<'a, 'b>;
+    type Output: SendResponse;
 
     ///Create content that will be sent to the client.
-    fn create_content(&self, context: Context) -> Self::Output;
+    fn create_content(&self, context: &mut Context, response: &Response) -> Self::Output;
 }
 
 impl<T, R> CreateContent for T where
-    T: Fn(Context) -> R + Send + Sync + 'static,
-    R: for<'a, 'b> SendResponse<'a, 'b>
+    T: Fn(&mut Context) -> R + Send + Sync + 'static,
+    R: SendResponse
 {
     type Output = R;
 
-    fn create_content(&self, context: Context) -> Self::Output {
+    fn create_content(&self, context: &mut Context, _: &Response) -> Self::Output {
         self(context)
+    }
+}
+
+impl<R: 'static> CreateContent for fn(&mut Context, &Response) -> R where
+    R: SendResponse
+{
+    type Output = R;
+
+    fn create_content(&self, context: &mut Context, response: &Response) -> Self::Output {
+        self(context, response)
     }
 }
 
@@ -358,7 +351,7 @@ pub trait FromHandler<T> {
     fn from_handler(context: BuilderContext, handler: T) -> Self;
 }
 
-impl<T: Handler> FromHandler<T> for T {
+impl<T: CreateContent> FromHandler<T> for T {
     fn from_handler(_context: BuilderContext, handler: T) -> T {
         handler
     }
@@ -379,7 +372,7 @@ pub trait ApplyContext {
     fn prepend_context(&mut self, context: BuilderContext);
 }
 
-impl<T: Handler> ApplyContext for T {
+impl<T: CreateContent> ApplyContext for T {
     fn apply_context(&mut self, _context: BuilderContext) {}
     fn prepend_context(&mut self, _context: BuilderContext) {}
 }
@@ -399,7 +392,7 @@ pub trait Merge {
     fn merge(&mut self, other: Self);
 }
 
-impl<T: Handler> Merge for T {
+impl<T: CreateContent> Merge for T {
     fn merge(&mut self, other: T) {
         *self = other;
     }

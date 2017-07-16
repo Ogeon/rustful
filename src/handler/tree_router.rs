@@ -56,11 +56,11 @@ impl<T> TreeRouter<T> {
     /// Creates a `TreeRouter` with only a root handler.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::TreeRouter;
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
     /// let router = TreeRouter::with_handler(handler);
@@ -78,14 +78,14 @@ impl<T> TreeRouter<T> {
     /// Build the router and its children using a chaninable API.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::TreeRouter;
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// let mut router = TreeRouter::<Option<fn(&mut Context) -> &'static str>>::new();
     /// router.build().on_path("hello/world", handler);
     /// ```
     pub fn build(&mut self) -> Builder<T> {
@@ -119,11 +119,12 @@ impl<T: FromHandler<H> + ApplyContext, D: AsRef<[u8]>, H> FromIterator<(Method, 
     /// ```
     /// extern crate rustful;
     /// use rustful::Method::Get;
-    /// # use rustful::{Handler, Context, Response, DefaultRouter};
+    /// # use rustful::{CreateContent, Context, Response, DefaultRouter};
     ///
     /// # struct ExampleHandler;
-    /// # impl Handler for ExampleHandler {
-    /// #     fn handle(&self, _: Context, _: Response){}
+    /// # impl CreateContent for ExampleHandler {
+    /// #     type Output = ();
+    /// #     fn create_content(&self, _: &mut Context, _: &Response) -> () {}
     /// # }
     /// # fn main() {
     /// # let about_us = ExampleHandler;
@@ -274,7 +275,11 @@ impl<T: HandleRequest> HandleRequest for TreeRouter<T> {
             for (handler, snapshot) in matches {
                 new_environment.route_state = snapshot;
                 if let Err(returned_environment) = handler.handle_request(new_environment) {
-                    new_environment = returned_environment;
+                    if returned_environment.response.status().is_server_error() {
+                        return Err(returned_environment.replace_hyperlinks(old_hyperlinks).0);
+                    } else {
+                        new_environment = returned_environment;
+                    }
                 } else {
                     return Ok(());
                 };
@@ -429,18 +434,18 @@ impl<'a, T: Default + ApplyContext> Builder<'a, T> {
     /// Add a path to the router and keep building the resulting node.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::TreeRouter;
     ///
-    /// fn handler1(_context: Context, response: Response) {
-    ///     response.send("Hello world 1!");
+    /// fn handler1(_context: &mut Context) -> &'static str {
+    ///     "Hello world 1!"
     /// }
     ///
-    /// fn handler2(_context: Context, response: Response) {
-    ///     response.send("Hello world 2!");
+    /// fn handler2(_context: &mut Context) -> &'static str {
+    ///     "Hello world 2!"
     /// }
     ///
-    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// let mut router = TreeRouter::<Option<fn(&mut Context) -> &'static str>>::new();
     /// router.build().path("hello/world").many(|mut node| {
     ///     node.on_route("1", handler1);
     ///     node.on_route("2", handler2);
@@ -474,22 +479,22 @@ impl<'a, T: Default + ApplyContext> Builder<'a, T> {
     /// Add a handler at the end of a path and keep building the resulting node.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::TreeRouter;
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// fn handler1(_context: Context, response: Response) {
-    ///     response.send("Hello world 1!");
+    /// fn handler1(_context: &mut Context) -> &'static str {
+    ///     "Hello world 1!"
     /// }
     ///
-    /// fn handler2(_context: Context, response: Response) {
-    ///     response.send("Hello world 2!");
+    /// fn handler2(_context: &mut Context) -> &'static str {
+    ///     "Hello world 2!"
     /// }
     ///
-    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// let mut router = TreeRouter::<Option<fn(&mut Context) -> &'static str>>::new();
     /// router.build().on_path("hello/world", handler).many(|mut node| {
     ///     node.on_route("1", handler1);
     ///     node.on_route("2", handler2);
@@ -529,18 +534,18 @@ impl<'a, T> Builder<'a, T> {
     /// Perform more than one operation on this builder.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::TreeRouter;
     ///
-    /// fn handler1(_context: Context, response: Response) {
-    ///     response.send("Hello world 1!");
+    /// fn handler1(_context: &mut Context) -> &'static str {
+    ///     "Hello world 1!"
     /// }
     ///
-    /// fn handler2(_context: Context, response: Response) {
-    ///     response.send("Hello world 2!");
+    /// fn handler2(_context: &mut Context) -> &'static str {
+    ///     "Hello world 2!"
     /// }
     ///
-    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// let mut router = TreeRouter::<Option<fn(&mut Context) -> &'static str>>::new();
     /// router.build().many(|mut node| {
     ///     node.on_route("1", handler1);
     ///     node.on_route("2", handler2);
@@ -554,22 +559,22 @@ impl<'a, T> Builder<'a, T> {
     /// Add a handler at the end of a route segment and keep building the resulting node.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::TreeRouter;
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// fn handler1(_context: Context, response: Response) {
-    ///     response.send("Hello world 1!");
+    /// fn handler1(_context: &mut Context) -> &'static str {
+    ///     "Hello world 1!"
     /// }
     ///
-    /// fn handler2(_context: Context, response: Response) {
-    ///     response.send("Hello world 2!");
+    /// fn handler2(_context: &mut Context) -> &'static str {
+    ///     "Hello world 2!"
     /// }
     ///
-    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// let mut router = TreeRouter::<Option<fn(&mut Context) -> &'static str>>::new();
     /// router.build().on_route("hello_world", handler).many(|mut node| {
     ///     node.on_route("1", handler1);
     ///     node.on_route("2", handler2);
@@ -615,14 +620,14 @@ impl<'a, T> Builder<'a, T> {
     /// Try to get a node at the end of an existing path.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::TreeRouter;
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// let mut router = TreeRouter::<Option<fn(Context, Response)>>::new();
+    /// let mut router = TreeRouter::<Option<fn(&mut Context) -> &'static str>>::new();
     ///
     /// router.build().path("hello/world");
     /// router.build().get_path("hello/world").expect("where did it go?!").handler(handler);
@@ -670,14 +675,14 @@ impl<'a: 'b, 'b, T: Build<'b>> Builder<'a, T> {
     /// Build the handler at the current node.
     ///
     /// ```
-    /// use rustful::{Context, Response};
+    /// use rustful::Context;
     /// use rustful::handler::{TreeRouter, MethodRouter};
     ///
-    /// fn handler(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn handler(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// let mut router = TreeRouter::<MethodRouter<fn(Context, Response)>>::new();
+    /// let mut router = TreeRouter::<MethodRouter<fn(&mut Context) -> &'static str>>::new();
     /// router.build().path("hello/world").then().on_get(handler);
     /// ```
     pub fn then(&'b mut self) -> T::Builder {
@@ -713,7 +718,7 @@ mod test {
     use context::{MaybeUtf8Slice, Parameters};
     use context::hypermedia::{LinkSegment, SegmentType};
     use response::Response;
-    use handler::{Handler, MethodRouter, Variables};
+    use handler::{CreateContent, MethodRouter, Variables};
     use hyper::method::Method::{Get, Post, Delete, Put, Head};
     use Method;
 
@@ -878,8 +883,10 @@ mod test {
         links: Vec<LinkType<'static>>,
     }
 
-    impl Handler for TestHandler {
-        fn handle(&self, mut context: Context, _: Response) {
+    impl CreateContent for TestHandler {
+        type Output = ();
+
+        fn create_content(&self, context: &mut Context, _: &Response) -> () {
             for link in &self.links {
                 let index = context
                     .hyperlinks
@@ -896,14 +903,13 @@ mod test {
                     panic!("missing link: {:?} (path: {})", link, context.uri_path);
                 }
             }
-            for link in context.hyperlinks {
+            for link in context.hyperlinks.drain(..) {
                 panic!("unexpected hyperlink: {:?} (path: {})", link, context.uri_path);
             }
 
             let mut state = self.state.lock().unwrap();
-            state.variables = context.variables;
+            state.variables = ::std::mem::replace(&mut context.variables, Default::default());
             state.visited = true;
-
         }
     }
 

@@ -4,7 +4,7 @@ extern crate env_logger;
 
 extern crate rustful;
 use std::error::Error;
-use rustful::{Server, Context, Response};
+use rustful::{Server, Context};
 
 fn main() {
     env_logger::init().unwrap();
@@ -12,7 +12,7 @@ fn main() {
     println!("Visit http://localhost:8080 to try this example.");
     let server_result = Server {
         host: 8080.into(),
-        ..Server::new(|_: Context, res: Response| res.send("Hello!"))
+        ..Server::new(|_: &mut Context| "Hello!")
     }.run();
 
     match server_result {

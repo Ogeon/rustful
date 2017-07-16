@@ -39,11 +39,12 @@ use utils;
 ///unless additional control is required.
 ///
 ///```no_run
-///# use rustful::{Server, Handler, Context, Response};
+///# use rustful::{Server, CreateContent, Context, Response};
 ///# #[derive(Default)]
 ///# struct R;
-///# impl Handler for R {
-///#     fn handle(&self, _context: Context, _response: Response) {}
+///# impl CreateContent for R {
+///#     type Output = ();
+///#     fn create_content(&self, _context: &mut Context, _response: &Response) -> () {}
 ///# }
 ///# let router = R;
 ///let server_instance = Server {

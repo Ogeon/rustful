@@ -8,18 +8,21 @@
 //!
 //!```no_run
 //!extern crate rustful;
-//!use rustful::{Server, Handler, Context, Response, DefaultRouter};
+//!use std::borrow::Cow;
+//!use rustful::{Server, CreateContent, Context, Response, DefaultRouter};
 //!
 //!struct Phrase(&'static str);
 //!
-//!impl Handler for Phrase {
-//!    fn handle(&self, context: Context, response: Response) {
+//!impl CreateContent for Phrase {
+//!    type Output = Cow<'static, str>;
+//!
+//!    fn create_content(&self, context: &mut Context, _: &Response) -> Cow<'static, str> {
 //!        //Check if the client accessed /hello/:name or /good_bye/:name
 //!        if let Some(name) = context.variables.get("name") {
 //!            //Use the value of :name
-//!            response.send(format!("{}, {}", self.0, name));
+//!            format!("{}, {}", self.0, name).into()
 //!        } else {
-//!            response.send(self.0)
+//!            self.0.into()
 //!        }
 //!    }
 //!}
@@ -95,9 +98,8 @@ pub use self::context::Context;
 pub use self::response::Response;
 pub use self::response::Error;
 pub use self::response::SendResponse;
-pub use self::handler::Handler;
+pub use self::response::ResponseParams;
 pub use self::handler::DefaultRouter;
-pub use self::handler::ContentFactory;
 pub use self::handler::CreateContent;
 pub use self::handler::OrElse;
 pub use self::handler::StatusRouter;

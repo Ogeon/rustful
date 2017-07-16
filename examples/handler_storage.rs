@@ -2,7 +2,7 @@ extern crate rustful;
 
 use std::io::{self, Read};
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::error::Error;
 
@@ -14,9 +14,10 @@ use rustful::{
     Server,
     Context,
     Response,
-    Handler,
+    CreateContent,
     DefaultRouter,
-    StatusCode
+    StatusCode,
+    SendResponse
 };
 use rustful::file::check_path;
 
@@ -90,8 +91,10 @@ enum Api {
     File
 }
 
-impl Handler for Api {
-    fn handle(&self, context: Context, mut response: Response) {
+impl CreateContent for Api {
+    type Output = Result<Content, StatusCode>;
+
+    fn create_content(&self, context: &mut Context, _: &Response) -> Self::Output {
         match *self {
             Api::Counter { ref page, ref value, ref operation }  => {
                 operation.map(|op| {
@@ -102,7 +105,7 @@ impl Handler for Api {
 
                 //Insert the value into the page and write it to the response
                 let count = value.read().unwrap().to_string();
-                response.send(page.replace("{}", &count[..]));
+                Ok(Content::String(page.replace("{}", &count[..])))
             },
             Api::File => {
                 if let Some(file) = context.variables.get("file") {
@@ -111,26 +114,51 @@ impl Handler for Api {
                     //Check if the path is valid
                     if check_path(file_path).is_ok() {
                         //Make a full path from the file name and send it
-                        let path = Path::new("examples/handler_storage").join(file_path);
-                        let res = response.try_send(path)
-                            .or_else(|e| e.send_not_found("the file was not found"))
-                            .or_else(|e| e.ignore_send_error());
-
-                        //Check if a more fatal file error than "not found" occurred
-                        if let Err((error, mut response)) = res {
-                            //Something went horribly wrong
-                            error!("failed to open '{}': {}", file, error);
-                            response.set_status(StatusCode::InternalServerError);
-                        }
+                        Ok(Content::File(Path::new("examples/handler_storage").join(file_path)))
                     } else {
                         //Accessing parent directories is forbidden
-                        response.set_status(StatusCode::Forbidden);
+                        Err(StatusCode::Forbidden)
                     }
                 } else {
                     //No file name was specified
-                    response.set_status(StatusCode::Forbidden);
+                    Err(StatusCode::Forbidden)
                 }
             }
+        }
+    }
+}
+
+enum Content {
+    String(String),
+    File(PathBuf),
+}
+
+impl SendResponse for Content {
+    type Error = rustful::Error;
+
+    fn prepare_response(&mut self, response: &mut Response) {
+        match *self {
+            Content::String(ref mut s) => s.prepare_response(response),
+            Content::File(ref mut f) => f.prepare_response(response)
+        }
+    }
+
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, Self::Error)> {
+        let res = match self {
+            Content::String(s) => return s.send_response(response),
+            Content::File(f) => f.send_response(response)
+        };
+
+        match res {
+            Err((Some(response), e)) => {
+                if response.status() != StatusCode::NotFound {
+                    //Something went horribly wrong
+                    error!("failed to open file: {}", e);
+                }
+
+                Err((Some(response), e.into()))
+            },
+            _ => Ok(())
         }
     }
 }

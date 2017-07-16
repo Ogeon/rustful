@@ -41,15 +41,21 @@ use std::string::{FromUtf8Error};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::fmt;
+use std::any::TypeId;
+use std::collections::HashMap;
 
 use hyper;
 
 use anymap::AnyMap;
+use anymap::any::{IntoBox, Any};
+use anymap::raw::RawMap;
 
 use StatusCode;
 
 use header::{
     Headers,
+    Header,
+    HeaderFormat,
     ContentType,
     Connection,
     ConnectionOption
@@ -85,12 +91,6 @@ impl fmt::Display for Error {
     }
 }
 
-impl ResponseError for Error {
-    fn handle(self) {
-        error!("Failed to send response: {}", self);
-    }
-}
-
 impl error::Error for Error {
     fn description(&self) -> &str {
         match *self {
@@ -103,96 +103,6 @@ impl error::Error for Error {
         match *self {
             Error::Filter(_) => None,
             Error::Io(ref e) => Some(e)
-        }
-    }
-}
-
-///Error that may occure while sending a file.
-pub enum FileError<'a, 'b> {
-    ///Failed to open the file.
-    Open(io::Error, Response<'a, 'b>),
-    ///Failed while sending the file.
-    Send(io::Error)
-}
-
-impl<'a, 'b> FileError<'a, 'b> {
-    ///Recover the response if the file couldn't be opened.
-    pub fn recover_response(self) -> Result<Response<'a, 'b>, FileError<'a, 'b>> {
-        match self {
-            FileError::Open(_, r) => Ok(r),
-            FileError::Send(_) => Err(self),
-        }
-    }
-
-    ///Send a 404 (not found) response if the file wasn't found, or return
-    ///`self` if any other error occurred.
-    pub fn send_not_found<'d, M: Into<Data<'d>>>(self, message: M) -> Result<(), FileError<'a, 'b>> {
-        match self {
-            FileError::Open(e, mut response) => if let io::ErrorKind::NotFound = e.kind() {
-                response.set_status(StatusCode::NotFound);
-                response.send(message);
-                Ok(())
-            } else {
-                Err(FileError::Open(e, response))
-            },
-            e => Err(e)
-        }
-    }
-
-    ///Ignore any error that might have occurred while sending the file.
-    pub fn ignore_send_error(self) -> Result<(), (io::Error, Response<'a, 'b>)> {
-        match self {
-            FileError::Open(e, response) => Err((e, response)),
-            _ => Ok(())
-        }
-    }
-}
-
-impl<'a, 'b> ResponseError for FileError<'a, 'b> {
-    fn handle(self) {
-        if let Err((e, mut response)) = self.send_not_found("").or_else(FileError::ignore_send_error) {
-            response.set_status(StatusCode::InternalServerError);
-            error!("Failed to open file: {}", e);
-        }
-    }
-}
-
-impl<'a, 'b> Into<io::Error> for FileError<'a, 'b> {
-    fn into(self) -> io::Error {
-        match self {
-            FileError::Open(e, _) | FileError::Send(e) => e
-        }
-    }
-}
-
-impl<'a, 'b> fmt::Debug for FileError<'a, 'b> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            FileError::Open(ref e, _) => write!(f, "FileError::Open({:?}, Response)", e),
-            FileError::Send(ref e) => write!(f, "FileError::Send({:?})", e)
-        }
-    }
-}
-
-impl<'a, 'b> fmt::Display for FileError<'a, 'b> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            FileError::Open(ref e, _) => write!(f, "failed to open a file: {}", e),
-            FileError::Send(ref e) => write!(f, "failed to send a file: {}", e)
-        }
-    }
-}
-
-impl<'a, 'b> error::Error for FileError<'a, 'b> {
-    fn description(&self) -> &str {
-        match *self {
-            FileError::Open(ref e, _) | FileError::Send(ref e) => e.description()
-        }
-    }
-
-    fn cause(&self) -> Option<&std::error::Error> {
-        match *self {
-            FileError::Open(ref e, _) | FileError::Send(ref e) => Some(e)
         }
     }
 }
@@ -253,6 +163,12 @@ impl<'a> Into<Data<'a>> for &'a [u8] {
     }
 }
 
+impl<'a> Into<Data<'a>> for Cow<'a, [u8]> {
+    fn into(self) -> Data<'a> {
+        Data::Bytes(self)
+    }
+}
+
 impl<'a> Into<Data<'a>> for String {
     fn into(self) -> Data<'a> {
         Data::String(Cow::Owned(self))
@@ -265,6 +181,18 @@ impl<'a> Into<Data<'a>> for &'a str {
     }
 }
 
+impl<'a> Into<Data<'a>> for Cow<'a, str> {
+    fn into(self) -> Data<'a> {
+        Data::String(self)
+    }
+}
+
+impl<'a> Into<Data<'a>> for () {
+    fn into(self) -> Data<'a> {
+        Data::Bytes(Cow::Owned(vec![]))
+    }
+}
+
 ///A trait for higher level types that can be sent as responses, like
 ///`Result`.
 ///
@@ -273,114 +201,287 @@ impl<'a> Into<Data<'a>> for &'a str {
 ///easier to use together with the usual error handling methods. The default
 ///implementations will only change the status code when semantically
 ///appropriate, and otherwise not touch it at all.
-pub trait SendResponse<'a, 'b> {
+pub trait SendResponse {
     ///Any error that may occur while sending the response.
-    type Error: ResponseError;
+    type Error: std::error::Error;
 
-    ///Send a response to the client.
-    fn send_response(self, response: Response<'a, 'b>) -> Result<(), Self::Error>;
+    ///Set the preferred status code and headers before sending the response.
+    ///It's allowed to be destructive and should therefore only be called
+    ///once.
+    fn prepare_response(&mut self, response: &mut Response);
+
+    ///Send a response to the client. This should preferably not modify the
+    ///response, other than sending the body.
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, Self::Error)>;
 }
 
-impl<'a, 'b, 'd, T: Into<Data<'d>>> SendResponse<'a, 'b> for T {
+impl<'d, T: Into<Data<'d>>> SendResponse for T {
     type Error = Error;
 
-    fn send_response(self, response: Response<'a, 'b>) -> Result<(), Error> {
-        response.try_send_data(self)
+    fn prepare_response(&mut self, _response: &mut Response) {}
+
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, Error)> {
+        response.try_send_data(self).map_err(|e| (None, e))
     }
 }
 
-impl<'a, 'b, T: SendResponse<'a, 'b>, U: SendResponse<'a, 'b>> SendResponse<'a, 'b> for Result<T, U> where
+impl<T: SendResponse, U: SendResponse> SendResponse for Result<T, U> where
     U::Error: Into<T::Error>
 {
     type Error = T::Error;
 
-    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), T::Error> {
-        match self {
+    fn prepare_response(&mut self, response: &mut Response) {
+        match self.as_mut() {
             Ok(data) => {
-                response.set_status(StatusCode::Ok);
-                data.send_response(response)
+                data.prepare_response(response);
             },
             Err(error) => {
                 response.set_status(StatusCode::InternalServerError);
-                error.send_response(response).map_err(Into::into)
+                error.prepare_response(response);
+            }
+        }
+    }
+
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, T::Error)> {
+        match self {
+            Ok(data) => {
+                data.send_response(response)
+            },
+            Err(error) => {
+                error.send_response(response).map_err(|(r, e)| (r, e.into()))
             }
         }
     }
 }
 
-impl<'a, 'b, T: SendResponse<'a, 'b>> SendResponse<'a, 'b> for Option<T> {
+impl<T: SendResponse> SendResponse for Option<T> {
     type Error = T::Error;
 
-    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), T::Error> {
+    fn prepare_response(&mut self, response: &mut Response) {
+        if let Some(data) = self.as_mut() {
+            data.prepare_response(response);
+        } else {
+            response.set_status(StatusCode::NotFound);
+        }
+    }
+
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, T::Error)> {
         if let Some(data) = self {
             data.send_response(response)
         } else {
-            response.set_status(StatusCode::NotFound);
             Ok(())
         }
     }
 }
 
-impl<'a, 'b> SendResponse<'a, 'b> for io::Error {
+impl SendResponse for io::Error {
     type Error = Error;
 
-    fn send_response(self, mut resonse: Response<'a, 'b>) -> Result<(), Error> {
+    fn prepare_response(&mut self, response: &mut Response) {
         match self.kind() {
-            io::ErrorKind::NotFound => resonse.set_status(StatusCode::NotFound),
+            io::ErrorKind::NotFound => response.set_status(StatusCode::NotFound),
             _ => {},
         }
+    }
 
-        resonse.try_send_data(self.to_string())
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, Error)> {
+        response.try_send_data(self.to_string()).map_err(|e| (None, e))
     }
 }
 
-impl<'d, 'a, 'b> SendResponse<'a, 'b> for &'d Path {
-    type Error = FileError<'a, 'b>;
+impl<'d> SendResponse for &'d Path {
+    type Error = io::Error;
 
-    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), FileError<'a, 'b>> {
+    fn prepare_response(&mut self, response: &mut Response) {
         let mime = self
             .extension()
             //.and_then(|ext| to_mime(&ext.to_string_lossy()))
             .and_then(|ext| ::file::ext_to_mime(&ext.to_string_lossy()))
             .unwrap_or_else(|| Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
 
+        response.headers_mut().set(ContentType(mime));
+    }
+
+    fn send_response<'a, 'b>(self, mut response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, io::Error)> {
         let file = match File::open(self) {
             Ok(file) => file,
-            Err(e) => return Err(FileError::Open(e, response))
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    response.set_status(StatusCode::NotFound);
+                } else {
+                    response.set_status(StatusCode::InternalServerError);
+                }
+                return Err((Some(response), e));
+            },
         };
-
-        response.headers_mut().set(ContentType(mime));
         file.send_response(response)
     }
 }
 
-impl<'a, 'b> SendResponse<'a, 'b> for PathBuf {
-    type Error = FileError<'a, 'b>;
+impl SendResponse for PathBuf {
+    type Error = io::Error;
 
-    fn send_response(self, response: Response<'a, 'b>) -> Result<(), FileError<'a, 'b>> {
+    fn prepare_response(&mut self, response: &mut Response) {
+        (&**self).prepare_response(response);
+    }
+
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, io::Error)> {
         (&*self).send_response(response)
     }
 }
 
-impl<'a, 'b> SendResponse<'a, 'b> for File {
-    type Error = FileError<'a, 'b>;
+impl SendResponse for File {
+    type Error = io::Error;
 
-    fn send_response(mut self, response: Response<'a, 'b>) -> Result<(), FileError<'a, 'b>> {
+    fn prepare_response(&mut self, _response: &mut Response) {}
+
+    fn send_response<'a, 'b>(mut self, mut response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, io::Error)> {
         let metadata = match self.metadata() {
             Ok(metadata) => metadata,
-            Err(e) => return Err(FileError::Open(e, response)),
+            Err(e) => {
+                if e.kind() == io::ErrorKind::NotFound {
+                    response.set_status(StatusCode::NotFound);
+                } else {
+                    response.set_status(StatusCode::InternalServerError);
+                }
+                return Err((Some(response), e));
+            },
         };
 
         let mut writer = unsafe { response.into_raw(metadata.len()) };
-        io::copy(&mut self, &mut writer).map_err(FileError::Send).map(|_| ())
+        let _ = io::copy(&mut self, &mut writer);
+        Ok(())
     }
 }
 
-///Helper trait for dealing with errors that may occur while sending a
-///response. It provides a default method of handling the error.
-pub trait ResponseError {
-    ///Handle the error to "make it go away".
-    fn handle(self);
+impl SendResponse for StatusCode {
+    type Error = Error;
+
+    fn prepare_response(&mut self, response: &mut Response) {
+        response.set_status(*self);
+    }
+
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, Error)> {
+        response.try_send_data("").map_err(|e| (None, e))
+    }
+}
+
+/// Prepares the response with status codes and headers.
+#[derive(Debug)]
+pub struct ResponseParams<T> {
+    inner: T,
+    recommended_status: Option<StatusCode>,
+    recommended_headers: Headers,
+    recommended_filter_params: HashMap<TypeId, Box<Any>>,
+    required_status: Option<StatusCode>,
+    required_headers: Headers,
+    required_filter_params: HashMap<TypeId, Box<Any>>,
+}
+
+impl<T> ResponseParams<T> {
+    /// Wrap the response data in an empty set of parameters.
+    pub fn new(inner: T) -> ResponseParams<T> {
+        ResponseParams {
+            inner: inner,
+            recommended_status: None,
+            recommended_headers: Headers::new(),
+            recommended_filter_params: HashMap::new(),
+            required_status: None,
+            required_headers: Headers::new(),
+            required_filter_params: HashMap::new(),
+        }
+    }
+
+    /// Recommend a status code that is allowed to be overridden.
+    pub fn recommend_status(&mut self, status: StatusCode) {
+        self.recommended_status = Some(status);
+    }
+
+    /// Recommend a header that is allowed to be overridden.
+    pub fn recommend_header<H: Header + HeaderFormat>(&mut self, header: H) {
+        self.recommended_headers.set(header);
+    }
+
+    /// Recommend a filter context parameter that is allowed to be overridden.
+    pub fn recommend_filter_param<P: IntoBox<Any>>(&mut self, param: P) {
+        self.recommended_filter_params.insert(TypeId::of::<P>(), param.into_box());
+    }
+
+    /// Require a status code that is only allowed to be overridden if
+    /// absolutely necessary.
+    pub fn require_status(&mut self, status: StatusCode) {
+        self.required_status = Some(status);
+    }
+
+    /// Require a header that is only allowed to be overridden if absolutely
+    /// necessary.
+    pub fn require_header<H: Header + HeaderFormat>(&mut self, header: H) {
+        self.required_headers.set(header);
+    }
+
+    /// Require a filter context parameter that is only allowed to be
+    /// overridden if absolutely necessary.
+    pub fn require_filter_param<P: IntoBox<Any>>(&mut self, param: P) {
+        self.required_filter_params.insert(TypeId::of::<P>(), param.into_box());
+    }
+
+    /// Get a reference to the inner response data.
+    pub fn inner(&self) -> &T {
+        &self.inner
+    }
+
+    /// Get a mutable reference to the inner response data.
+    pub fn inner_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+}
+
+impl<T: SendResponse> SendResponse for ResponseParams<T> {
+    type Error = T::Error;
+
+    fn prepare_response(&mut self, response: &mut Response) {
+        if let Some(status) = self.recommended_status.take() {
+            response.set_status(status);
+        }
+
+        response.headers_mut().extend(self.recommended_headers.iter());
+        {
+            let dst: &mut RawMap = response.filter_storage_mut().as_mut();
+            for (ty, param) in self.recommended_filter_params.drain() {
+                unsafe { dst.insert(ty, param); }
+            }
+        }
+
+        self.inner.prepare_response(response);
+
+        if let Some(status) = self.required_status.take() {
+            response.set_status(status);
+        }
+
+        response.headers_mut().extend(self.required_headers.iter());
+        {
+            let dst: &mut RawMap = response.filter_storage_mut().as_mut();
+            for (ty, param) in self.required_filter_params.drain() {
+                unsafe { dst.insert(ty, param); }
+            }
+        }
+    }
+
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, T::Error)> {
+        self.inner.send_response(response)
+    }
+}
+
+impl<T> From<T> for ResponseParams<T> {
+    fn from(inner: T) -> ResponseParams<T> {
+        ResponseParams::new(inner)
+    }
+}
+
+impl<T: Default> Default for ResponseParams<T> {
+    fn default() -> ResponseParams<T> {
+        ResponseParams::new(T::default())
+    }
 }
 
 enum MaybeMock<T> {
@@ -488,7 +589,8 @@ pub struct Response<'a, 'b> {
     filters: &'b [Box<ResponseFilter>],
     global: &'b Global,
     filter_storage: Option<AnyMap>,
-    force_close: bool
+    force_close: bool,
+    prepared: bool
 }
 
 impl<'a, 'b> Response<'a, 'b> {
@@ -505,7 +607,8 @@ impl<'a, 'b> Response<'a, 'b> {
             filters: filters,
             global: global,
             filter_storage: Some(AnyMap::new()),
-            force_close: force_close
+            force_close: force_close,
+            prepared: false
         }
     }
 
@@ -516,7 +619,8 @@ impl<'a, 'b> Response<'a, 'b> {
             filters: &[],
             global: global,
             filter_storage: Some(AnyMap::new()),
-            force_close: false
+            force_close: false,
+            prepared: false
         }
     }
 
@@ -571,12 +675,8 @@ impl<'a, 'b> Response<'a, 'b> {
     ///    response.send(make_data());
     ///}
     ///```
-    pub fn send<Content: SendResponse<'a, 'b>>(self, content: Content) where
-        Content::Error: ResponseError,
-    {
-        if let Err(e) = self.try_send(content) {
-            e.handle();
-        }
+    pub fn send<Content: SendResponse>(self, content: Content) {
+        let _ = self.try_send(content);
     }
 
     ///Send content to the client and finish the response. Higher level
@@ -597,13 +697,17 @@ impl<'a, 'b> Response<'a, 'b> {
     ///}
     ///
     ///fn my_handler(context: Context, response: Response) {
-    ///    if let Err(Error::Filter(e)) = response.try_send(make_data()) {
+    ///    if let Err((_maybe_response, Error::Filter(e))) = response.try_send(make_data()) {
     ///        error!("a filter failed: {}", e);
     ///    }
     ///}
     ///# fn main() {}
     ///```
-    pub fn try_send<Content: SendResponse<'a, 'b>>(self, content: Content) -> Result<(), Content::Error> {
+    pub fn try_send<Content: SendResponse>(mut self, mut content: Content) -> Result<(), (Option<Response<'a, 'b>>, Content::Error)> {
+        if !self.prepared {
+            content.prepare_response(&mut self);
+            self.prepared = true;
+        }
         content.send_response(self)
     }
 
@@ -618,9 +722,7 @@ impl<'a, 'b> Response<'a, 'b> {
     ///}
     ///```
     pub fn send_data<'d, Content: Into<Data<'d>>>(self, content: Content) {
-        if let Err(e) = self.try_send_data(content) {
-            e.handle();
-        }
+        let _ = self.try_send_data(content);
     }
 
     ///Try to send simple data to the client and finish the response. This is
@@ -696,78 +798,6 @@ impl<'a, 'b> Response<'a, 'b> {
         }
     }
 
-    ///Send a static file with a specified MIME type to the client.
-    ///
-    ///This can be used instead of `send_file` to control what MIME type the
-    ///file will be sent as. This can be useful if, for example, the MIME guesser
-    ///happens to be wrong about some file extension.
-    ///
-    ///An error is returned upon failure and the response may be recovered
-    ///from there if the file could not be opened.
-    ///
-    ///```
-    ///# #[macro_use] extern crate rustful;
-    ///#[macro_use] extern crate log;
-    ///use std::path::Path;
-    ///use rustful::{Context, Response};
-    ///use rustful::StatusCode;
-    ///use rustful::file;
-    ///
-    ///fn my_handler(mut context: Context, mut response: Response) {
-    ///    if let Some(file) = context.variables.get("file") {
-    ///        let file_path = Path::new(file.as_ref());
-    ///
-    ///        //Check if the path is valid
-    ///        if file::check_path(file_path).is_ok() {
-    ///            //Make a full path from the filename
-    ///            let path = Path::new("path/to/files").join(file_path);
-    ///
-    ///            //Send .rs files as Rust files and do the usual guessing for the rest
-    ///            let res = response.send_file_with_mime(&path, |ext| {
-    ///                if ext == "rs" {
-    ///                    Some(content_type!(Text / "rust"; Charset = Utf8))
-    ///                } else {
-    ///                    file::ext_to_mime(ext)
-    ///                }
-    ///            }).or_else(|e| e.send_not_found("the file was not found"))
-    ///                .or_else(|e| e.ignore_send_error());
-    ///
-    ///            //Check if a more fatal file error than "not found" occurred
-    ///            if let Err((e, mut response)) = res {
-    ///                //Something went horribly wrong
-    ///                error!("failed to open '{}': {}", file, e);
-    ///                response.set_status(StatusCode::InternalServerError);
-    ///            }
-    ///        } else {
-    ///            //Accessing parent directories is forbidden
-    ///            response.set_status(StatusCode::Forbidden);
-    ///        }
-    ///    } else {
-    ///        //No filename was specified
-    ///        response.set_status(StatusCode::Forbidden);
-    ///    }
-    ///}
-    ///# fn main() {}
-    ///```
-    pub fn send_file_with_mime<P, F>(mut self, path: P, to_mime: F) -> Result<(), FileError<'a, 'b>> where
-        P: AsRef<Path>,
-        F: FnOnce(&str) -> Option<Mime>
-    {
-        let path: &Path = path.as_ref();
-        let mime = path
-            .extension()
-            .and_then(|ext| to_mime(&ext.to_string_lossy()))
-            .unwrap_or_else(|| Mime(TopLevel::Application, SubLevel::Ext("octet-stream".into()), vec![]));
-
-        let file = match File::open(path) {
-            Ok(file) => file,
-            Err(e) => return Err(FileError::Open(e, self))
-        };
-
-        self.headers_mut().set(ContentType(mime));
-        file.send_response(self)
-    }
-
     ///Write the status code and headers to the client and turn the `Response`
     ///into a `Chunked` response.
     pub fn into_chunked(mut self) -> Chunked<'a, 'b> {
@@ -829,6 +859,13 @@ impl<'a, 'b> Response<'a, 'b> {
             writer: Some(writer.start())
         }
     }
+
+    ///Reset the response to an unprepared state, allowing
+    ///`SendResponse::prepare_response` to be called again. Calling this at
+    ///the wrong time may result in the wrong headers being sent.
+    pub fn reset(&mut self) {
+        self.prepared = false;
+    }
 }
 
 #[allow(unused_must_use)]
@@ -884,9 +921,7 @@ impl<'a, 'b> Chunked<'a, 'b> {
     ///}
     ///```
     pub fn send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) {
-        if let Err(e) = self.try_send(content) {
-            e.handle();
-        }
+        let _ = self.try_send(content);
     }
 
     ///Send a chunk of data to the client. This is the same as `send`, but

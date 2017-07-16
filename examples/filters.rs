@@ -3,70 +3,25 @@ extern crate rustful;
 
 use std::sync::RwLock;
 use std::error::Error;
+use std::borrow::Cow;
 
 #[macro_use]
 extern crate log;
 extern crate env_logger;
 
-use rustful::{Server, DefaultRouter, Context, Response};
-use rustful::filter::{FilterContext, ResponseFilter, ResponseAction, ContextFilter, ContextAction};
-use rustful::response::Data;
-use rustful::StatusCode;
-use rustful::header::Headers;
+use rustful::{Server, DefaultRouter, Context, Response, ResponseParams};
+use rustful::filter::{FilterContext, ContextFilter, ContextAction};
 use rustful::header::ContentType;
 use rustful::context::{UriPath, MaybeUtf8Owned};
+use rustful::handler::Sequence;
 
-fn say_hello(mut context: Context, mut response: Response, format: &Format) {
-    //Take the name of the JSONP function from the query variables
-    let is_jsonp = if let Some(jsonp_name) = context.query.remove("jsonp") {
-        response.filter_storage_mut().insert(JsonpFn(jsonp_name.into()));
-        true
-    } else {
-        false
-    };
-
-    //Set appropriate Content-Type, and decide if we need to quote it
-    let (mime_type, quote_msg) = match *format {
-        _ if is_jsonp => (content_type!(Application / Javascript; Charset = Utf8), true),
-        Format::Json => (content_type!(Application / Json; Charset = Utf8), true),
-        Format::Text => (content_type!(Text / Plain; Charset = Utf8), false)
-    };
-    response.headers_mut().set(ContentType(mime_type));
-
-    //Is the format supposed to be a JSON structure? Then set a variable name
-    if let Format::Json = *format {
-        response.filter_storage_mut().insert(JsonVar("message"));
-    }
-
+fn say_hello(context: &mut Context, format: Format) -> (Format, ResponseParams<String>) {
     let person = match context.variables.get("person") {
         Some(name) => name,
         None => "stranger".into()
     };
 
-    let message = if quote_msg {
-        format!("\"Hello, {}!\"", person)
-    } else {
-        format!("Hello, {}!", person)
-    };
-
-    //Using `try_send` allows us to catch eventual errors from the filters.
-    //This example should not produce any errors, so this is only for show.
-    if let Err(e) = response.try_send(message) {
-        error!("could not send hello: {}", e.description());
-    }
-}
-
-enum Format {
-    Json,
-    Text
-}
-
-struct Handler(fn(Context, Response, &Format), Format);
-
-impl rustful::Handler for Handler {
-    fn handle(&self, context: Context, response: Response) {
-        self.0(context, response, &self.1);
-    }
+    (format, ResponseParams::new(format!("Hello, {}!", person)))
 }
 
 fn main() {
@@ -76,14 +31,14 @@ fn main() {
     println!("Append ?jsonp=someFunction to get a JSONP response.");
     println!("Run this example with the environment variable 'RUST_LOG' set to 'debug' to see the debug prints.");
 
-    let mut router = DefaultRouter::<Handler>::new();
+    let mut router = DefaultRouter::<Sequence<_>>::new();
     router.build().path("print").many(|mut node| {
-        node.then().on_get(Handler(say_hello, Format::Text));
-        node.path(":person").then().on_get(Handler(say_hello, Format::Text));
+        node.then().on_get(make_sequence(say_hello, Format::Text));
+        node.path(":person").then().on_get(make_sequence(say_hello, Format::Text));
 
         node.path("json").many(|mut node| {
-            node.then().on_get(Handler(say_hello, Format::Json));
-            node.path(":person").then().on_get(Handler(say_hello, Format::Json));
+            node.then().on_get(make_sequence(say_hello, Format::Json));
+            node.path(":person").then().on_get(make_sequence(say_hello, Format::Json));
         });
     });
 
@@ -98,7 +53,7 @@ fn main() {
             Box::new(RequestLogger::new())
         ],
 
-        response_filters: vec![Box::new(Jsonp), Box::new(Json)],
+        content_type: content_type!(Text / Plain; Charset = Utf8),
 
         ..Server::default()
     }.run();
@@ -107,6 +62,56 @@ fn main() {
         Ok(_server) => {},
         Err(e) => error!("could not start server: {}", e.description())
     }
+}
+
+#[derive(Copy, Clone, PartialEq)]
+enum Format {
+    Json,
+    Text
+}
+
+///Append content filters to a handler function.
+fn make_sequence(handler: fn(&mut Context, Format) -> (Format, ResponseParams<String>), format: Format) -> Sequence<ResponseParams<String>> {
+    Sequence::build(move |context: &mut Context, _: &Response| handler(context, format))
+        .then(json_format)
+        .then(jsonp_format)
+        .done()
+}
+
+///Reformat the output as a JSON object if `format == Format::Json`.
+fn json_format(_: &mut Context, _: &Response, (format, mut response): (Format, ResponseParams<String>)) -> (Format, ResponseParams<String>) {
+    if format == Format::Json {
+        //Wrap the content in a JSON object
+        let output = format!("{{\"message\": \"{}\"}}", response.inner());
+        *response.inner_mut() = output;
+        response.require_header(ContentType(content_type!(Application / Json; Charset = Utf8)));
+    };
+
+    (format, response)
+}
+
+///Reformat the output as a JavaScript function call (JSONP) if a
+///`?jsonp=<function>` query parameter has been added to the URL.
+fn jsonp_format(context: &mut Context, _: &Response, (format, mut response): (Format, ResponseParams<String>)) -> ResponseParams<String> {
+    //Take the name of the JSONP function from the query variables
+    if let Some(function) = context.query.get("jsonp") {
+        let output = {
+            //Add quotes, even if not under /json
+            let content = if format == Format::Text {
+                Cow::from(format!("\"{}\"", response.inner()))
+            } else {
+                Cow::from(&**response.inner())
+            };
+
+            //Wrap the content in a JavaScript function call
+            format!("{}({});", function, content)
+        };
+
+        response.require_header(ContentType(content_type!(Application / Javascript; Charset = Utf8)));
+        *response.inner_mut() = output;
+    }
+
+    response
 }
 
 struct RequestLogger {
@@ -156,59 +161,5 @@ impl ContextFilter for PathPrefix {
             context.uri_path = path;
         }
         ContextAction::next()
-    }
-}
-
-struct JsonVar(&'static str);
-
-struct Json;
-
-impl ResponseFilter for Json {
-    fn begin(&self, ctx: FilterContext, status: StatusCode, _headers: &mut Headers) -> (StatusCode, ResponseAction) {
-        //Check if a JSONP function is defined and write the beginning of the call
-        let output = if let Some(&JsonVar(var)) = ctx.storage.get() {
-            Some(format!("{{\"{}\": ", var))
-        } else {
-            None
-        };
-
-        (status, ResponseAction::next(output))
-    }
-
-    fn write<'a>(&'a self, _ctx: FilterContext, bytes: Option<Data<'a>>) -> ResponseAction {
-        ResponseAction::next(bytes)
-    }
-
-    fn end(&self, ctx: FilterContext) -> ResponseAction {
-        //Check if a JSONP function is defined and write the end of the call
-        let output = ctx.storage.get::<JsonVar>().map(|_| "}");
-        ResponseAction::next(output)
-    }
-}
-
-struct JsonpFn(String);
-
-struct Jsonp;
-
-impl ResponseFilter for Jsonp {
-    fn begin(&self, ctx: FilterContext, status: StatusCode, _headers: &mut Headers) -> (StatusCode, ResponseAction) {
-        //Check if a JSONP function is defined and write the beginning of the call
-        let output = if let Some(&JsonpFn(ref function)) = ctx.storage.get() {
-            Some(format!("{}(", function))
-        } else {
-            None
-        };
-
-        (status, ResponseAction::next(output))
-    }
-
-    fn write<'a>(&'a self, _ctx: FilterContext, bytes: Option<Data<'a>>) -> ResponseAction {
-        ResponseAction::next(bytes)
-    }
-
-    fn end(&self, ctx: FilterContext) -> ResponseAction {
-        //Check if a JSONP function is defined and write the end of the call
-        let output = ctx.storage.get::<JsonpFn>().map(|_| ");");
-        ResponseAction::next(output)
     }
 }

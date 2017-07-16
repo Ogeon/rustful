@@ -10,10 +10,10 @@ use std::error::Error as ErrorTrait;
 extern crate log;
 extern crate env_logger;
 
-use rustful::{Server, Context, Response, ContentFactory, SendResponse};
+use rustful::{Server, Context, Response, SendResponse};
 use rustful::StatusCode::{InternalServerError, BadRequest};
 
-fn say_hello(mut context: Context) -> Result<String, Error> {
+fn say_hello(context: &mut Context) -> Result<String, Error> {
     let body = context.body.read_query_body().map_err(|_| Error::CouldNotReadBody)?;
     let files: &Files = context.global.get().ok_or(Error::MissingFileCache)?;
 
@@ -39,12 +39,10 @@ fn main() {
         form: read_string("examples/post/form.html").unwrap()
     };
 
-    //The ContentFactory wrapper allows simplified handlers that return their
-    //responses
     let server_result = Server {
         host: 8080.into(),
         global: Box::new(files).into(),
-        ..Server::new(ContentFactory(say_hello))
+        ..Server::new(say_hello)
     }.run();
 
     //Check if the server started successfully
@@ -66,21 +64,25 @@ struct Files {
     form: String
 }
 
+#[derive(PartialEq)]
 enum Error {
     CouldNotReadBody,
     MissingFileCache
 }
 
-impl<'a, 'b> SendResponse<'a, 'b> for Error {
+impl SendResponse for Error {
     type Error = rustful::Error;
 
-    fn send_response(self, mut response: Response<'a, 'b>) -> Result<(), rustful::Error> {
-        match self {
+    fn prepare_response(&mut self, response: &mut Response) {
+        match *self {
             Error::CouldNotReadBody => response.set_status(BadRequest),
-            Error::MissingFileCache => {
-                error!("the global data should be of the type `Files`, but it's not");
-                response.set_status(InternalServerError);
-            },
+            Error::MissingFileCache => response.set_status(InternalServerError),
+        }
+    }
+
+    fn send_response<'a, 'b>(self, response: Response<'a, 'b>) -> Result<(), (Option<Response<'a, 'b>>, rustful::Error)> {
+        if self == Error::MissingFileCache {
+            error!("the global data should be of the type `Files`, but it's not");
         }
 
         response.try_send("")

@@ -23,19 +23,19 @@ impl<T> StatusRouter<T> {
     /// Build the router and its children using a chaninable API.
     ///
     /// ```
-    /// use rustful::{Context, Response, StatusCode, StatusRouter};
+    /// use rustful::{Context, StatusCode, StatusRouter};
     ///
-    /// fn on_404(context: Context, response: Response) {
-    ///     response.send(format!("{} was not found.", context.uri_path));
+    /// fn on_404(context: &mut Context) -> String {
+    ///     format!("{} was not found.", context.uri_path)
     /// }
     ///
-    /// fn on_500(_: Context, response: Response) {
-    ///     response.send("Looks like you found a bug");
+    /// fn on_500(_: &mut Context) -> String {
+    ///     "Looks like you found a bug".into()
     /// }
-    /// let mut status_router = StatusRouter::<fn(Context, Response)>::new();
+    /// let mut status_router = StatusRouter::<fn(&mut Context) -> String>::new();
     ///
     /// status_router.build().many(|mut status_router|{
-    ///     status_router.on(StatusCode::NotFound, on_404 as fn(Context, Response));
+    ///     status_router.on(StatusCode::NotFound, on_404);
     ///     status_router.on(StatusCode::InternalServerError, on_500);
     /// });
     /// ```
@@ -46,10 +46,10 @@ impl<T> StatusRouter<T> {
     /// Insert a handler that will listen for a specific status code.
     ///
     /// ```
-    /// use rustful::{Context, Response, StatusCode, StatusRouter};
+    /// use rustful::{Context, StatusCode, StatusRouter};
     /// use rustful::handler::MethodRouter;
     ///
-    /// let on_not_found = MethodRouter::<fn(Context, Response)>::new();
+    /// let on_not_found = MethodRouter::<fn(&mut Context) -> String>::new();
     /// //Fill on_not_found with handlers...
     ///
     /// let mut status_router = StatusRouter::new();
@@ -130,19 +130,19 @@ impl<'a, T> Builder<'a, T> {
     /// Perform more than one operation on this builder.
     ///
     /// ```
-    /// use rustful::{Context, Response, StatusCode, StatusRouter};
+    /// use rustful::{Context, StatusCode, StatusRouter};
     ///
-    /// fn on_404(context: Context, response: Response) {
-    ///     response.send(format!("{} was not found.", context.uri_path));
+    /// fn on_404(context: &mut Context) -> String {
+    ///     format!("{} was not found.", context.uri_path)
     /// }
     ///
-    /// fn on_500(_: Context, response: Response) {
-    ///     response.send("Looks like you found a bug");
+    /// fn on_500(_: &mut Context) -> String {
+    ///     "Looks like you found a bug".into()
     /// }
-    /// let mut status_router = StatusRouter::<fn(Context, Response)>::new();
+    /// let mut status_router = StatusRouter::<fn(&mut Context) -> String>::new();
     ///
     /// status_router.build().many(|mut status_router|{
-    ///     status_router.on(StatusCode::NotFound, on_404 as fn(Context, Response));
+    ///     status_router.on(StatusCode::NotFound, on_404);
     ///     status_router.on(StatusCode::InternalServerError, on_500);
     /// });
     /// ```
@@ -154,14 +154,14 @@ impl<'a, T> Builder<'a, T> {
     /// Insert a handler that will listen for a specific status code.
     ///
     /// ```
-    /// use rustful::{Context, Response, StatusCode, StatusRouter};
+    /// use rustful::{Context, StatusCode, StatusRouter};
     ///
-    /// fn on_404(context: Context, response: Response) {
-    ///     response.send(format!("{} was not found.", context.uri_path));
+    /// fn on_404(context: &mut Context) -> String {
+    ///     format!("{} was not found.", context.uri_path)
     /// }
     ///
-    /// let mut status_router = StatusRouter::<fn(Context, Response)>::new();
-    /// status_router.build().on(StatusCode::NotFound, on_404 as fn(Context, Response));
+    /// let mut status_router = StatusRouter::<fn(&mut Context) -> String>::new();
+    /// status_router.build().on(StatusCode::NotFound, on_404);
     /// ```
     pub fn on<H>(&mut self, status: StatusCode, handler: H) where T: FromHandler<H> {
         self.router.handlers.insert(status, T::from_handler(self.context.clone(), handler));
@@ -172,18 +172,18 @@ impl<'a: 'b, 'b, T: Default + ApplyContext + Build<'b>> Builder<'a, T> {
     /// Build a handler that will listen for a specific status code.
     ///
     /// ```
-    /// use rustful::{Context, Response, StatusCode, StatusRouter};
+    /// use rustful::{Context, StatusCode, StatusRouter};
     /// use rustful::handler::MethodRouter;
     ///
-    /// fn on_get_404(context: Context, response: Response) {
-    ///     response.send(format!("GET {} was not found.", context.uri_path));
+    /// fn on_get_404(context: &mut Context) -> String {
+    ///     format!("GET {} was not found.", context.uri_path)
     /// }
     ///
-    /// let mut status_router = StatusRouter::<MethodRouter<fn(Context, Response)>>::new();
+    /// let mut status_router = StatusRouter::<MethodRouter<fn(&mut Context) -> String>>::new();
     ///
     /// status_router.build()
     ///     .status(StatusCode::NotFound)
-    ///     .on_get(on_get_404 as fn(Context, Response));
+    ///     .on_get(on_get_404);
     /// ```
     pub fn status(&'b mut self, status: StatusCode) -> T::Builder {
         match self.router.handlers.entry(status) {

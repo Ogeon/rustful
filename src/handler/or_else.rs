@@ -8,13 +8,12 @@ use handler::{HandleRequest, Environment, Build, BuilderContext, ApplyContext, M
 /// ```
 /// use rustful::{OrElse, Context, Response};
 ///
-/// fn error_handler(_: Context, response: Response) {
-///     let status = response.status();
-///     response.send(format!("Status: {}", status));
+/// fn error_handler(_: &mut Context, response: &Response) -> String {
+///     format!("Status: {}", response.status())
 /// }
 ///
 /// //Every request will end up at error_handler
-/// let handler = OrElse::<Option<fn(Context, Response)>, _>::new(None, error_handler);
+/// let handler = OrElse::<Option<fn(&mut Context) -> String>, _>::new(None, error_handler);
 /// ```
 #[derive(Clone)]
 pub struct OrElse<A, B> {
@@ -39,27 +38,27 @@ impl<A, B> OrElse<A, B> {
     /// Build the router and its children using a chaninable API.
     ///
     /// ```
-    /// use rustful::{Context, Response, OrElse};
+    /// use rustful::{Context, OrElse};
     /// use rustful::handler::MethodRouter;
     ///
-    /// type Inner = MethodRouter<fn(Context, Response)>;
+    /// type Inner = MethodRouter<fn(&mut Context) -> &'static str>;
     ///
-    /// fn get(_context: Context, response: Response) {
-    ///     response.send("A GET request.");
+    /// fn get(_context: &mut Context) -> &'static str {
+    ///     "A GET request."
     /// }
     ///
-    /// fn post(_context: Context, response: Response) {
-    ///     response.send("A POST request.");
+    /// fn post(_context: &mut Context) -> &'static str {
+    ///     "A POST request."
     /// }
     ///
-    /// fn or_else(_context: Context, response: Response) {
-    ///     response.send("Hello world!");
+    /// fn or_else(_context: &mut Context) -> &'static str {
+    ///     "Hello world!"
     /// }
     ///
-    /// let mut router = OrElse::<Inner, _>::with_secondary(or_else as fn(Context, Response));
+    /// let mut router = OrElse::<Inner, _>::with_secondary(or_else);
     ///
     /// router.build().primary().many(|mut inner_router|{
-    ///     inner_router.on_get(get as fn(Context, Response));
+    ///     inner_router.on_get(get);
     ///     inner_router.on_post(post);
     /// });
     /// ```
@@ -149,23 +148,23 @@ impl<'a, A, B> Builder<'a, A, B> {
     /// Perform more than one operation on this builder.
     ///
     /// ```
-    /// use rustful::{Context, Response, OrElse};
+    /// use rustful::{Context, OrElse};
     /// use rustful::handler::MethodRouter;
     ///
-    /// type Inner = MethodRouter<fn(Context, Response)>;
+    /// type Inner = MethodRouter<fn(&mut Context) -> &'static str>;
     ///
-    /// fn get(_context: Context, response: Response) {
-    ///     response.send("A GET request.");
+    /// fn get(_context: &mut Context) -> &'static str {
+    ///     "A GET request."
     /// }
     ///
-    /// fn post(_context: Context, response: Response) {
-    ///     response.send("A POST request.");
+    /// fn post(_context: &mut Context) -> &'static str {
+    ///     "A POST request."
     /// }
     ///
     /// let mut router = OrElse::<Inner, Inner>::default();
     ///
     /// router.build().many(|mut router|{
-    ///     router.primary().on_get(get as fn(Context, Response));
+    ///     router.primary().on_get(get);
     ///     router.secondary().on_post(post);
     /// });
     /// ```
