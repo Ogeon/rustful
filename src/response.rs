@@ -913,7 +913,7 @@ impl<'a, 'b> Chunked<'a, 'b> {
     ///# fn main() {}
     ///```
     pub fn try_send<'d, Content: Into<Data<'d>>>(&mut self, content: Content) -> Result<usize, Error> {
-        let mut writer = match self.writer {
+        let writer = match self.writer {
             Some(Ok(ref mut writer)) => writer,
             None => return Err(Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "write after close"))),
             Some(Err(_)) => if let Some(Err(e)) = self.writer.take() {
@@ -991,7 +991,7 @@ impl<'a, 'b> Write for Chunked<'a, 'b> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let mut writer = try!(response_to_io_result(self.borrow_writer()));
+        let writer = try!(response_to_io_result(self.borrow_writer()));
         writer.flush()
     }
 }
@@ -1094,17 +1094,17 @@ impl<'a> Raw<'a> {
 
 impl<'a> Write for Raw<'a> {
     fn write(&mut self, content: &[u8]) -> io::Result<usize> {
-        let mut writer = try!(self.borrow_writer());
+        let writer = try!(self.borrow_writer());
         writer.write(content)
     }
 
     fn write_all(&mut self, content: &[u8]) -> io::Result<()> {
-        let mut writer = try!(self.borrow_writer());
+        let writer = try!(self.borrow_writer());
         writer.write_all(content)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let mut writer = try!(self.borrow_writer());
+        let writer = try!(self.borrow_writer());
         writer.flush()
     }
 }

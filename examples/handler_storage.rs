@@ -32,7 +32,7 @@ fn main() {
     let value = Arc::new(RwLock::new(0));
 
     let mut router = DefaultRouter::<Api>::new();
-    router.build().many(|mut node| {
+    router.build().many(|node| {
         node.then().on_get(Api::Counter {
             page: page.clone(),
             value: value.clone(),

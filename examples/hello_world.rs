@@ -27,7 +27,7 @@ fn main() {
 
     //Create a DefaultRouter and fill it with handlers.
     let mut router = DefaultRouter::<fn(Context, Response)>::new();
-    router.build().many(|mut node| {
+    router.build().many(|node| {
         //Handle requests for root...
         node.then().on_get(say_hello);
 
