@@ -33,7 +33,7 @@ use rustful::header::{
 use rustful::StatusCode;
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     let mut router = DefaultRouter::<Api>::new();
 

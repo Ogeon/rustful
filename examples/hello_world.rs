@@ -21,7 +21,7 @@ fn say_hello(context: Context, response: Response) {
 }
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     println!("Visit http://localhost:8080 or http://localhost:8080/Olivia (if your name is Olivia) to try this example.");
 

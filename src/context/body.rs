@@ -95,8 +95,10 @@ impl<'a, 'b> BodyReader<'a, 'b> {
     ///
     ///```
     ///# extern crate rustful;
+    ///# extern crate mime;
     ///# extern crate multipart;
     ///use std::fmt::Write;
+    ///use std::io::Read;
     ///use rustful::{Context, Response};
     ///use rustful::StatusCode::BadRequest;
     ///use multipart::server::MultipartData;
@@ -106,19 +108,29 @@ impl<'a, 'b> BodyReader<'a, 'b> {
     ///        let mut result = String::new();
     ///
     ///        //Iterate over the multipart entries and print info about them in `result`
-    ///        multipart.foreach_entry(|entry| match entry.data {
-    ///            MultipartData::Text(text) => {
-    ///                //Found data from a text field
-    ///                writeln!(&mut result, "{}: '{}'", entry.name, text.text);
-    ///            },
-    ///            MultipartData::File(file) => {
-    ///                //Found an uploaded file
-    ///                if let Some(file_name) = file.filename() {
-    ///                    writeln!(&mut result, "{}: a file called '{}'", entry.name, file_name);
-    ///                } else {
-    ///                    writeln!(&mut result, "{}: a nameless file", entry.name);
+    ///        multipart.foreach_entry(|mut entry| {
+    ///            if let Some(content_mime) = entry.headers.content_type {
+    ///                if content_mime.type_() == mime::TEXT {
+    ///                    //Found data from a text field
+    ///                    let mut text = String::new();
+    ///                    entry.data.read_to_string(&mut text);
+    ///                    writeln!(&mut result, "{}: '{}'", entry.headers.name, text);
     ///                }
-    ///            }
+    ///                else {
+    ///                    //Found an uploaded file
+    ///                    if let Some(file_name) = entry.headers.filename {
+    ///                        writeln!(&mut result, "{}: a file called '{}'", entry.headers.name, file_name);
+    ///                    } else {
+    ///                        writeln!(&mut result, "{}: a nameless file", entry.headers.name);
+    ///                    }
+    ///                }
+    ///             }
+    ///             else {
+    ///                 //Content-type not supplied, default to text/plain as per IETF RFC 7578, section 4.4
+    ///                 let mut text = String::new();
+    ///                 entry.data.read_to_string(&mut text);
+    ///                 writeln!(&mut result, "{}: '{}'", entry.headers.name, text);
+    ///             }
     ///        });
     ///
     ///        response.send(result);

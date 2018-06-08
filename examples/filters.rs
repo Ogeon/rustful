@@ -70,7 +70,7 @@ impl rustful::Handler for Handler {
 }
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     println!("Visit http://localhost:8080, http://localhost:8080/Peter or http://localhost:8080/json/Peter (if your name is Peter) to try this example.");
     println!("Append ?jsonp=someFunction to get a JSONP response.");
