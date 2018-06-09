@@ -7,7 +7,7 @@ use std::error::Error;
 use rustful::{Server, Context, Response};
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     println!("Visit http://localhost:8080 to try this example.");
     let server_result = Server {

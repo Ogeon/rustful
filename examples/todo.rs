@@ -33,12 +33,12 @@ use rustful::header::{
 use rustful::StatusCode;
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     let mut router = DefaultRouter::<Api>::new();
 
     //Global actions
-    router.build().then().many(|mut endpoint| {
+    router.build().then().many(|endpoint| {
         endpoint.on_get(Api(Some(list_all)));
         endpoint.on_post(Api(Some(store)));
         endpoint.on_delete(Api(Some(clear)));
@@ -46,7 +46,7 @@ fn main() {
     });
 
     //Note actions
-    router.build().path(":id").then().many(|mut endpoint| {
+    router.build().path(":id").then().many(|endpoint| {
         endpoint.on_get(Api(Some(get_todo)));
         endpoint.on_patch(Api(Some(edit_todo)));
         endpoint.on_delete(Api(Some(delete_todo)));
@@ -162,7 +162,7 @@ fn edit_todo(database: &Database, context: Context) -> Result<Option<String>, Er
 
     let mut database =  database.write().unwrap();
     let mut todo = database.get_mut(id);
-    todo.as_mut().map(|mut todo| todo.update(edits));
+    todo.as_mut().map(|todo| todo.update(edits));
 
     let todo = todo.map(|todo| {
         NetworkTodo::from_todo(&todo, host, id)

@@ -98,12 +98,12 @@ impl<T> TreeRouter<T> {
             if self.wildcard_route.is_none() {
                 self.wildcard_route = Some(Box::new(TreeRouter::with_handler(create_handler())));
             }
-            &mut **self.wildcard_route.as_mut::<'a>().unwrap()
+            &mut **self.wildcard_route.as_mut().unwrap()
         } else if let Some(&b':') = key.get(0) {
             if self.variable_route.is_none() {
                 self.variable_route = Some(Box::new(TreeRouter::with_handler(create_handler())));
             }
-            &mut **self.variable_route.as_mut::<'a>().unwrap()
+            &mut **self.variable_route.as_mut().unwrap()
         } else {
             match self.static_routes.entry(key.to_owned().into()) {
                 Occupied(entry) => entry.into_mut(),

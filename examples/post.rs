@@ -29,7 +29,7 @@ fn say_hello(mut context: Context) -> Result<String, Error> {
 }
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     println!("Visit http://localhost:8080 to try this example.");
 

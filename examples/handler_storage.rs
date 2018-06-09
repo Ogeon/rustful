@@ -21,7 +21,7 @@ use rustful::{
 use rustful::file::check_path;
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     println!("Visit http://localhost:8080 to try this example.");
 
@@ -32,7 +32,7 @@ fn main() {
     let value = Arc::new(RwLock::new(0));
 
     let mut router = DefaultRouter::<Api>::new();
-    router.build().many(|mut node| {
+    router.build().many(|node| {
         node.then().on_get(Api::Counter {
             page: page.clone(),
             value: value.clone(),

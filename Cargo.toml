@@ -28,24 +28,25 @@ url = "1"
 anymap = "0.12"
 phf = "0.7"
 num_cpus = "1"
-log = "0.3"
+log = "0.4"
 
 [dependencies.hyper]
 version = "0.10"
 
 [dependencies.multipart]
 #feature
-version = "0.12"
+version = "0.14"
 default-features = false
 features = ["server"]
 optional = true
 
 [dev-dependencies]
-serde= "1.0"
-serde_derive= "1.0"
+serde = "1.0"
+serde_derive = "1.0"
 serde_json = "1.0"
-unicase = "1.0"
-env_logger = "0.4"
+unicase = "1.4"
+mime = "0.3"
+env_logger = "0.5"
 
 [build-dependencies]
 phf_codegen = "0.7"

@@ -70,18 +70,18 @@ impl rustful::Handler for Handler {
 }
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     println!("Visit http://localhost:8080, http://localhost:8080/Peter or http://localhost:8080/json/Peter (if your name is Peter) to try this example.");
     println!("Append ?jsonp=someFunction to get a JSONP response.");
     println!("Run this example with the environment variable 'RUST_LOG' set to 'debug' to see the debug prints.");
 
     let mut router = DefaultRouter::<Handler>::new();
-    router.build().path("print").many(|mut node| {
+    router.build().path("print").many(|node| {
         node.then().on_get(Handler(say_hello, Format::Text));
         node.path(":person").then().on_get(Handler(say_hello, Format::Text));
 
-        node.path("json").many(|mut node| {
+        node.path("json").many(|node| {
             node.then().on_get(Handler(say_hello, Format::Json));
             node.path(":person").then().on_get(Handler(say_hello, Format::Json));
         });

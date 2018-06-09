@@ -21,13 +21,13 @@ fn say_hello(context: Context, response: Response) {
 }
 
 fn main() {
-    env_logger::init().unwrap();
+    env_logger::init();
 
     println!("Visit http://localhost:8080 or http://localhost:8080/Olivia (if your name is Olivia) to try this example.");
 
     //Create a DefaultRouter and fill it with handlers.
     let mut router = DefaultRouter::<fn(Context, Response)>::new();
-    router.build().many(|mut node| {
+    router.build().many(|node| {
         //Handle requests for root...
         node.then().on_get(say_hello);
 
